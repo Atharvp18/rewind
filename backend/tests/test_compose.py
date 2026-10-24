@@ -174,6 +174,8 @@ def test_cart_contents_gives_the_total_before_tax():
     items = cart(("Advil Ibuprofen 200mg", 1299, "card_fsa_1", "eligible"), ("Bandages", 549, "card_fsa_1", "eligible"))
     text = compose.cart_contents(items).text
     assert "2 items" in text and "$18.48 before tax" in text and "Bandages, $5.49." in text
+    grouped = compose.cart_contents(items, cards_for_run(1)).text
+    assert "On your FSA card: Advil Ibuprofen 200mg, $12.99. Bandages, $5.49." in grouped
     assert compose.cart_contents([]).text == "Your cart is empty."
     assert "1 item," in compose.cart_contents(items[:1]).text
 

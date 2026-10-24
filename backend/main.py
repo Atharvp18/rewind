@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager, suppress
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from api import health, voice
+from api import cart, checkout, command, demo, health, scan, voice
+from lookup import moss_index
 from api.envelope import register_error_handlers
 
 load_dotenv()
@@ -22,9 +23,16 @@ async def lifespan(app: FastAPI):
     keepalive = None
     if os.environ.get("CARTESIA_API_KEY"):
         keepalive = asyncio.create_task(voice.keepalive_loop())     # warm now, then every 60 s
+    moss = None
+    if os.environ.get("MOSS_PROJECT_ID"):
+        moss = asyncio.create_task(moss_index.warm_up())        # the first scan must not pay for the index load
     try:
         yield
     finally:
+        if moss:
+            moss.cancel()
+            with suppress(asyncio.CancelledError):
+                await moss
         if keepalive:
             keepalive.cancel()
             with suppress(asyncio.CancelledError):
@@ -38,6 +46,8 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(voice.router)
+    for module in (scan, cart, checkout, command, demo):
+        app.include_router(module.router)
     return app
 
 

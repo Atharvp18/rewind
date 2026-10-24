@@ -366,3 +366,18 @@ def test_purchase_items_keeps_category_and_medicine_flag_and_skips_prescriptions
     m = sql("migration_purchase_items.sql")
     assert "ADD COLUMN IF NOT EXISTS category" in m and "ADD COLUMN IF NOT EXISTS is_medication" in m
     assert "category" in sql("schema.sql") and "is_medication" in sql("schema.sql")
+
+
+def test_checkout_keeps_the_paid_items_with_the_split_for_the_invoice(sb):
+    sb.outcomes = [{"payment_id": "p"}]
+    item = {"id": "i1", "seq": 1, "display_name": "Advil", "amount_cents": 1299}
+    db.confirm_checkout("key1", [{"card_id": "card_hsa_1", "amount_cents": 1299, "items": [item]}])
+    rpc = next(c for c in sb.calls if c[0] == "rpc")
+    assert rpc[1][1]["p_splits"] == [{"card_id": "card_hsa_1", "amount_cents": 1299, "items": [item]}]
+
+
+def test_checkout_rejects_a_float_item_price(sb):
+    with pytest.raises(TypeError):
+        db.confirm_checkout("key1", [{"card_id": "c", "amount_cents": 1299,
+                                      "items": [{"display_name": "x", "amount_cents": 12.99}]}])
+    assert sb.calls == []

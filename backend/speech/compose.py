@@ -122,6 +122,11 @@ def _card_line(rec: PaymentRecommendation, cards: dict[str, Card]) -> str:
     return USE_ANOTHER
 
 
+def product_unresolved(request_id: str | None = None) -> VoiceRequest:
+    return _request("I could not confirm this item. Try another angle, or tell me what it is.",
+                    request_id=request_id)
+
+
 def compose_speech(
     product: ProductResolution,
     elig: EligibilityResult,
@@ -158,21 +163,60 @@ def item_removed(name: str | None) -> VoiceRequest:
     return _request(f"Removed {name}." if name else "Your cart is already empty.")
 
 
-def confirm_clear() -> VoiceRequest:
-    return _request("Clear everything from your cart?", scope="confirm_clear_cart")
+def confirm_clear(prompt_id: str | None = None) -> VoiceRequest:
+    return _request("Clear everything from your cart?", scope="confirm_clear_cart", prompt_id=prompt_id)
+
+
+def which_card(card_ids: Iterable[str], cards: Iterable[Card | dict[str, Any]],
+               prompt_id: str | None = None) -> VoiceRequest:
+    by_id = _cards_by_id(cards)
+    options = _join(f"your {card_name(c, by_id)}" for c in card_ids)
+    return _request(f"Which card would you like to use: {options}?", scope="choose_card", prompt_id=prompt_id)
+
+
+def card_not_allowed(card_ids: Iterable[str], cards: Iterable[Card | dict[str, Any]],
+                     prompt_id: str | None = None) -> VoiceRequest:
+    """The user named a card that cannot take this item. Say only that, then ask again."""
+    by_id = _cards_by_id(cards)
+    options = _join(f"your {card_name(c, by_id)}" for c in card_ids)
+    return _request(f"I could not confirm eligibility for that card. Please use another card for this item: "
+                    f"{options}?", scope="choose_card", prompt_id=prompt_id)
+
+
+def skipped(skip: bool = True) -> VoiceRequest:
+    return _request("Okay, skipped." if skip else "Okay.")
+
+
+def open_accessibility() -> VoiceRequest:
+    return _request("Opening accessibility settings.")
+
+
+def nothing_to_repeat() -> VoiceRequest:
+    return _request("I haven't said anything yet.")
+
+
+def no_card_checkout() -> VoiceRequest:
+    return _request("No card is linked, so I can't check out. Please add a card in the app.")
 
 
 def cart_cleared() -> VoiceRequest:
     return _request("Your cart is empty.")
 
 
-def cart_contents(items: list[dict[str, Any]]) -> VoiceRequest:
+def cart_contents(items: list[dict[str, Any]],
+                  cards: Iterable[Card | dict[str, Any]] | None = None) -> VoiceRequest:
+    """The cart grouped by card (spec 3.8) with the total before tax."""
     if not items:
         return _request("Your cart is empty.")
+    by_id = _cards_by_id(cards)
     total = sum(i["amount_cents"] for i in items)
     count = f"{len(items)} item" + ("" if len(items) == 1 else "s")
-    lines = " ".join(f"{i['display_name']}, {money(i['amount_cents'])}." for i in items)
-    return _request(f"You have {count}, {money(total)} before tax. {lines}")
+    lines: list[str] = []
+    for card_id in dict.fromkeys(i["assigned_card_id"] for i in items):
+        for n, item in enumerate(i for i in items if i["assigned_card_id"] == card_id):
+            lead = f"On your {card_name(card_id, by_id)}: " if n == 0 and by_id else ""
+            lines.append(f"{lead}{item['display_name']}, {money(item['amount_cents'])}.")
+    return _request(f"You have {count}, {money(total)} before tax. {' '.join(lines)}")
 
 
 def balance_refusal() -> VoiceRequest:
@@ -186,20 +230,28 @@ def _group_lines(groups: Iterable[Any], cards: dict[str, Card]) -> str:
                  for g in groups if g.subtotal_cents > 0)
 
 
+def _split_line(total_cents: int, groups: list[Any], cards: dict[str, Card]) -> str:
+    """"$23.47 before tax: $18.48 on your FSA card and ..." or, for one card, "$12.99 before tax, on your FSA card"."""
+    paid = [g for g in groups if g.subtotal_cents > 0]
+    if len(paid) == 1:
+        return f"{money(total_cents)} before tax, on your {card_name(paid[0].card_id, cards)}"
+    return f"{money(total_cents)} before tax: {_group_lines(paid, cards)}"
+
+
 def checkout_preview(
     plan: CheckoutPlan,
     cards: Iterable[Card | dict[str, Any]],
     items: list[dict[str, Any]],
     prompt_id: str | None = None,
+    prefix: str = "",
 ) -> VoiceRequest:
     by_id = _cards_by_id(cards)
     names = {i["id"]: i["display_name"] for i in items}
     if not plan.groups or plan.total_cents == 0:
         return _request("Your cart is empty, so there is nothing to check out.")
     if plan.ok:
-        text = (f"Your total is {money(plan.total_cents)} before tax: {_group_lines(plan.groups, by_id)}. "
-                "Ready to check out?")
-        return _request(text, scope="confirm_checkout", prompt_id=prompt_id)
+        text = f"Your total is {_split_line(plan.total_cents, plan.groups, by_id)}. Ready to check out?"
+        return _request(prefix + text, scope="confirm_checkout", prompt_id=prompt_id)
 
     parts: list[str] = []
     for issue in plan.issues:
@@ -216,10 +268,11 @@ def checkout_preview(
                          f"and move the {moved} to {target}.")
         else:
             parts.append(f"Your {card} can't cover this. I can move the {moved} to {target}.")
-    if any(i.moves for i in plan.issues):
+    askable = any(i.moves for i in plan.issues) and not any(i.uncovered_item_ids for i in plan.issues)
+    if askable:
         parts.append("Is that okay?")
-    return _request(" ".join(parts), scope="confirm_checkout" if any(i.moves for i in plan.issues) else "none",
-                    prompt_id=prompt_id if any(i.moves for i in plan.issues) else None)
+    return _request(prefix + " ".join(parts), scope="confirm_checkout" if askable else "none",
+                    prompt_id=prompt_id if askable else None)
 
 
 def checkout_result(
@@ -231,7 +284,7 @@ def checkout_result(
     by_id = _cards_by_id(cards)
     groups = [g for g in groups if g.subtotal_cents > 0]
     total = sum(g.subtotal_cents for g in groups)
-    text = f"Checked out, simulated. {money(total)} before tax: {_group_lines(groups, by_id)}."
+    text = f"Checked out, simulated. {_split_line(total, groups, by_id)}."
     low = list(low_balance_card_ids)
     for card_id in low:
         text += " " + LOW_BALANCE.format(card=card_name(card_id, by_id))
