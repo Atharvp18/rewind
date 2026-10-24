@@ -57,6 +57,9 @@ function subscribeBlock(l: () => void) {
   };
 }
 
+/** Strength of the edge shared by the dome and the orb ring (3.2:1 on the brightest scene). */
+const EDGE_ALPHA = 0.85;
+
 type Mode = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 const MODE: Record<Phase, Mode> = {
@@ -129,7 +132,7 @@ export function OrbGlow() {
             bottom: glowHeight - domeD,
             // Thin edge so the dome reads as a shape; the fill still fades into the camera.
             borderWidth: palette.controlBorderWidth ? 3 : 2,
-            borderColor: palette.controlBorderWidth ? palette.dockEdge : withOpacity(palette.dockEdge, 0.7),
+            borderColor: palette.controlBorderWidth ? palette.dockEdge : withOpacity(palette.dockEdge, EDGE_ALPHA),
           },
         ]}>
         <LinearGradient
@@ -157,7 +160,6 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
   const { width: screenW, height } = useWindowDimensions();
   const orb = orbSizeFor(screenW, height);
   const size = { width: orb, height: orb, borderRadius: orb / 2 };
-  const core = Math.round(orb * 0.55);
   const mode = MODE[state.phase];
 
   const spin = useSharedValue(0);
@@ -233,7 +235,9 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
               styles.orb,
               size,
               {
-                borderColor: palette.controlBorderWidth ? palette.talkRing : withOpacity(palette.talkRing, 0.6),
+                // Light theme: the dome's edge shade at the dome's strength (see OrbGlow).
+                // Dark and high contrast: a solid dark ring (see Palette.talkRing).
+                borderColor: palette.talkRing === palette.dockEdge ? withOpacity(palette.talkRing, EDGE_ALPHA) : palette.talkRing,
                 borderWidth: palette.controlBorderWidth ? 3 : 2,
               },
             ]}>
@@ -244,20 +248,21 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
                 spinStyle,
               ]}>
               <LinearGradient
+                // The flowing gradient: teal, mint, deep teal (unchanged).
                 colors={[palette.talkTop, palette.accent, palette.talkBottom, palette.talkTop]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
             </Animated.View>
-            {/* Steady dark core keeps the icon at a fixed contrast while the gradient moves. */}
-            <View
-              style={[
-                styles.core,
-                { width: core, height: core, borderRadius: core / 2, backgroundColor: withOpacity(palette.talkBottom, 0.92) },
-              ]}>
-              <Icon name={listening ? 'stop' : 'mic'} size={Math.round(orb * 0.3)} color="onTalk" strokeWidth={2.5} />
-            </View>
+            {/* One circle: the icon sits straight on the gradient, large, with its own thin outline. */}
+            <Icon
+              name={listening ? 'stop' : 'mic'}
+              size={Math.round(orb * 0.46)}
+              color="onTalk"
+              outline={palette.talkIconOutline}
+              strokeWidth={2.75}
+            />
           </Pressable>
         </Animated.View>
       </View>
@@ -285,7 +290,6 @@ const styles = StyleSheet.create({
   ripple: { position: 'absolute', borderWidth: 6 },
   orb: { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   spinner: { position: 'absolute' },
-  core: { alignItems: 'center', justifyContent: 'center' },
   status: {
     borderRadius: Radius.pill,
     paddingHorizontal: Spacing.lg,

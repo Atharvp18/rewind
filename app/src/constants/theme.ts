@@ -37,7 +37,10 @@ export type Palette = {
   talkTop: string;
   talkBottom: string;
   onTalk: string;
+  /** Orb ring. Light theme: the dome's edge shade. Dark and high contrast: dark, because a mint or white ring would vanish on their light dome edge. */
   talkRing: string;
+  /** Dark outline for the mic when the gradient runs from light to dark (light theme). Null when the icon already contrasts everywhere. */
+  talkIconOutline: keyof Palette | null;
   /** Caption pill (frame 2). Border covers whichever scene the fill can't contrast with. */
   pill: string;
   onPill: string;
@@ -84,12 +87,13 @@ export const Palettes: Record<ThemeName, Palette> = {
     onAccent: '#0B2427',
     dockTop: '#E4F8EF',
     dockBottom: '#8FE3C2',
-    dockEdge: '#0E5A63',
+    dockEdge: '#083A40', // the one edge shade: dome border and orb ring (3.1:1 on the brightest scene at 85%)
     onDock: '#0B2427',
-    talkTop: '#137A84',
+    talkTop: '#137A84', // the flowing gradient: teal ↔ mint ↔ deep teal (talkTop, accent, talkBottom)
     talkBottom: '#0A434A',
-    onTalk: '#FFFFFF',
-    talkRing: '#FFFFFF',
+    onTalk: '#FFFFFF', // white mic with a dark outline, so it reads on every part of the flow
+    talkRing: '#083A40',
+    talkIconOutline: 'text',
     pill: '#E4F8EF',
     onPill: '#0B2427',
     pillBorder: '#0B2427',
@@ -133,6 +137,7 @@ export const Palettes: Record<ThemeName, Palette> = {
     talkBottom: '#5EDDB4',
     onTalk: '#0A1715',
     talkRing: '#0A1715',
+    talkIconOutline: null,
     pill: '#1A3029',
     onPill: '#E8F5F0',
     pillBorder: '#E8F5F0',
@@ -175,7 +180,8 @@ export const Palettes: Record<ThemeName, Palette> = {
     talkTop: '#6BFFC4',
     talkBottom: '#6BFFC4',
     onTalk: '#000000',
-    talkRing: '#FFFFFF',
+    talkRing: '#000000',
+    talkIconOutline: null,
     pill: '#000000',
     onPill: '#FFFFFF',
     pillBorder: '#FFFFFF',

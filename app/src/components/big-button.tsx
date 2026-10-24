@@ -36,8 +36,9 @@ export function BigButton({
     primary: { bg: palette.primary, fg: 'onPrimary', border: palette.primary },
     accent: { bg: palette.accent, fg: 'onAccent', border: palette.text },
     danger: { bg: palette.dangerBg, fg: 'danger', border: palette.danger },
-    secondary: { bg: palette.surfaceAlt, fg: 'text', border: palette.border },
-  }[variant] as { bg: string; fg: 'onPrimary' | 'onAccent' | 'danger' | 'text'; border: string };
+    // Tonal: a tint of the brand with a brand-colored label, like the transcript pill.
+    secondary: { bg: palette.surfaceAlt, fg: 'primary', border: palette.border },
+  }[variant] as { bg: string; fg: 'onPrimary' | 'onAccent' | 'danger' | 'primary'; border: string };
 
   return (
     <Pressable
@@ -73,7 +74,8 @@ export function BigButton({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: Radius.button,
+    // Pill: the same shape as the orb, the chips and the transcript.
+    borderRadius: Radius.pill,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
     justifyContent: 'center',

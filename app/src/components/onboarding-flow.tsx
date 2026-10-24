@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, TextInput, View } from 'react-native';
 
 import { BigButton } from '@/components/big-button';
+import { ButtonPair } from '@/components/button-pair';
 import type { Capture } from '@/components/camera-stage';
 import { CardArt } from '@/components/card-art';
 import { Notice } from '@/components/icon';
@@ -285,10 +286,9 @@ export function OnboardingFlow({
 
   if (!step) return null;
 
-  const yesNoButtons = (onYes: () => void, onNo: () => void, noLabel = 'No, try again') => (
+  const yesNoButtons = (onYes: () => void, onNo: () => void, noA11y = 'No, try again') => (
     <PanelActions>
-      <BigButton label="Yes, that's right" icon="check" variant="primary" size="primary" onPress={onYes} />
-      <BigButton label={noLabel} icon="retry" onPress={onNo} />
+      <ButtonPair yesA11y="Yes, that's right" noA11y={noA11y} onYes={onYes} onNo={onNo} />
     </PanelActions>
   );
 

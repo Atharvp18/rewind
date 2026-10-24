@@ -32,6 +32,9 @@ for (const line of block.split('\n')) {
   if (t) current = themes[t[1]] = {};
   const kv = line.match(/^ {4}(\w+): '(#[0-9A-Fa-f]{6})'/);
   if (current && kv) current[kv[1]] = kv[2].toUpperCase();
+  // The one non-hex field the audit needs: which palette color outlines the orb's mic (or null).
+  const outline = line.match(/^ {4}talkIconOutline: (?:'(\w+)'|null)/);
+  if (current && outline) current.talkIconOutline = outline[1] ?? null;
 }
 
 // --- WCAG relative luminance and contrast ---
@@ -49,6 +52,11 @@ const WHITE = '#FFFFFF';
 const BLACK = '#000000';
 
 // --- checks ---
+// The dome as drawn at the orb: the edge color at 55% over the scene (see OrbGlow). Ring: edge color at 85%.
+const mixHex = (fg, a, bg) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(fg.slice(i, i + 2), 16) * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a)).toString(16).padStart(2, '0')).join('');
+const domeAt = (p, scene) => mixHex(p.dockEdge, 0.55, scene);
+// Ring: the dome's edge shade at 85% in the light theme; a solid dark ring otherwise.
+const ringAt = (p, scene) => mixHex(p.talkRing, p.talkRing === p.dockEdge ? 0.85 : 1, domeAt(p, scene));
 const corner = (p, c, scene) => Math.max(cr(c, scene), cr(p.profileBg, scene)); // bar or its dark halo
 const pairs = (p) => [
   ['Body text on background', cr(p.text, p.bg), 4.5],
@@ -58,12 +66,14 @@ const pairs = (p) => [
   ['Text on tinted rows (cart groups, settings)', cr(p.text, p.surfaceAlt), 4.5],
   ['Primary button label', cr(p.onPrimary, p.primary), 4.5],
   ['Primary button vs card', cr(p.primary, p.surface), 3],
-  ['Secondary button label', cr(p.text, p.surfaceAlt), 4.5],
+  ['Tonal (No) button label: teal on tint', cr(p.primary, p.surfaceAlt), 4.5],
   ['Danger button label', cr(p.danger, p.dangerBg), 4.5],
   ['Selected option edge vs tint', cr(p.primary, p.surfaceAlt), 3],
-  ['Orb vs dome (light end)', Math.max(cr(p.talkTop, p.dockTop), cr(p.talkBottom, p.dockTop)), 3],
-  ['Orb vs dome (mint end)', Math.max(cr(p.talkTop, p.dockBottom), cr(p.talkBottom, p.dockBottom)), 3],
-  ['Orb icon on its core', cr(p.onTalk, p.talkBottom), 4.5],
+  // The mic sits straight on the flowing gradient (teal, mint, deep teal). With an outline,
+  // the glyph is judged against its outline; without one, against every stop.
+  ['Orb mic icon (vs its outline, or the worst gradient stop)', p.talkIconOutline ? cr(p.onTalk, p[p.talkIconOutline]) : Math.min(cr(p.onTalk, p.talkTop), cr(p.onTalk, p.accent), cr(p.onTalk, p.talkBottom)), 4.5],
+  ['Orb vs the dome: dark scene (ring, or the mint part of the flow)', Math.max(cr(ringAt(p, BLACK), domeAt(p, BLACK)), cr(p.accent, domeAt(p, BLACK))), 3],
+  ['Orb vs the dome: bright scene (ring, or the whole fill)', Math.max(cr(ringAt(p, WHITE), domeAt(p, WHITE)), Math.min(cr(p.talkTop, domeAt(p, WHITE)), cr(p.accent, domeAt(p, WHITE)), cr(p.talkBottom, domeAt(p, WHITE)))), 3],
   ['Status pill text', cr(p.onPill, p.pill), 4.5],
   ['Caption pill text', cr(p.onPill, p.pill), 4.5],
   ['Profile initial / cart chip text', cr(p.onProfile, p.profileBg), 4.5],

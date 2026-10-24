@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Camera,
   Check,
+  ChevronDown,
   CircleCheck,
   CircleHelp,
   CircleX,
@@ -39,6 +40,7 @@ import { useA11y } from '@/lib/a11y';
  */
 const ICONS = {
   check: Check,
+  chevronDown: ChevronDown,
   close: X,
   retry: RotateCcw,
   camera: Camera,
@@ -71,20 +73,57 @@ export function Icon({
   size = 24,
   color = 'text',
   strokeWidth = 2.25,
+  outline,
 }: {
   name: IconName;
   size?: number;
   color?: keyof Palette;
   strokeWidth?: number;
+  /**
+   * A thin outline in this palette color, drawn behind the glyph. Keeps the icon
+   * legible on a background that moves between light and dark (the voice orb's
+   * gradient) without a shape behind it.
+   */
+  outline?: keyof Palette | null;
 }) {
   const { palette } = useA11y();
   const Glyph = ICONS[name];
+
+  if (!outline) {
+    return (
+      <View accessible={false} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+        <Glyph size={size} color={palette[color] as string} strokeWidth={strokeWidth} />
+      </View>
+    );
+  }
+
+  // Outlined: both layers share a canvas with room around the 24 × 24 glyph, because a
+  // thicker stroke would otherwise be clipped at the SVG's edge (the mic's top and bottom
+  // touch it). The canvas is centered on the icon, so the icon keeps its size and place.
+  const span = 24 + OUTLINE_ROOM * 2;
+  const canvas = (size * span) / 24;
+  const inset = -(size * OUTLINE_ROOM) / 24;
+  const layer = { size: canvas, viewBox: `${-OUTLINE_ROOM} ${-OUTLINE_ROOM} ${span} ${span}` };
   return (
-    <View accessible={false} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-      <Glyph size={size} color={palette[color] as string} strokeWidth={strokeWidth} />
+    <View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+      style={{ width: size, height: size }}>
+      <View style={{ position: 'absolute', left: inset, top: inset, width: canvas, height: canvas }}>
+        <View style={StyleSheet.absoluteFill}>
+          <Glyph {...layer} color={palette[outline] as string} strokeWidth={strokeWidth + OUTLINE_WIDTH} />
+        </View>
+        <Glyph {...layer} color={palette[color] as string} strokeWidth={strokeWidth} />
+      </View>
     </View>
   );
 }
+
+/** Room around the glyph for the outline, in glyph units (a 24-unit glyph gets 4 on each side). */
+const OUTLINE_ROOM = 4;
+/** How much thicker the outline stroke is than the glyph's own, in glyph units. */
+const OUTLINE_WIDTH = 2.4;
 
 /** Icon + words in one row, e.g. a warning line. The words carry the meaning. */
 export function Notice({
