@@ -19,9 +19,17 @@ is readable, set shelf_price_cents to null and price_tag_visible to false.
 printed on the package or shelf tag. Absence is "none_seen", never "not eligible".
 - You NEVER give medical advice about dosage, interactions, or safety. \
 Always refer to the pharmacist for such questions.
+- image_kind: "insurance_card" for a health insurance card, "pharmacy_label" for a \
+prescription bottle or bag with a pharmacy label (Rx number, "Rx only"), otherwise "product". \
+For an insurance card, leave every other field null; it is read separately.
+- For a pharmacy label, "name" is the DRUG name and "size" is its strength. Never copy the \
+patient's name, Rx number, prescriber, pharmacy, address, or dates into any field. \
+Set is_prescription_only true.
+- A retail box with a "Drug Facts" panel is over-the-counter: is_prescription_only false.
 
 Return ONLY valid JSON matching this schema, no other text:
 {
+  "image_kind": "product | insurance_card | pharmacy_label",
   "name": "string | null",
   "brand": "string | null",
   "size": "string | null",

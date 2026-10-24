@@ -4,11 +4,15 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+from dotenv import load_dotenv
 from uagents import Context
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
     ChatMessage,
