@@ -16,6 +16,15 @@ export const BASE_URL = 'http://192.168.1.10:8000';
 /** Serve the demo script from lib/mock-backend.ts instead of the network. */
 export const USE_MOCK = true;
 
+/**
+ * Test seam: lets tests (and the live-contract suite) exercise the real HTTP
+ * path and point it at another server without editing the constants above.
+ * Never set this in app code.
+ */
+export const testing: { live: boolean; baseUrl: string | null } = { live: false, baseUrl: null };
+const isMock = () => USE_MOCK && !testing.live;
+const baseUrl = () => testing.baseUrl ?? BASE_URL;
+
 // ---------------------------------------------------------------------------
 // 0.5 shared message schemas
 // ---------------------------------------------------------------------------
@@ -315,7 +324,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   let res: Response;
   try {
     const headers = { ...(init.headers as Record<string, string> | undefined), [PROMPT_TTL_HEADER]: String(promptTtlSeconds) };
-    res = await fetch(`${BASE_URL}${path}`, { ...init, headers, signal: controller.signal });
+    res = await fetch(`${baseUrl()}${path}`, { ...init, headers, signal: controller.signal });
   } catch {
     throw new ApiError({
       code: E_NETWORK,
@@ -359,7 +368,7 @@ const json = (body: unknown): RequestInit => ({
 // ---------------------------------------------------------------------------
 
 export function getHealth(): Promise<Health> {
-  if (USE_MOCK) return mock.getHealth();
+  if (isMock()) return mock.getHealth();
   return request('/v1/health');
 }
 
@@ -369,7 +378,7 @@ export function scan(
   barcode?: string | null,
   hintPriceCents?: number | null,
 ): Promise<ScanResponse> {
-  if (USE_MOCK) return mock.scan(barcode ?? null);
+  if (isMock()) return mock.scan(barcode ?? null);
   const form = new FormData();
   // React Native's FormData accepts a { uri, name, type } file descriptor.
   form.append('image', { uri: imageUri, name: 'frame.jpg', type: 'image/jpeg' } as any);
@@ -380,20 +389,20 @@ export function scan(
 
 /** `mockHint` only steers the offline mock, which cannot hear; the real backend ignores it. */
 export function stt(audioUri: string, mockHint?: mock.SttHint): Promise<SttResponse> {
-  if (USE_MOCK) return mock.stt(mockHint);
+  if (isMock()) return mock.stt(mockHint);
   const form = new FormData();
   form.append('audio', { uri: audioUri, name: 'speech.wav', type: 'audio/wav' } as any);
   return request('/v1/stt', { method: 'POST', body: form });
 }
 
 export function tts(text: string, priority: VoiceRequest['priority']): Promise<TtsResponse> {
-  if (USE_MOCK) return mock.tts();
+  if (isMock()) return mock.tts();
   return request('/v1/tts', json({ text, priority }));
 }
 
 /** Absolute URL for an audio_url returned by /v1/tts. */
 export function audioUrl(audioUrlOrPath: string): string {
-  return audioUrlOrPath.startsWith('http') ? audioUrlOrPath : `${BASE_URL}${audioUrlOrPath}`;
+  return audioUrlOrPath.startsWith('http') ? audioUrlOrPath : `${baseUrl()}${audioUrlOrPath}`;
 }
 
 export function command(
@@ -401,37 +410,37 @@ export function command(
   confidence: number,
   promptId?: string | null,
 ): Promise<CommandResponse> {
-  if (USE_MOCK) return mock.command(transcript, promptId ?? null);
+  if (isMock()) return mock.command(transcript, promptId ?? null);
   return request('/v1/command', json({ transcript, confidence, prompt_id: promptId ?? undefined }));
 }
 
 export function getCart(): Promise<Cart> {
-  if (USE_MOCK) return mock.getCart();
+  if (isMock()) return mock.getCart();
   return request('/v1/cart');
 }
 
 export function addCartItem(scanId: string, cardId: string, promptId: string): Promise<CartResponse> {
-  if (USE_MOCK) return mock.addCartItem(scanId, cardId, promptId);
+  if (isMock()) return mock.addCartItem(scanId, cardId, promptId);
   return request('/v1/cart/items', json({ scan_id: scanId, card_id: cardId, prompt_id: promptId }));
 }
 
 export function removeLastCartItem(): Promise<CartResponse> {
-  if (USE_MOCK) return mock.removeLastCartItem();
+  if (isMock()) return mock.removeLastCartItem();
   return request('/v1/cart/items/last', { method: 'DELETE' });
 }
 
 export function clearCart(promptId: string): Promise<CartResponse> {
-  if (USE_MOCK) return mock.clearCart(promptId);
+  if (isMock()) return mock.clearCart(promptId);
   return request('/v1/cart', { ...json({ prompt_id: promptId }), method: 'DELETE' });
 }
 
 export function getCards(): Promise<Card[]> {
-  if (USE_MOCK) return mock.getCards();
+  if (isMock()) return mock.getCards();
   return request('/v1/cards');
 }
 
 export function checkoutPreview(): Promise<CheckoutPreview> {
-  if (USE_MOCK) return mock.checkoutPreview();
+  if (isMock()) return mock.checkoutPreview();
   return request('/v1/checkout/preview', { method: 'POST' });
 }
 
@@ -445,7 +454,7 @@ export function checkoutConfirm(
   promptId: string,
   useProposedSplit = true,
 ): Promise<CheckoutResult> {
-  if (USE_MOCK) return mock.checkoutConfirm(idempotencyKey, promptId, useProposedSplit);
+  if (isMock()) return mock.checkoutConfirm(idempotencyKey, promptId, useProposedSplit);
   return request(
     '/v1/checkout/confirm',
     json({ idempotency_key: idempotencyKey, prompt_id: promptId, use_proposed_split: useProposedSplit }),
@@ -461,13 +470,13 @@ export function reissuePrompt(
   scanId: string,
   scope: ResponseScope,
 ): Promise<{ prompt_id: string; expires_in_s: number }> {
-  if (USE_MOCK) return mock.reissuePrompt(scanId, scope);
+  if (isMock()) return mock.reissuePrompt(scanId, scope);
   return request('/v1/prompts/reissue', json({ scan_id: scanId, scope }));
 }
 
 /** PROPOSED: read an insurance or payment card held up to the camera. */
 export function scanCard(imageUri: string, kind: CardScanKind): Promise<CardScanResult> {
-  if (USE_MOCK) return mock.scanCard(kind);
+  if (isMock()) return mock.scanCard(kind);
   const form = new FormData();
   form.append('image', { uri: imageUri, name: 'card.jpg', type: 'image/jpeg' } as any);
   form.append('kind', kind);
@@ -476,11 +485,11 @@ export function scanCard(imageUri: string, kind: CardScanKind): Promise<CardScan
 
 /** PROPOSED: link a card confirmed during onboarding. */
 export function linkCard(body: LinkCardRequest): Promise<Card> {
-  if (USE_MOCK) return mock.linkCard(body);
+  if (isMock()) return mock.linkCard(body);
   return request('/v1/cards', json(body));
 }
 
 export function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
-  if (USE_MOCK) return mock.resetDemo(run);
+  if (isMock()) return mock.resetDemo(run);
   return request('/v1/demo/reset', json({ run }));
 }

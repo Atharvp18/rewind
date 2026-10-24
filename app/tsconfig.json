@@ -9,12 +9,16 @@
       "@/assets/*": [
         "./assets/*"
       ]
-    }
+    },
+    "types": [
+      "jest",
+      "node"
+    ]
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".expo/types/**/*.ts",
+    "__tests__/.expo/types/**/*.ts",
     "expo-env.d.ts"
   ]
 }

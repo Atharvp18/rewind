@@ -92,7 +92,7 @@ export interface AgentState {
   micDenied: boolean;
 }
 
-type Action =
+export type Action =
   | { type: 'listen' }
   | { type: 'capture' }
   | { type: 'scan_sent' }
@@ -129,7 +129,7 @@ const TRANSCRIPT_MAX = 30;
 const pushLine = (t: TranscriptLine[], line: TranscriptLine) =>
   t[t.length - 1]?.id === line.id ? t : [...t, line].slice(-TRANSCRIPT_MAX);
 
-const initial: AgentState = {
+export const initial: AgentState = {
   phase: 'idle',
   view: 'camera',
   transcript: [],
@@ -148,7 +148,7 @@ const initial: AgentState = {
   micDenied: false,
 };
 
-function reducer(s: AgentState, a: Action): AgentState {
+export function reducer(s: AgentState, a: Action): AgentState {
   switch (a.type) {
     case 'listen':
       return { ...s, phase: 'listening' };

@@ -604,6 +604,7 @@ export async function checkoutConfirm(
 
 export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
   state.cards = seedCards(run);
+  state.lastVoice = null; // a reset is a fresh start: "repeat that" must not replay the last session
   state.items = [];
   state.scanIndex = 0;
   state.scans.clear();
@@ -613,7 +614,12 @@ export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart
   return { cards: await getCards(), cart: buildCart() };
 }
 
-const has = (t: string, ...words: string[]) => words.some((w) => t.includes(w));
+/**
+ * Whole words and phrases only (tech spec 3.8: a deterministic keyword matcher).
+ * "no" must not match "know" or "now", and "cart" must not match "carton".
+ */
+const has = (t: string, ...phrases: string[]) =>
+  phrases.some((p) => new RegExp(`(^|[^a-z])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(t));
 
 export async function command(transcript: string, promptId: string | null): Promise<CommandResponse> {
   await wait(400);
@@ -691,3 +697,14 @@ export async function command(transcript: string, promptId: string | null): Prom
     voice: voice("I didn't catch that. You can say add that, skip it, or checkout."),
   };
 }
+
+
+/** Test seam: arrange states the demo script cannot reach on its own. Never used by the app. */
+export const __testing = {
+  setBalance(id: string, cents: number) {
+    card(id).balance_cents = cents;
+  },
+  setStatus(id: string, status: Card['status']) {
+    card(id).status = status;
+  },
+};
