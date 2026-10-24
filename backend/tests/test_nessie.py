@@ -224,3 +224,59 @@ def test_seed_links_the_cards_to_nessie_accounts_from_the_environment(monkeypatc
     monkeypatch.setenv("NESSIE_VISA_ACCOUNT_ID", "acc-visa")
     linked = {c["id"]: c["nessie_account_id"] for c in seed.cards_for_run(2)}
     assert linked == {"card_hsa_1": "acc-hsa", "card_fsa_1": "acc-fsa", "card_visa_1": "acc-visa"}
+
+
+# --- payment log ---------------------------------------------------------------------------------------
+
+class Recorder:
+    """Serves POST /accounts/{id}/withdrawals and remembers what was sent."""
+
+    def __init__(self, status=201, error=None):
+        self.status, self.error, self.requests = status, error, []
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        if self.error:
+            raise self.error
+        self.requests.append(request)
+        return httpx.Response(self.status, json={"code": self.status, "message": "Withdrawal created"})
+
+
+ENTRIES = [{"account_id": "acc-fsa", "amount_cents": 1848, "description": "Rewind simulated checkout p1"},
+           {"account_id": "acc-visa", "amount_cents": 499, "description": "Rewind simulated checkout p1"}]
+
+
+async def test_log_withdrawals_posts_one_completed_withdrawal_per_card(env):
+    rec = Recorder()
+    env.setattr(nessie, "_transport", httpx.MockTransport(rec))
+    assert await nessie.log_withdrawals(ENTRIES) == [True, True]
+    by_path = {r.url.path: r for r in rec.requests}
+    assert set(by_path) == {"/accounts/acc-fsa/withdrawals", "/accounts/acc-visa/withdrawals"}
+    request = by_path["/accounts/acc-fsa/withdrawals"]
+    assert request.method == "POST" and request.url.params["key"] == KEY
+    import json
+    body = json.loads(request.content)
+    assert body == {"medium": "balance", "transaction_date": body["transaction_date"], "status": "completed",
+                    "amount": 1848, "description": "Rewind simulated checkout p1"}
+    assert isinstance(body["amount"], int) and len(body["transaction_date"]) == 10
+
+
+@pytest.mark.parametrize("rec", [Recorder(status=500), Recorder(status=403), Recorder(error=httpx.ConnectTimeout("t")),
+                                 Recorder(error=RuntimeError("boom"))])
+async def test_a_failed_log_write_never_raises(env, rec):
+    env.setattr(nessie, "_transport", httpx.MockTransport(rec))
+    assert await nessie.log_withdrawals(ENTRIES) == [False, False]
+
+
+async def test_nothing_to_log_or_no_key_sends_nothing(env):
+    rec = Recorder()
+    env.setattr(nessie, "_transport", httpx.MockTransport(rec))
+    assert await nessie.log_withdrawals([]) == []
+    env.delenv("NESSIE_API_KEY")
+    assert await nessie.log_withdrawals(ENTRIES) == [] and rec.requests == []
+
+
+async def test_the_key_never_reaches_the_logs_when_logging_fails(env, caplog):
+    caplog.set_level(logging.DEBUG)
+    env.setattr(nessie, "_transport", httpx.MockTransport(Recorder(status=500)))
+    await nessie.log_withdrawals(ENTRIES)
+    assert KEY not in caplog.text

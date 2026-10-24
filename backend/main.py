@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from api import health, voice
+from api import cart, checkout, command, demo, health, scan, voice
 from api.envelope import register_error_handlers
 
 load_dotenv()
@@ -38,6 +38,8 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(voice.router)
+    for module in (scan, cart, checkout, command, demo):
+        app.include_router(module.router)
     return app
 
 

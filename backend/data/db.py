@@ -234,6 +234,12 @@ def remove_last_cart_item() -> dict:
     return get_cart()
 
 
+def pop_last_cart_item() -> tuple[dict | None, dict]:
+    """Remove the most recently added item. Returns (the removed row or None, the updated cart)."""
+    removed = _rpc("remove_last_cart_item", {})
+    return (removed or None), get_cart()
+
+
 def clear_cart() -> None:
     _call(lambda: _sb().table("cart_items").delete().neq("id", "").execute())
 
@@ -257,6 +263,19 @@ def consume_prompt(prompt_id: str, expected_scope: str) -> dict:
 
 
 # --- checkout and reset (atomic, in Postgres) ---------------------------------------------
+
+def get_payment(idempotency_key: str) -> dict | None:
+    """The payment already recorded for this key, in confirm_checkout's return shape, or None."""
+    rows = _call(lambda: _sb().table("payments").select("*")
+                 .eq("idempotency_key", idempotency_key).limit(1).execute()).data
+    if not rows:
+        return None
+    row = rows[0]
+    balances = [{"id": c["id"], "nickname": c["nickname"], "balance_cents": c["balance_cents"]}
+                for c in get_cards()]
+    return {"payment_id": row["payment_id"], "total_cents": row["total_cents"],
+            "splits": row["splits_json"], "new_balances": balances, "replayed": True}
+
 
 def confirm_checkout(idempotency_key: str, splits: list[dict]) -> dict:
     """Simulated payment. splits = [{"card_id": ..., "amount_cents": ...}].
