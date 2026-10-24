@@ -1,0 +1,8 @@
+# Required by tech spec 0.3
+.env
+node_modules/
+.venv/
+audio_tmp/
+
+# Personal Claude Code permissions (shared settings live in .claude/settings.json)
+.claude/settings.local.json
