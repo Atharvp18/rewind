@@ -1,0 +1,321 @@
+import { StyleSheet, View } from 'react-native';
+
+import { AppText } from '@/components/app-text';
+import { BigButton } from '@/components/big-button';
+import { CardGroupView } from '@/components/card-group';
+import { EligibilityBadge } from '@/components/eligibility-badge';
+import { InfoPanel, PanelText } from '@/components/info-panel';
+import { Radius, Spacing } from '@/constants/theme';
+import { useA11y } from '@/lib/a11y';
+import type { Card, PaymentRecommendation, ScanResponse } from '@/lib/api';
+import { centsForScreenReader, formatCents } from '@/lib/money';
+import { Phrases } from '@/lib/phrases';
+import { useAgent } from '@/state/agent';
+
+/**
+ * Frame 3: what the see-through panel shows after onboarding, most urgent
+ * first. Nothing when there is nothing to show, so the camera stays clear.
+ */
+export function HomePanels() {
+  const { state } = useAgent();
+  if (state.declined) return <DeclinedPanel message={state.declined} />;
+  if (state.receipt) return <ReceiptPanel />;
+  if (state.view === 'checkout') return <CheckoutPanel />;
+  if (state.view === 'cart') return <CartPanel />;
+  if (state.lastScan && state.phase !== 'awaiting_scan' && state.phase !== 'capturing') {
+    return <ScanPanel res={state.lastScan} />;
+  }
+  return null;
+}
+
+const cardById = (cards: Card[], id: string | null | undefined) => cards.find((c) => c.id === id);
+
+// ---------------------------------------------------------------------------
+// Scan result
+// ---------------------------------------------------------------------------
+
+function ScanPanel({ res }: { res: ScanResponse }) {
+  const { state, addToCart, skip, answer } = useAgent();
+  const { product, eligibility } = res.scan;
+  const rec = res.recommendation;
+  const live = state.livePrompt?.id === res.voice.prompt_id ? state.livePrompt : null;
+
+  if (res.scan.state === 'unresolved') {
+    return (
+      <InfoPanel title="Could not confirm this item">
+        <PanelText>Try another angle, or tap Talk and say what it is.</PanelText>
+        <BigButton label="Scan again" icon="↻" variant="accent" size="primary" onPress={skip} />
+      </InfoPanel>
+    );
+  }
+
+  // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
+  if (res.voice.response_scope === 'confirm_strength') {
+    return (
+      <InfoPanel title="Is this right?" label="Prescription label read-back">
+        <PanelText kind="small" muted>
+          From the bottle label
+        </PanelText>
+        <PanelText kind="heading">{product.name}</PanelText>
+        {product.size ? <PanelText kind="display">{product.size}</PanelText> : null}
+        <View style={styles.buttons}>
+          <BigButton label="Yes, that's right" icon="✓" variant="accent" size="primary" disabled={!live} onPress={() => answer('yes')} />
+          <BigButton label="No" icon="✕" onPress={() => answer('no')} />
+        </View>
+        <PanelText kind="small" muted>
+          Rewind can’t give medical advice. Please ask the pharmacist about dosage or safety.
+        </PanelText>
+      </InfoPanel>
+    );
+  }
+
+  return (
+    <InfoPanel title={product.name}>
+      {product.amount_cents != null ? (
+        <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
+          <PanelText kind="display">{formatCents(product.amount_cents)}</PanelText>
+        </View>
+      ) : (
+        <PanelText kind="heading">⚠ Price not found. Point at the shelf tag, or say the price.</PanelText>
+      )}
+      <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
+      {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
+      {rec ? (
+        <Actions rec={rec} cards={state.cards} enabled={live?.scope === 'confirm_add'} onAdd={addToCart} onSkip={skip} />
+      ) : null}
+      {rec && rec.decision !== 'blocked' && live?.scope !== 'confirm_add' ? (
+        <PanelText kind="small" muted>
+          The question timed out. Tap the caption at the top to hear it again, or scan again.
+        </PanelText>
+      ) : null}
+    </InfoPanel>
+  );
+}
+
+function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Card[] }) {
+  const card = cardById(cards, rec.card_id);
+  if (rec.decision === 'route_to_hsa' || rec.decision === 'route_to_general') {
+    return (
+      <PanelText>
+        {`Pays with: ${card?.nickname ?? 'card'}`}
+        {rec.balance_before_cents != null && card?.type !== 'general'
+          ? ` (balance ${formatCents(rec.balance_before_cents)})`
+          : ''}
+      </PanelText>
+    );
+  }
+  if (rec.decision === 'blocked') {
+    return <PanelText kind="label">⚠ This item can’t be added. Listen to Rewind for what to do next.</PanelText>;
+  }
+  if (rec.reroute) {
+    const from = cardById(cards, rec.reroute.from_card_id);
+    return (
+      <PanelText kind="label">
+        {`⚠ Your ${from?.nickname ?? 'HSA card'} balance${
+          rec.balance_before_cents != null ? ` of ${formatCents(rec.balance_before_cents)}` : ''
+        } does not cover this item.`}
+      </PanelText>
+    );
+  }
+  return <PanelText>Which card would you like to use?</PanelText>;
+}
+
+function Actions({
+  rec,
+  cards,
+  enabled,
+  onAdd,
+  onSkip,
+}: {
+  rec: PaymentRecommendation;
+  cards: Card[];
+  enabled: boolean;
+  onAdd: (cardId: string) => void;
+  onSkip: () => void;
+}) {
+  if (rec.decision === 'blocked') {
+    return <BigButton label="OK" variant="accent" size="primary" onPress={onSkip} />;
+  }
+  const options =
+    rec.decision === 'ask_user'
+      ? rec.card_options.length
+        ? rec.card_options
+        : rec.reroute
+          ? [rec.reroute.to_card_id]
+          : []
+      : rec.card_id
+        ? [rec.card_id]
+        : [];
+  return (
+    <View style={styles.buttons}>
+      {options.map((id) => (
+        <BigButton
+          key={id}
+          label={rec.decision === 'ask_user' ? `Use ${cardById(cards, id)?.nickname ?? 'this card'}` : 'Add to cart'}
+          icon="✓"
+          variant="accent"
+          size="primary"
+          disabled={!enabled}
+          onPress={() => onAdd(id)}
+        />
+      ))}
+      <BigButton label="Skip" icon="✕" onPress={onSkip} />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cart
+// ---------------------------------------------------------------------------
+
+function CartPanel() {
+  const { state, startCheckout, removeLast, askClearCart, confirmClearCart, dismiss } = useAgent();
+  const { cart } = state;
+  const clearPending = state.livePrompt?.scope === 'confirm_clear_cart';
+
+  if (!cart.groups.length) {
+    return (
+      <InfoPanel title="Your cart is empty">
+        <PanelText>Point your phone at a product and tap anywhere to scan.</PanelText>
+        <BigButton label="Close" onPress={dismiss} />
+      </InfoPanel>
+    );
+  }
+  return (
+    <InfoPanel title="Your cart">
+      {cart.groups.map((g) => (
+        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} />
+      ))}
+      <View accessible accessibilityLabel={`Total ${centsForScreenReader(cart.total_cents)}, before tax`}>
+        <PanelText kind="label">Total, before tax</PanelText>
+        <PanelText kind="display">{formatCents(cart.total_cents)}</PanelText>
+      </View>
+      <View style={styles.buttons}>
+        <BigButton label="Checkout" icon="→" variant="accent" size="primary" onPress={startCheckout} />
+        <BigButton label="Remove last item" icon="↩" onPress={removeLast} />
+        {clearPending ? (
+          // Destructive: the second tap confirms, bound to the live confirm_clear_cart prompt.
+          <BigButton label="Yes, clear everything" icon="⚠" variant="danger" onPress={confirmClearCart} />
+        ) : (
+          <BigButton label="Clear cart" icon="🗑" variant="danger" onPress={askClearCart} />
+        )}
+        <BigButton label="Close" onPress={dismiss} />
+      </View>
+    </InfoPanel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checkout, receipt, decline
+// ---------------------------------------------------------------------------
+
+function CheckoutPanel() {
+  const { palette } = useA11y();
+  const { state, confirmCheckout, startCheckout, showView } = useAgent();
+  const { preview } = state;
+  const busy = state.phase === 'submitting';
+
+  if (!preview) {
+    return (
+      <InfoPanel title="Checkout">
+        <PanelText>Getting your split…</PanelText>
+      </InfoPanel>
+    );
+  }
+  if (!preview.groups.length) {
+    return (
+      <InfoPanel title="Your cart is empty">
+        <BigButton label="Close" onPress={() => showView('camera')} />
+      </InfoPanel>
+    );
+  }
+
+  const live = !!preview.voice.prompt_id && state.livePrompt?.id === preview.voice.prompt_id;
+  const reroute = preview.issues.length > 0;
+
+  return (
+    <InfoPanel title="Checkout">
+      {preview.issues.map((issue) => (
+        <View
+          key={issue.rule + issue.message}
+          accessibilityRole="alert"
+          style={[styles.issue, { borderColor: palette.danger, backgroundColor: palette.dangerBg }]}>
+          <AppText kind="label" color="danger">
+            ⚠ Card change suggested
+          </AppText>
+          <AppText kind="body">{issue.message}</AppText>
+        </View>
+      ))}
+      {preview.groups.map((g) => (
+        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} />
+      ))}
+      <View accessible accessibilityLabel={`Total ${centsForScreenReader(preview.total_cents)}, before tax`}>
+        <PanelText kind="label">Total, before tax</PanelText>
+        <PanelText kind="display">{formatCents(preview.total_cents)}</PanelText>
+      </View>
+      <PanelText kind="small" muted>
+        This is a simulated payment. No real card is charged.
+      </PanelText>
+      {!live ? (
+        <BigButton label="Read the split again" icon="↻" variant="accent" size="primary" onPress={startCheckout} />
+      ) : reroute ? (
+        <View style={styles.buttons}>
+          <BigButton label="Yes, move the items" icon="✓" variant="accent" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
+          <BigButton label="No, keep my cards" disabled={busy} onPress={() => confirmCheckout(false)} />
+        </View>
+      ) : (
+        <View style={styles.buttons}>
+          <BigButton label="Confirm payment" icon="✓" variant="accent" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
+          <BigButton label="Not now" onPress={() => showView('cart')} />
+        </View>
+      )}
+    </InfoPanel>
+  );
+}
+
+function ReceiptPanel() {
+  const { palette } = useA11y();
+  const { state, dismiss } = useAgent();
+  const receipt = state.receipt!;
+  return (
+    <InfoPanel title="Payment complete">
+      <View style={[styles.done, { backgroundColor: palette.eligibleBg, borderColor: palette.eligible }]}>
+        <AppText kind="display" color="eligible" accessible={false}>
+          ✓
+        </AppText>
+        <AppText kind="small" color="text">
+          This was a simulated payment.
+        </AppText>
+      </View>
+      <PanelText kind="heading">New balances</PanelText>
+      {receipt.new_balances.map((b) => (
+        <View key={b.card_id} style={styles.balance}>
+          <PanelText>{cardById(state.cards, b.card_id)?.nickname ?? b.card_id}</PanelText>
+          <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
+        </View>
+      ))}
+      <BigButton label="Done" variant="accent" size="primary" onPress={dismiss} />
+    </InfoPanel>
+  );
+}
+
+/** Declined simulated payment: buzz, red panel, and the same words spoken. Never color alone. */
+function DeclinedPanel({ message }: { message: string }) {
+  const { startCheckout, showView } = useAgent();
+  return (
+    <InfoPanel title={Phrases.declinedTitle} tone="danger">
+      <PanelText kind="label">{message}</PanelText>
+      <View style={styles.buttons}>
+        <BigButton label="Move items to another card" icon="→" variant="accent" size="primary" onPress={startCheckout} />
+        <BigButton label="Back to cart" onPress={() => showView('cart')} />
+      </View>
+    </InfoPanel>
+  );
+}
+
+const styles = StyleSheet.create({
+  buttons: { gap: Spacing.md },
+  issue: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.sm },
+  done: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, alignItems: 'center', gap: Spacing.xs },
+  balance: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.sm },
+});

@@ -241,6 +241,10 @@ export interface AgentApi {
   confirmCheckout: (useProposedSplit?: boolean) => Promise<void>;
   resetDemo: (run: 1 | 2) => Promise<void>;
   showView: (view: PanelView) => void;
+  /** Tap equivalent of saying something (e.g. "yes" to a strength read-back); goes through /v1/command. */
+  answer: (text: string) => Promise<void>;
+  /** Close the current panel and return to the plain camera. */
+  dismiss: () => void;
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
 }
 
@@ -324,7 +328,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const handleError = useCallback(
     (e: unknown) => {
       dispatch({ type: 'error' });
-      haptic.error();
       if (e instanceof ApiError && e.code === E_CARD_DECLINED) {
         dispatch({ type: 'declined', message: e.speech });
         dispatch({ type: 'preview', preview: null });
@@ -333,7 +336,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
       // The envelope's speech is always safe to speak (0.6). Without one the
       // backend was unreachable, so the app supplies the line.
-      say(localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline));
+      const declined = e instanceof ApiError && e.code === E_CARD_DECLINED;
+      // Alerts buzz inside say(); other errors buzz here. One buzz either way.
+      if (!declined) haptic.error();
+      say(localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline, declined ? 'alert' : 'normal'));
     },
     [say],
   );
@@ -725,9 +731,21 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'view', view });
   }, [refreshCart]);
 
+  const answer = useCallback((text: string) => sendTranscript(text, 1), [sendTranscript]);
+
+  const dismiss = useCallback(() => {
+    dispatch({ type: 'receipt', receipt: null });
+    dispatch({ type: 'declined', message: null });
+    dispatch({ type: 'preview', preview: null });
+    dispatch({ type: 'clear_scan' });
+    dispatch({ type: 'view', view: 'camera' });
+  }, []);
+
   const value = useMemo<AgentApi>(
     () => ({
       showView,
+      answer,
+      dismiss,
       state,
       talkTap,
       talkHoldStart,
@@ -751,7 +769,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal, showView,
+      confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
     ],
   );
 

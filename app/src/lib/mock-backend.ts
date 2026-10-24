@@ -458,7 +458,7 @@ export async function checkoutConfirm(
     throw new ApiError({
       code: 'E_CARD_DECLINED',
       message: `simulated decline on ${c.id}`,
-      speech: `Your ${nickname} was declined. The balance is ${formatCents(c.balance_cents)} and these items total ${formatCents(over.subtotal_cents)}. Nothing was charged. Want me to move some items to another card?`,
+      speech: `Your ${nickname} was declined. The balance is ${formatCents(c.balance_cents)} and these items total ${formatCents(over.subtotal_cents)}. Nothing was charged. Say checkout, or tap Move items, to choose another card.`,
       retryable: false,
     });
   }

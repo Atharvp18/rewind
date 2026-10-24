@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { HealthBanner } from '@/components/health-banner';
+import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
 import { TranscriptPill } from '@/components/transcript-pill';
@@ -100,7 +101,9 @@ export default function Home() {
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
             />
-          ) : null}
+          ) : (
+            <HomePanels />
+          )}
         </View>
       </SafeAreaView>
 
