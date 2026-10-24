@@ -89,6 +89,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Anthropic, Claude for Public Benefit | Main track | Winner receives $5,000 in Claude credits, 1 year of Claude Max 20x, and office hours |
 | Cartesia | Strong | Voice in and out |
 | Moss | Strong | Eligibility lookup and session recall |
+| Apify | Selected | Offline eligibility data collection only (section 24). Confirm the track rules, and whether collecting the data is allowed, at the booth |
 | Visa, Reimagining Shopping | Strong | $5,000 prize. Card routing and simulated checkout |
 | Capital One, Best Use of Nessie | Strong | Mock accounts and balances |
 | Microsoft, Built for the Real World | Plausible | Accessibility and real-world users |
@@ -114,7 +115,7 @@ Apify, Best Use of Apify	Strong	$5,000 total across 5 places. Scrapes fsastore.c
 - Expo shell with camera and mic
 - Voice loop: Cartesia Ink, Claude, Cartesia Sonic
 - Claude vision returning structured product JSON
-- Product lookup and eligibility classification (section 19). Moss holds the eligibility rules. No hand-built product catalog
+- Product lookup and eligibility classification (section 19). Moss holds an eligibility index built offline from retailer-listed data and IRS category rules (section 24). No hand-built product catalog
 - Cart, card routing, and reroute logic
 - Simulated checkout and a seeded database
 
@@ -138,6 +139,7 @@ Apify, Best Use of Apify	Strong	$5,000 total across 5 places. Scrapes fsastore.c
 
 - Three-agent Fetch.ai Bureau as the default backend (use plain Python functions; Fetch.ai only as an optional add-on)
 - Any hand-built product catalog (products are read at the shelf and looked up live where a retailer source exists; see section 19)
+- Scraping during a live scan. Apify runs only before the demo (section 24)
 - Five insurers (build two, list the others as planned)
 - Coupon payment methods
 - True 3D AR (needs ViroReact, which does not run in Expo Go)
@@ -168,7 +170,7 @@ Apify, Best Use of Apify	Strong	$5,000 total across 5 places. Scrapes fsastore.c
 The agent does not say "this may be eligible." It researches the item first, then states a result and its confidence, or says it could not confirm.
 
 1. Claude vision reads the package and shelf tag for an HSA/FSA eligibility marking, and for the product name, brand, size, and category
-2. The backend checks the category and product against the eligibility rules in Moss (source not yet chosen, section 17 item 2)
+2. The backend checks the category and product against the eligibility index in Moss (section 24): exact UPC match first, then the closest match above a minimum score, then IRS category rules
 3. The two results are compared. If they agree, the app states "HSA eligible" or "is not HSA eligible" with a confidence level
 4. If they disagree, or either step is unclear, the app does not guess. It says "I could not confirm eligibility" and asks which card to use (third label, section 17 item 5)
 5. The user hears the result, and the item joins the cart only after the user confirms
@@ -295,6 +297,7 @@ Owners are listed per layer and follow the ownership split in section 11. Owner 
 | Speech to text | Cartesia Ink, streaming | Nak | Idle WebSocket closes after 3 min (secondary source); build reconnect |
 | Text to speech | Cartesia Sonic, streaming | Nak | Start speaking before the reply is complete |
 | Retrieval | Moss | Tiea | Python SDK is `moss` (import `from moss import MossClient`); JS SDK is `@moss-js/moss` (Moss quickstart). Call from the backend, not the phone. Credentials: `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY` |
+| Eligibility data | Apify, run offline before the demo; results stored in the backend and loaded into a Moss index | Tiea | Section 24. Not part of the live scan path. Retailer-listed data, not a certified list |
 | Product lookup | Shelf tag via vision, barcode, local cache, then retailer lookup where one exists | Tiea (lookup), Atharv (cache) | See section 19. Walmart has a documented lookup; Walgreens and CVS have no official public API found (secondary source) |
 | Account data | Nessie mock accounts | Atharv | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
 | Database | Supabase (primary), SQLite (backup) | Atharv | One backend setting switches between them |
@@ -470,7 +473,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | 6 | Polish: accessibility button and settings, captions, framing guidance, demo rehearsal | |
 | 7 | Stretch items, only if the steps above are reliable | |
 
-**Cut order if time runs short:** community → overlay → tax check → payment history → insurer branches → Moss session recall
+**Cut order if time runs short:** scraped eligibility index (fall back to category rules, section 24.8) → community → overlay → tax check → payment history → insurer branches → Moss session recall
 
 ---
 
@@ -489,6 +492,8 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | Venue network | Cartesia, Claude, and possibly Moss need internet |
 | Team capacity | With three owners, Tiea carries Claude vision, product lookup, Moss, eligibility data, and the optional Fetch.ai work, and Nak carries the voice loop, screens, and accessibility work |
 | Product lookup coverage | No official public product API was found for Walgreens or CVS, and the Walmart API's portal status is unverified (secondary sources). Automated lookups may also breach retailer terms (unverified). The shelf tag is therefore the primary price source (section 19) |
+| Scraped eligibility data | Retailer badges are the retailer's claim, not a certified list. The SIGIS Eligible Product List is members-only and its license bars apps from using it to identify eligible products (section 23.3). Walmart's terms reportedly require written consent for automated collection (secondary source). Keep the volume small, check terms first, and call the data "retailer-listed" (section 24) |
+| Eligibility coverage | The index covers only products found during the pre-fetch. Many shelf items will return "I could not confirm eligibility" (section 24) |
 | Store Expo Go update | The App Store Expo Go supports SDK 57 today and is expected to move to SDK 58 within weeks (Expo SDK 58 post). Do not update Expo Go on the demo phone, or the SDK 57 app will stop opening (section 21) |
 
 ---
@@ -521,7 +526,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 Only decisions the team has not covered that affect the build or the pitch. Resolved items, naming, and team assignments are not listed here.
 
 1. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which is correct and align every section
-2. **Eligibility source.** No documented source has been chosen for the eligibility rules, and the assumption that eligible items are marked publicly on Walmart and Amazon listings has no cited source (section 23.2). Items 3 and 4 depend on this
+2. **Eligibility source.** Section 24 proposes retailer-listed data collected with Apify before the demo, plus IRS category rules. It is not certified. Decide whether the team accepts the legal and coverage risk, and whether the track allows it. Items 3 and 4 depend on this
 3. **Medication eligibility stated plainly.** Section 6.2 has the agent state eligibility without a confidence number for exact matches, because medication eligibility is published online. That claim is unverified. Decide the source that backs it and what happens when the exact product is not listed
 4. **Certified source for copays.** Section 20.5 requires a certified source to confirm that the remaining charge after a copay can be paid from an HSA/FSA. Choose it (the plan administrator's rules, the IIAS eligible item list, or the IRS publications). Section 20.5 proposes that the app never defaults to the HSA/FSA when the source is unavailable
 5. **Third eligibility label.** Sections 6.2 and 6.5 define two labels. Section 20 uses a third, "I could not confirm eligibility." Approve it
@@ -535,6 +540,7 @@ Only decisions the team has not covered that affect the build or the pitch. Reso
 13. **Screen reader overlap.** With VoiceOver or TalkBack on, the app's voice and the screen reader can speak at once. Decide whether the app mutes its own speech or uses screen reader announcements
 14. **Camera frame retention.** Section 20 proposes that frames are not stored after processing. Confirm
 15. **Weighted and produce items.** Section 20 proposes they are out of scope for v1. Confirm
+16. **Permission to collect the data.** Check each retailer's current terms and robots.txt before collecting anything (section 24.4). If a retailer does not allow it, use only the demo items, entered by hand from their public pages, or drop that source
 
 ---
 
@@ -568,7 +574,7 @@ The team decided that products are not pre-loaded into a catalog. Every product 
 2. If a barcode is present, use it as the key. Otherwise build a normalized key from brand, name, and size
 3. Check the cache. A hit returns instantly
 4. On a cache miss, run the retailer lookups that are enabled, in parallel, with a hard timeout (proposed 2 seconds, estimate). A slow or failed lookup is skipped, never waited on
-5. Classify eligibility with Moss, using category and product name against the eligibility rules (source not yet chosen, section 17 item 2)
+5. Classify eligibility with Moss, using category and product name against the eligibility index and category rules (section 24)
 6. Write the result to the cache with its source label
 7. Speak the result. Speak what is known first. If a retailer result arrives later, offer it only if it changes the answer
 
@@ -580,6 +586,7 @@ The team decided that products are not pre-loaded into a catalog. Every product 
 - **Never block the first spoken answer on a retailer lookup.** The 3-second goal in section 7.4 depends on this
 - **Terms of service.** Before any automated lookup of a retailer site, check that retailer's terms (unverified). Do not scrape behind a login. Do not describe an unofficial route to judges as an integration
 - **Disclosure for the demo.** The three demo shelf items (Advil, bandages, kettle corn) are pre-resolved in the cache so the demo cannot fail on a blocked lookup. The app still runs the real pipeline. Tell judges the demo items are pre-cached
+- **Eligibility data is separate.** Section 24 describes the eligibility index, which is built offline. Nothing in this section scrapes during a scan
 
 ### 19.4 Result states
 
@@ -676,6 +683,8 @@ No list can cover every possible scenario. This is the known set. When the team 
 Applies when the selected insurer profile covers the medication. The insurer's share is never routed to an HSA/FSA, because only the part not compensated by insurance can be a qualified expense (IRS Pub 969 and Pub 502, section 23.2). If there is a copay, the remaining amount the user pays may go to the HSA/FSA only after it is confirmed with a certified source.
 
 **Certified source (definition, to be chosen):** a source that carries authority for the question "can this out-of-pocket amount be paid from an HSA/FSA?" Candidates: the user's plan administrator's published eligibility rules, the IIAS-certified eligible item list (section 23.3), or the IRS publications cited in section 23. The team has not chosen which one the app uses (open item 4). The app does not claim certification itself.
+
+The scraped eligibility index (section 24) is not a certified source. It can support the "HSA eligible" label for a product, but it cannot confirm that the remainder after a copay is payable from an HSA/FSA. Until a certified source is chosen (item 4), the copay path ends with "I could not confirm that your HSA or FSA can pay the remaining charge."
 
 | Scenario | Expected behavior |
 |---|---|
@@ -795,6 +804,7 @@ Checked on the lead machine on 2026-10-23 and 2026-10-24 in a throwaway director
 | Create command | `npx create-expo-app@latest app --template default@sdk-57` | [create-expo docs](https://docs.expo.dev/more/create-expo/) |
 | Expo packages (resolved by `npx expo install`) | expo-camera 57.0.6, expo-audio 57.0.5, expo-sqlite 57.0.4 | Verified |
 | Python packages | anthropic 2.1.0, cartesia 4.2.0, supabase 2.33.0, fastapi 0.161.1, uvicorn 0.54.0, pydantic 2.14.1, httpx 0.28.1, pytest 9.1.1, uagents 0.26.1, uagents-adapter 0.6.2, moss 1.21.0 | Verified on 3.12 and 3.13 |
+| Apify client | `apify-client` 3.3.0, requires Python 3.11 or newer | Verified from PyPI metadata |
 | Audio package | `expo-audio` (recording, and raw PCM microphone capture through `useAudioStream`) | [expo-audio docs](https://docs.expo.dev/versions/latest/sdk/audio/) |
 | Cartesia JS SDK | `@cartesia/cartesia-js` exists for Node and browsers. React Native is not mentioned. The app does not use it (relay through the backend) | [Cartesia client libraries](https://docs.cartesia.ai/tools/client-libraries) |
 | ViroReact | Not installed and not needed | Verified |
@@ -831,6 +841,7 @@ Keys live in a gitignored `.env` in `backend/`. The app holds none.
 | Nessie | not looked up | Confirm at the Capital One booth |
 | Supabase | URL and key | Only if Supabase is kept; service key stays on the backend |
 | Walmart (optional) | key name unknown | Only if the Walmart lookup is built |
+| Apify | `APIFY_TOKEN` | Used only by the offline pre-fetch. Variable name is the common convention; confirm in Apify's docs (unverified). Stays in the backend `.env` |
 
 Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visible to anyone who has it (check the Expo environment variable docs, unverified). Never use them for secrets.
 
@@ -854,7 +865,7 @@ Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visib
 | Blocker | Where |
 |---|---|
 | Data policy conflict: "mock only" versus real prescriptions, receipts, and United and BlueCross insurance | Section 17 item 1 |
-| Eligibility source not chosen | Item 2 |
+| Eligibility data source and the right to collect it | Items 2 and 16 |
 | Source behind stating medication eligibility plainly | Item 3 |
 | Certified source for copay payments | Item 4 |
 | Third eligibility label ("could not confirm") | Item 5 |
@@ -873,6 +884,7 @@ Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visib
 | Voice loop | Spoken "what's in my cart" gets a spoken answer. First audio is about 3 seconds or less in most of 10 tries (estimate; measure). The connection recovers after an idle period without user action |
 | Vision JSON | 10 photos of the demo shelf return valid `ScanResult` objects. An unclear photo returns low confidence and the "could not confirm" line |
 | Lookup and eligibility | The three demo items get the right labels. An unknown item returns "could not confirm," never a guess |
+| Eligibility index | The index loads from the stored data. The three demo items get the expected labels by UPC or closest match. A non-eligible item (kettle corn) returns "not HSA eligible" or "could not confirm," never "eligible." A match below the score threshold returns "could not confirm" |
 | Cart and routing | `pytest` covers rules 1 to 3 in section 6.4 using the demo numbers ($340, $15.00, $12.99, $5.49, $4.99) |
 | Simulated checkout | Run 1 ends at $321.52. Run 2 produces the reroute in section 8. `reset_demo()` can be run twice with the same result |
 | Seeded database | Cards, balances, two insurer profiles, and the three cached demo products exist after reset |
@@ -921,6 +933,10 @@ Each row says what was checked, what the source says, and what the document shou
 | Plaid and HSA | Plaid's schema, as reproduced by Layer, puts `hsa` under the investment type. Plaid Exchange's definitions put health savings accounts under depository with a `health` subtype. The two disagree | [Layer, Plaid account](https://docs.layerfi.com/api-reference/plaid-account/plaid-account), [Plaid Exchange definitions](https://plaid.com/plaid-exchange/docs/reference/data-definitions/) | Read Plaid's current schema before any future-plan claim |
 | How the register blocks ineligible items | HSA/FSA debit cards use IIAS (Inventory Information Approval System), which compares the UPC or SKU of purchased items against an eligible list at certified merchants. Non-certified merchants rely on a merchant category code and manual receipts. Common decline causes: insufficient balance, ineligible item, or a non-IIAS merchant. Mostly employer benefit documents | [Visa, IIAS requirements](https://myanmar.visa.com/supporting-info/healthcare-card-iias-modal.html), [Vanderbilt FSA substantiation](https://hr.vanderbilt.edu/benefits/FSA_Substantiation_Requirements.pdf) | Add to the pitch honestly: at IIAS stores, ineligible items may already be blocked automatically. Rewind's value is telling the shopper before the register, and which card to use |
 | Walmart lookup | The Walmart Marketplace Item Search API (`GET /v3/items/walmart/search`, by UPC or GTIN) is documented but needs a seller token, so it is for sellers, not shoppers. The shopper-side Affiliate API is mentioned only by an unofficial wrapper | [Walmart Item Search](https://developer.walmart.com/us-marketplace/docs/item-search-for-the-walmart-catalog), [WIOpy](https://pypi.org/project/WIOpy/) | Treat Walmart lookup as likely unavailable for a hackathon. Do not plan on it |
+| SIGIS Eligible Product List | Members-only. Updated monthly. The license bars sharing it, making derivative works, and building apps that use it to identify eligible products. No API mentioned. Not used by Rewind | [SIGIS](https://sig-is.org/eligible-product-list) | Do not use or imitate it. Call Rewind's data "retailer-listed" |
+| Walmart robots.txt and terms | robots.txt disallows `/search`, `/api/`, and `/store/category/`, and does not disallow `/ip/` or most of `/cp/`. Secondary sources say the terms require written consent for automated collection and bar using site content to train AI models. The current US terms were not read directly | [Walmart robots.txt](https://www.walmart.com/robots.txt), [terms summary](https://conductatlas.com/platform/walmart/walmart-terms-of-use/prohibition-on-automated-data-scraping/) | Read the current terms before any run |
+| Apify actors and pricing | Walmart scraper actors return price, brand, category path (`breadcrumbs`), and a spec object. No actor was confirmed to return an eligibility badge. Free plan reported as $5 of usage per month; one actor lists $1 per 1,000 results | [Apify pricing](https://apify.com/pricing.md), [Apify Walmart actor](https://apify.com/fatihtahta/walmart-scraper) | Run the go/no-go test in section 24.2 |
+| Moss index creation | `create_index(name, documents, model)` with documents holding `id`, `text`, and `metadata`; `load_index` then `query` with `QueryOptions(top_k, alpha)`. No size limits stated; updating an existing index is not documented in the quickstart | [Moss quickstart](https://docs.moss.dev/docs/start/quickstart.md) | Rebuild the index instead of updating it |
 | Walgreens and CVS | No official public product API found for either retailer | None found | Keep out of the build |
 
 ### 23.4 Still unverified (no source found)
@@ -935,3 +951,98 @@ Each row says what was checked, what the source says, and what the document shou
 | Whether Claude credits reach every team | Not researched | Ask at the Anthropic booth |
 | Whether streamed raw audio plays in Expo Go | Docs describe file and URL playback; streamed playback not found | Use sentence files (section 21.5) and test |
 | Pharmacy benefit data providers | Not researched | Future-plan item only |
+
+---
+
+## 24. Eligibility Data Pipeline (added 2026-10-24)
+
+Status: proposed. The go/no-go test in 24.2 comes first.
+
+### 24.1 Purpose and limits
+
+- Give the app a way to check whether a product is HSA/FSA eligible without scraping during a scan
+- The data is retailer-listed information collected before the demo, plus IRS category rules. It is not a certified list and it is not the SIGIS list
+- Pitch wording: "Checked against eligibility data listed by retailers and IRS categories." Do not say "certified," "official," or "complete"
+
+### 24.2 Go/no-go test (do this first; about 30 minutes, estimate)
+
+1. Run one Walmart scraper actor on the public pages of the three demo items (Advil, bandages, kettle corn)
+2. Check the output for: UPC or GTIN, name, brand, size, category path, and an eligibility badge or text
+3. Go: a badge or eligibility text appears for Advil and bandages and is absent for kettle corn, and a UPC or a stable product ID is present
+4. No-go: no eligibility field in the output. Use the fallback in 24.8 and stop spending time on the scrape
+5. Before running at any scale, complete the terms check in 24.4
+
+### 24.3 Sources
+
+| Source | What it gives | Use | Status |
+|---|---|---|---|
+| Walmart FSA/HSA hub and product pages | A public "FSA/HSA Eligible" marking on some items; name, brand, price, category path | Main scrape target | Marking field unconfirmed in actor output; terms unverified (section 23.3) |
+| Amazon FSA/HSA store | Eligible listings. Amazon says it matches SIGIS UPCs to its listings | Possible second target | Not researched (unverified) |
+| IRS Pub 502 and the CARES Act change | Category rules (OTC medicines, bandages, menstrual care products) | Category rule table | Verified (section 23.1) |
+| Package and shelf text read by Claude vision | A printed eligibility marking, if present | Cross-check against the index | Whether packages carry one is unverified |
+| SIGIS Eligible Product List | Product-level eligibility | Not used | Members-only license (section 23.3) |
+
+### 24.4 Collection rules
+
+- Read the current terms and robots.txt of each source before each run. Stay off disallowed paths (for Walmart, `/search` is disallowed)
+- Keep it small: a few hundred to a few thousand items (estimate), low request rate, no logins, no personal data
+- Run once, before the demo, from the backend only. Never during a live scan
+- Keep the source URL and the collection date with every row
+- Do not republish the dataset and do not call it complete
+- Do not describe the collection to judges as an integration with a retailer
+- Cost: the free Apify plan is reported at $5 of usage per month (secondary report). Check apify.com/pricing
+
+### 24.5 Pipeline
+
+1. Run the actor (Apify, offline)
+2. Export the dataset as JSON
+3. Clean and normalize: name, brand, size, UPC, category path, eligible flag, source URL, collected date
+4. Add non-eligible examples from the same categories, so the index can say no (see 24.6)
+5. Store the rows in the backend database table `eligibility_items`
+6. Build the Moss index with `create_index`: `id` is the UPC (or a hash of brand, name, and size), `text` is brand, name, size, and category, and `metadata` holds eligible flag, category, UPC, source, and collected date
+7. At runtime the backend queries the table and the index (24.6)
+
+| Field | Notes |
+|---|---|
+| upc | Primary key when present |
+| name, brand, size | Size or strength is required for medication |
+| category_path | From the actor's category field |
+| eligible | true or false; false rows come from non-badged items in the same categories |
+| source_url, collected_at | Required |
+| basis | "retailer badge," "irs category rule," or "hand entered" |
+
+### 24.6 Runtime matching
+
+1. Exact UPC match in `eligibility_items`. No Moss needed
+2. Otherwise a Moss query on the product text. Accept the top result only if its score is above a threshold set by testing on the demo shelf and its size or strength agrees. A strength mismatch (for example 200 mg against 400 mg) means "could not confirm"
+3. Otherwise the IRS category rule table (category to eligible, not eligible, or needs review)
+4. Otherwise say "I could not confirm eligibility" (section 6.2 step 4)
+5. If the package marking read by Claude vision disagrees with the index, say "I could not confirm eligibility"
+
+The index must hold both eligible and non-eligible items. An index of eligible items only would return a near match for anything, including kettle corn.
+
+Moss notes: the quickstart documents `create_index`, `load_index`, and `query` and states no size limits. It does not document updating an existing index, so rebuild the index after each data change (unverified for larger data).
+
+### 24.7 Failure modes
+
+| Scenario | Expected behavior |
+|---|---|
+| Item not in the data | "I could not confirm eligibility." Ask which card |
+| Near match with a different strength or size | "I could not confirm eligibility" |
+| Index and package marking disagree | "I could not confirm eligibility" |
+| Retailer changed its page and the badge field is gone | Treat as no-go (24.2). Use the fallback in 24.8 |
+| Data is old | Show the collected date in the data. For the demo, collect within a few days of the event. Do not say the data is current |
+| Moss unavailable | Use the backend table and category rules only |
+| Terms do not allow collection | Do not collect from that source. Use hand-entered rows for the demo items |
+
+### 24.8 Fallback if the test is no-go or time runs short
+
+- IRS category rule table, plus hand-entered rows for the demo shelf with their public source pages cited
+- The "I could not confirm eligibility" path handles everything else
+- This is the first item in the cut order (section 13)
+
+### 24.9 Acceptance criteria and time
+
+- The three demo items get the expected labels by UPC or closest match
+- On 20 to 30 extra test items (estimate), no non-eligible item is labeled eligible. Record how many return "could not confirm"
+- Expected effort: several hours (estimate, not measured). If the 24.2 test has not passed by about hour 12 (estimate), switch to the fallback
