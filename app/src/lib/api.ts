@@ -205,6 +205,7 @@ export type CommandAction =
   | 'confirm_clear_cart'
   | 'cart_cleared'
   | 'open_settings'
+  | 'strength_confirmed'
   | 'unknown'
   | (string & {});
 

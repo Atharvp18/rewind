@@ -114,6 +114,9 @@ const SHELF: DemoItem[] = [
   },
 ];
 
+/** Prop pill bottle for the demo (Mock Plan A copay from tech spec 3.3: omeprazole_20mg). */
+const RX = { name: 'Omeprazole', strength: '20 mg', spoken: 'Omeprazole, 20 milligrams', copayCents: 1000 };
+
 // ---------------------------------------------------------------------------
 // In-memory state
 // ---------------------------------------------------------------------------
@@ -283,8 +286,33 @@ export async function getHealth(): Promise<Health> {
 export async function scan(_barcode: string | null): Promise<ScanResponse> {
   await wait(1200);
   const scanId = randomUUID();
-  const idx = state.scanIndex++ % (SHELF.length + 1);
+  // Shelf order: Advil, bandages, kettle corn, an unknown item, then the prop pill bottle.
+  const idx = state.scanIndex++ % (SHELF.length + 2);
   const timestamp = new Date().toISOString();
+
+  if (idx === SHELF.length + 1) {
+    // Prop prescription label (business spec 8: never a real one). Read drug name and
+    // strength back; nothing proceeds until confirmed (tech spec 2.3).
+    state.scans.set(scanId, { item: RX as unknown as DemoItem, rec: null });
+    return {
+      scan: {
+        scan_id: scanId, timestamp, state: 'resolved', warnings: [],
+        item_bbox: { x: 0.34, y: 0.28, w: 0.32, h: 0.42 },
+        product: {
+          product_key: 'n:omeprazole-20mg', upc: null, name: RX.name, brand: null, size: RX.strength,
+          category: 'digestive_health', is_medication: true, is_prescription_only: true, amount_cents: null,
+          price_source: null, state: 'resolved', warnings: [],
+        },
+        // Medication without an exact UPC match: never stated eligible (decision 3).
+        eligibility: { label: 'could_not_confirm', confidence: null, basis: 'no_match', source: null,
+          collected_at: null, matched_name: null },
+      },
+      recommendation: null,
+      voice: voice(`I see a prescription label. ${RX.spoken}. Is that right?`, {
+        prompt: { scope: 'confirm_strength', scan_id: scanId },
+      }),
+    };
+  }
 
   if (idx === SHELF.length) {
     // A judge's own item: the unresolved path must work cleanly (4.6).
@@ -598,6 +626,18 @@ export async function command(transcript: string, promptId: string | null): Prom
   }
   if (has(t, 'accessibility')) {
     return { action: 'open_settings', result: null, voice: voice('Opening accessibility settings.') };
+  }
+  if (has(t, 'yes', 'right', 'correct') && live?.scope === 'confirm_strength') {
+    // Confirmed: give the plan's copay and send the shopper to the pharmacist (2.3, 20.5).
+    // Nothing is added to a card: the copay path is gated (decision 4).
+    consumePrompt(liveId, 'confirm_strength');
+    return {
+      action: 'strength_confirmed',
+      result: null,
+      voice: voice(
+        `Thank you. ${RX.spoken}. Mock Plan A shows a ${formatCents(RX.copayCents)} copay for this prescription. Please confirm the copay with the pharmacist.`,
+      ),
+    };
   }
   if (has(t, 'yes', 'add that', 'add it')) {
     if (live?.scope === 'confirm_add' && live.scan_id) {

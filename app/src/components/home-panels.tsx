@@ -86,20 +86,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
 
   // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
   if (res.voice.response_scope === 'confirm_strength') {
-    return (
-      <InfoPanel label="Prescription label read-back">
-        <PanelText kind="small" muted>
-          From the bottle label · is this right?
-        </PanelText>
-        <PanelText kind="title">{[product.name, product.size].filter(Boolean).join(' ')}</PanelText>
-        <PanelText kind="small" muted>
-          No medical advice. Ask the pharmacist about dosage or safety.
-        </PanelText>
-        <PanelActions>
-          <YesNo yes="Yes, that's right" onYes={() => answer('yes')} onNo={() => answer('no')} busy={busy} />
-        </PanelActions>
-      </InfoPanel>
-    );
+    return <PrescriptionPanel name={product.name} strength={product.size} busy={busy} onAnswer={answer} />;
   }
 
   return (
@@ -131,6 +118,60 @@ function ScanPanel({ res }: { res: ScanResponse }) {
           <Actions rec={rec} cards={state.cards} busy={busy} onAdd={addToCart} onSkip={skip} />
         </PanelActions>
       ) : null}
+    </InfoPanel>
+  );
+}
+
+/**
+ * Prescription read-back (tech spec 2.3, business spec 20.4): what the label
+ * says, the strength called out on its own, one plain question, and the
+ * pharmacist note. Nothing proceeds until the shopper confirms; no dosage or
+ * safety advice is ever given.
+ */
+function PrescriptionPanel({
+  name,
+  strength,
+  busy,
+  onAnswer,
+}: {
+  name: string;
+  strength: string | null;
+  busy: boolean;
+  onAnswer: (text: string) => void;
+}) {
+  const { palette } = useA11y();
+  return (
+    <InfoPanel label="Prescription label read-back">
+      <View style={styles.rxHeader}>
+        <View style={[styles.rxIcon, { backgroundColor: palette.surfaceAlt }]}>
+          <Icon name="pill" size={22} color="primary" />
+        </View>
+        <AppText kind="small" color="textMuted" style={styles.name}>
+          Prescription · from the bottle label
+        </AppText>
+      </View>
+      <View style={styles.rxNameRow} accessible accessibilityLabel={`${name}${strength ? `, ${strength}` : ''}`}>
+        <AppText kind="title" accessible={false}>
+          {name}
+        </AppText>
+        {strength ? (
+          <View style={[styles.rxStrength, { backgroundColor: palette.primary }]}>
+            <AppText kind="label" color="onPrimary" accessible={false}>
+              {strength}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+      <PanelText>Is this the right medicine and strength?</PanelText>
+      <View style={[styles.rxNote, { backgroundColor: palette.surfaceAlt }]}>
+        <Icon name="health" size={20} color="textMuted" />
+        <AppText kind="small" color="textMuted" style={styles.name}>
+          Rewind can’t give medical advice. Ask the pharmacist about dosage or safety.
+        </AppText>
+      </View>
+      <PanelActions>
+        <YesNo yes="Yes, that's right" no="No, scan again" onYes={() => onAnswer('yes')} onNo={() => onAnswer('no')} busy={busy} />
+      </PanelActions>
     </InfoPanel>
   );
 }
@@ -401,6 +442,11 @@ const styles = StyleSheet.create({
   cell: { flexDirection: 'column' },
   name: { flexShrink: 1, flexGrow: 1 },
   paysWith: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rxNameRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
+  rxStrength: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  rxNote: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, borderRadius: Radius.button, padding: Spacing.md },
   grow: { flexGrow: 1, flexBasis: 110 },
   grow2: { flexGrow: 2, flexBasis: 160 },
   priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.md, rowGap: Spacing.xs },

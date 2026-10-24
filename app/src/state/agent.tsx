@@ -439,6 +439,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           void refreshCards();
           break;
         case 'skip':
+        case 'strength_confirmed':
+          // Prescription confirmed: the copay line is spoken; the card closes.
           dispatch({ type: 'clear_scan' });
           dispatch({ type: 'clear_prompt' });
           break;
