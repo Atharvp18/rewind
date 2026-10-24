@@ -94,7 +94,6 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Microsoft, Built for the Real World | Plausible | Accessibility and real-world users |
 | MLH Commit Fellowship category | Opt in | Interview for a 3-week sprint. Needs the opt-in checkbox and supplemental form |
 | Figma | Plausible | Wireframes and design system |
-| Apify | Not used | Products are looked up live (section 19). Bright Data and Context.dev are not used either |
 | Fetch.ai | Integrated | Necessary |
 | Meta | Stretch | Community feature only |
 
@@ -114,7 +113,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 - Expo shell with camera and mic
 - Voice loop: Cartesia Ink, Claude, Cartesia Sonic
 - Claude vision returning structured product JSON
-- Product lookup and eligibility classification (section 19). Moss holds the eligibility rules. No Apify and no hand-built product catalog
+- Product lookup and eligibility classification (section 19). Moss holds the eligibility rules. No hand-built product catalog
 - Cart, card routing, and reroute logic
 - Simulated checkout and a seeded database
 
@@ -137,7 +136,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 ### Cut
 
 - Three-agent Fetch.ai Bureau as the default backend (use plain Python functions; Fetch.ai only as an optional add-on)
-- Apify and any hand-built product catalog (products are read at the shelf and looked up live where a retailer source exists; see section 19)
+- Any hand-built product catalog (products are read at the shelf and looked up live where a retailer source exists; see section 19)
 - Five insurers (build two, list the others as planned)
 - Coupon payment methods
 - True 3D AR (needs ViroReact, which does not run in Expo Go)
@@ -212,7 +211,7 @@ This section groups the interface details by screen element so design and build 
 
 - Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "remove last item"
 - "Repeat that" helps users with memory difficulties
-- Eligibility lookup uses Moss only. Apify is not used for eligibility
+- Eligibility lookup uses Moss only
 
 **D. Memory support**
 
@@ -509,14 +508,14 @@ The earlier draft referenced this section but did not include it. The items belo
 1. **Working name.** Section 1 lists Rewind as a working name. Decide whether to keep it
 2. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which statement is correct and align all sections. The rationale for mock insurance plan data is now stated in section 6.1, but the real-versus-mock statements for United and BlueCross, prescriptions, and receipts remain unresolved
 2a. **Restricted prescriptions.** Section 6.1 states that some prescriptions are restricted under an insurance plan and not eligible. The agent's wording for a restricted, not-eligible prescription is not defined. Provide it or approve a draft
-3. **Ownership of Aesha's former work.** Stated by Nak: Moss, Fetch.ai, Apify to Tiea; backend, Supabase, Visa, Capital One to Atharv; Cartesia, Expo, camera, mic to Nak. Not stated and assigned provisionally: shared components, design system rules, and the accessibility test plan to Nak (follows Expo and screens); eligibility data and source to Tiea (follows Moss). Confirm or reassign
-4. **Tiea's workload.** Tiea now holds Claude vision, Moss, eligibility data, and the optional Fetch.ai and Apify work
+3. **Ownership of Aesha's former work.** Stated by Nak: Moss and Fetch.ai to Tiea; backend, Supabase, Visa, Capital One to Atharv; Cartesia, Expo, camera, mic to Nak. Not stated and assigned provisionally: shared components, design system rules, and the accessibility test plan to Nak (follows Expo and screens); eligibility data and source to Tiea (follows Moss). Confirm or reassign
+4. **Tiea's workload.** Tiea now holds Claude vision, Moss, eligibility data, and the optional Fetch.ai work
 5. **Cart and routing.** Assigned to Atharv with Visa and the backend. Confirm
 6. **Eligibility source.** Section 14 states that no documented source has been chosen
 7. **WCAG target.** Section 6.7 requires a WCAG conformance level and version, which are not chosen. Confirm against the primary source
 8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
 9. **Settings storage.** On device or in the database (Atharv). Not decided
-10. **Apify scope.** Resolved by the team: Apify is not used and there is no hand-built 30-product catalog. Products are looked up live (section 19). Sections 4, 5, 7, 11, 14, and 18 are updated to match
+10. **Product catalog.** Resolved by the team: there is no hand-built product catalog. Products are looked up live (section 19). Sections 5, 7, 11, 14, and 18 are updated to match
 11. **Interface phases and owners.** The table in section 6.5 assigns phases and owners that you did not state. Confirm or change them
 12. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address on the invoice and shows where past purchases were made. Section 6.6 says no tracked locations, and section 12 says no automatic store assignment from scan history. Decide how store address is entered (for example chosen by the user or taken from seeded mock data) so it does not conflict
 13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Section 6.2 medication wording, section 8 (demo script), and section 10 (failure modes) still use "may be eligible, check your plan." Decide whether to align them
