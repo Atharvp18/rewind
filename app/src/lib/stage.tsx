@@ -25,6 +25,8 @@ export interface StageLayout {
   itemBox: Rect | null;
   /** Free area for pop-ups: below the top bar, above the orb. Screen coordinates. */
   area: Rect;
+  /** The pop-up card reports where it sits, so the focus corners can stay clear of it. */
+  reportCard?: (rect: Rect | null) => void;
 }
 
 export const StageContext = createContext<StageLayout>({

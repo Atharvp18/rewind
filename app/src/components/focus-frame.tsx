@@ -5,7 +5,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } fr
 import { useA11y } from '@/lib/a11y';
 import type { Rect } from '@/lib/stage';
 
-export type FrameTone = 'guide' | 'locked' | 'warning' | 'danger';
+/** 'locked' plays one pulse when a result lands; the color never changes. */
+export type FrameTone = 'guide' | 'locked';
 
 const THICK = 6;
 const HALO = 2;
@@ -14,10 +15,10 @@ const HALO = 2;
  * Camera-app style focus corners: four L-shaped corners, no edges, sitting on
  * the item. They glide to the item's box when it moves or a scan locks on.
  *
- * Each bar is light with a dark halo, so at least one of the two contrasts
- * with any scene (white bar 21:1 on black, dark halo 16:1 on white). Tone
- * changes the bar color to match the result; decorative, hidden from screen
- * readers: the pop-up and voice carry the meaning.
+ * Same color and shape everywhere: mint bars with a dark halo, so one of the
+ * two contrasts with any scene (mint 12.5:1 on black, halo 16:1 on white).
+ * Decorative and hidden from screen readers: the pop-up and voice carry the
+ * meaning.
  */
 export function FocusFrame({ box, tone = 'guide' }: { box: Rect; tone?: FrameTone }) {
   const { palette, reduceMotion } = useA11y();
@@ -57,14 +58,8 @@ export function FocusFrame({ box, tone = 'guide' }: { box: Rect; tone?: FrameTon
     transform: [{ scale: pulse.value }],
   }));
 
-  const color =
-    tone === 'locked'
-      ? palette.accent
-      : tone === 'warning'
-        ? palette.warningEdge
-        : tone === 'danger'
-          ? palette.dangerEdge
-          : '#FFFFFF';
+  // One color everywhere (scan, lock-on, card onboarding): mint with a dark halo.
+  const color = palette.accent;
   const arm = Math.max(24, Math.min(56, Math.min(box.w, box.h) * 0.22));
 
   return (

@@ -59,11 +59,56 @@ const STATUS: Record<Phase, string> = {
  * Motion it stays still. State is always written in the status pill, so motion
  * and color are never the only signal.
  */
+/**
+ * The dome behind the orb (business spec 6.5 A half-moon): a big circle whose
+ * top shows above the bottom edge, filled with a fade from clear to mint and a
+ * thin edge. Rendered as its own background layer, *behind* pop-ups, so it
+ * never draws over a card. Decorative.
+ */
+export function OrbGlow() {
+  const { palette } = useA11y();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const glowHeight = Math.min(300, height * 0.3) + insets.bottom;
+  const domeD = Math.max(width * 1.35, glowHeight * 2);
+  const f = glowHeight / domeD;
+  return (
+    <View pointerEvents="none" style={styles.glowLayer}>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.dome,
+          {
+            width: domeD,
+            height: domeD,
+            borderRadius: domeD / 2,
+            left: (width - domeD) / 2,
+            bottom: glowHeight - domeD,
+            // Thin edge so the dome reads as a shape; the fill still fades into the camera.
+            borderWidth: palette.controlBorderWidth ? 3 : 2,
+            borderColor: palette.controlBorderWidth ? palette.dockEdge : withOpacity(palette.dockEdge, 0.7),
+          },
+        ]}>
+        <LinearGradient
+          colors={[
+            withOpacity(palette.dockTop, 0),
+            withOpacity(palette.dockTop, 0.6),
+            withOpacity(palette.dockBottom, 0.95),
+            withOpacity(palette.dockBottom, 0.95),
+          ]}
+          locations={[0, f * 0.4, f, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
+    </View>
+  );
+}
+
 export function VoiceOrb({ hint }: { hint?: string | null }) {
   const { palette, reduceMotion } = useA11y();
   const { state, talkTap, talkHoldStart, talkHoldEnd } = useAgent();
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
   const mode = MODE[state.phase];
 
   const spin = useSharedValue(0);
@@ -115,42 +160,9 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
 
   const listening = state.phase === 'listening';
   const status = hint && state.phase === 'idle' ? hint : STATUS[state.phase];
-  // The glow is a big circle whose top shows as a dome behind the orb (business spec 6.5 A
-  // half-moon), filled with a vertical fade so its edge melts into the camera: no outline.
-  const glowHeight = Math.min(300, height * 0.3) + insets.bottom;
-  const domeD = Math.max(width * 1.35, glowHeight * 2);
-  const f = glowHeight / domeD;
 
   return (
     <View style={[styles.root, { paddingBottom: Math.max(insets.bottom, Spacing.lg) }]} pointerEvents="box-none">
-      {/* Seamless glow: fades from clear into mint at the bottom edge. Decorative. */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.dome,
-          {
-            width: domeD,
-            height: domeD,
-            borderRadius: domeD / 2,
-            left: (width - domeD) / 2,
-            bottom: glowHeight - domeD,
-            // Thin edge so the dome reads as a shape; the fill still fades into the camera.
-            borderWidth: palette.controlBorderWidth ? 3 : 2,
-            borderColor: palette.controlBorderWidth ? palette.dockEdge : withOpacity(palette.dockEdge, 0.7),
-          },
-        ]}>
-        <LinearGradient
-          colors={[
-            withOpacity(palette.dockTop, 0),
-            withOpacity(palette.dockTop, 0.6),
-            withOpacity(palette.dockBottom, 0.95),
-            withOpacity(palette.dockBottom, 0.95),
-          ]}
-          locations={[0, f * 0.4, f, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
       <View style={styles.orbWrap} pointerEvents="box-none">
         {!reduceMotion && mode === 'speaking' ? (
           <Animated.View pointerEvents="none" style={[styles.ripple, { borderColor: palette.accent }, rippleStyle]} />
@@ -205,6 +217,7 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
 
 const styles = StyleSheet.create({
   root: { alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.md },
+  glowLayer: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
   dome: { position: 'absolute', overflow: 'hidden' },
   orbWrap: { width: ORB_SIZE * 1.8, height: ORB_SIZE * 1.25, alignItems: 'center', justifyContent: 'center' },
   ripple: {

@@ -12,7 +12,7 @@ import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
 import { TranscriptPill } from '@/components/transcript-pill';
-import { VoiceOrb } from '@/components/voice-orb';
+import { OrbGlow, VoiceOrb } from '@/components/voice-orb';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { Phrases } from '@/lib/phrases';
@@ -140,8 +140,7 @@ export default function Home() {
   let tone: FrameTone = 'guide';
   if (scanShowing && vision && state.lastPhoto) {
     itemBox = photoToScreen(vision, state.lastPhoto, { width, height });
-    const rec = state.lastScan?.recommendation;
-    tone = rec?.reroute || rec?.decision === 'blocked' ? 'warning' : 'locked';
+    tone = 'locked';
   } else if (barcode?.box && !scanShowing) {
     itemBox = inflate(barcode.box, 2.4, { width, height });
   }
@@ -155,8 +154,23 @@ export default function Home() {
     w: guideW,
     h: Math.min(guideH, area.h),
   };
+  // Keep the corners whole and in the free area: below the top bar and caption,
+  // above the pop-up card. If the card leaves too little room for a proper frame,
+  // hide the corners (the card is describing the item) until the card closes.
+  const [card, setCard] = useState<Rect | null>(null);
+  const MIN_FRAME = 140;
+  const fitFrame = (r: Rect): Rect | null => {
+    const top = Math.max(r.y, area.y);
+    let bottom = r.y + r.h;
+    if (card && bottom > card.y && top < card.y + card.h) bottom = Math.min(bottom, card.y - Spacing.md);
+    const h = bottom - top;
+    return h >= MIN_FRAME ? { ...r, y: top, h } : null;
+  };
+
   const showFrame =
     granted && (cardMode || (state.view === 'camera' && !state.declined && !state.receipt));
+
+  const frameBox = fitFrame(itemBox ?? guide);
 
   const hint = autoReady ? (available ? 'Hold steady on an item' : 'Tap the screen to scan') : null;
 
@@ -177,9 +191,13 @@ export default function Home() {
         accessibilityState={{ busy }}
       />
 
-      {showFrame ? <FocusFrame box={itemBox ?? guide} tone={itemBox ? tone : 'guide'} /> : null}
+      {/* The dome sits behind everything that follows, so it never draws over a pop-up. */}
+      <OrbGlow />
 
-      <StageContext.Provider value={{ itemBox: cardMode ? guide : scanShowing ? itemBox : null, area }}>
+      {showFrame && frameBox ? <FocusFrame box={frameBox} tone={itemBox ? tone : 'guide'} /> : null}
+
+      <StageContext.Provider
+        value={{ itemBox: cardMode ? guide : scanShowing ? itemBox : null, area, reportCard: setCard }}>
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           {onboarding ? (
             <OnboardingFlow

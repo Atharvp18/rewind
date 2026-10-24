@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
@@ -42,7 +42,7 @@ export function InfoPanel({
   anchored?: boolean;
 }) {
   const { palette, reduceMotion } = useA11y();
-  const { itemBox, area } = useStage();
+  const { itemBox, area, reportCard } = useStage();
   const [cardH, setCardH] = useState(0);
   const [contentH, setContentH] = useState(0);
 
@@ -68,6 +68,12 @@ export function InfoPanel({
   const tailX = itemBox
     ? Math.max(Radius.card + TAIL, Math.min(width - Radius.card - TAIL, itemBox.x + itemBox.w / 2 - left))
     : width / 2;
+
+  // Tell the screen where the card is, so the focus corners never hide behind it.
+  useEffect(() => {
+    if (cardH) reportCard?.({ x: left, y: top, w: width, h: cardH });
+  }, [reportCard, left, top, width, cardH]);
+  useEffect(() => () => reportCard?.(null), [reportCard]);
 
   const edge = tone === 'danger' ? palette.dangerEdge : tone === 'warning' ? palette.warningEdge : palette.cardEdge;
   // No outline on a normal card (shadow separates it); warnings and declines get a colored edge.
