@@ -159,7 +159,6 @@ export function OrbGlow() {
  * just a gesture: the tap and the label cover screen readers and switch users.
  */
 function HistoryHandle() {
-  const { palette } = useA11y();
   const { state, showView } = useAgent();
   const open = state.view === 'history';
   const toggle = () => showView(open ? 'camera' : 'history');
@@ -178,18 +177,15 @@ function HistoryHandle() {
     <Pressable
       {...pan.panHandlers}
       onPress={toggle}
-      hitSlop={{ top: 6, bottom: 12, left: 40, right: 40 }}
+      hitSlop={{ top: 8, bottom: 4, left: 40, right: 40 }}
       accessibilityRole="button"
       accessibilityLabel={open ? 'Close purchase history' : 'Open purchase history'}
       accessibilityHint="Swipe up or double tap to see your past purchases and invoices"
       style={styles.handle}>
-      <View style={[styles.grabber, { backgroundColor: palette.onDock }]} />
-      <View style={styles.handleRow}>
-        <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} color="onDock" />
-        <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
-          History
-        </AppText>
-      </View>
+      <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} color="onDock" />
+      <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
+        History
+      </AppText>
     </Pressable>
   );
 }
@@ -339,8 +335,7 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
   },
   center: { textAlign: 'center' },
-  handle: { alignItems: 'center', gap: 2, minWidth: 120 },
-  grabber: { width: 40, height: 4, borderRadius: 2, opacity: 0.9 },
-  handleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  // Drawn over the dome's bottom edge, outside the layout flow: the dome keeps its old height.
+  handle: { position: 'absolute', bottom: 4, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 28 },
   handleText: { fontWeight: '700' },
 });
