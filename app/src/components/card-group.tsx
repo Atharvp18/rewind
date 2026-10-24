@@ -13,7 +13,7 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
   const count = `${group.items.length} ${group.items.length === 1 ? 'item' : 'items'}`;
   return (
     <View
-      style={[styles.group, { backgroundColor: palette.surface, borderColor: palette.border }]}
+      style={[styles.group, { backgroundColor: palette.surface, borderColor: palette.panelCardBorder }]}
       accessibilityLabel={`${group.nickname}. ${count}. Subtotal ${centsForScreenReader(group.subtotal_cents)}.`}>
       <View style={styles.head}>
         <AppText kind="heading" accessibilityRole="header">

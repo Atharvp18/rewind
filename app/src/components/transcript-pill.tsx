@@ -16,7 +16,7 @@ import { useAgent } from '@/state/agent';
  * at once. Rendered under the profile button, which sits on top at the right.
  */
 export function TranscriptPill() {
-  const { palette, settings, reduceMotion, screenReaderOn, themeName } = useA11y();
+  const { palette, settings, reduceMotion, screenReaderOn } = useA11y();
   const { state, repeat } = useAgent();
   const [rowWidth, setRowWidth] = useState(0);
   const width = useSharedValue(PROFILE_SIZE);
@@ -54,8 +54,8 @@ export function TranscriptPill() {
             pillStyle,
             {
               backgroundColor: palette.pill,
-              borderColor: state.captionIsAlert ? palette.danger : palette.onPill,
-              borderWidth: state.captionIsAlert ? 3 : themeName === 'highContrast' ? 2 : 0,
+              borderColor: state.captionIsAlert ? palette.danger : palette.pillBorder,
+              borderWidth: state.captionIsAlert ? 3 : 2,
             },
           ]}>
           <Pressable

@@ -70,7 +70,7 @@ rewind/
     2026-10-23-rewind-technical-spec.md   this file
   app/                                     NAK owns everything here (Expo Router, SDK 57)
     src/
-      app/              routes: index (Home), scan, cart, checkout, settings, _layout
+      app/              routes: index (the one camera screen), profile, _layout (see 1.10)
       components/       shared UI (Screen, VoiceDock, CaptionBar, AccessibilityButton, ...)
       constants/
         theme.ts        color tokens per theme, type scale, spacing, target sizes (1.9)
@@ -478,6 +478,8 @@ Also required:
 
 ## 1.8 Interface plan
 
+> **Superseded by 1.10 (camera-first redesign, 2026-10-24).** The layout below was the first plan. The colors, type scale, and target sizes in 1.9 still apply.
+
 ### Layout principles
 
 1. **Voice first, screen second.** Every screen works with the eyes closed. The screen exists for partial sight, captions, and tap fallbacks.
@@ -633,6 +635,53 @@ Result card slides in over 200 ms; with Reduce Motion (OS or in-app) it appears 
   3. Saying "yes" at checkout: 3.8 lists "yes" only for a live `confirm_add` prompt. The app sends "yes" with a live `confirm_checkout` or `confirm_clear_cart` prompt to `/v1/command` too, and expects `checkout_confirmed` / `cart_cleared` back.
   4. Checkout `issues[]` items are not defined. The app assumes `{rule, message}` and shows `message` verbatim.
 - **Mock backend:** `lib/api.ts` has a `USE_MOCK` switch that serves the run 1 / run 2 demo script from `lib/mock-backend.ts` so the app can be built and tested before the backend is up. All wording in the mock is copied from 4.4; the real backend's `compose.py` remains the only source of spoken wording in production.
+
+## 1.10 Camera-first redesign (2026-10-24, Nak)
+
+Follows the team's 3-frame wireframe. One camera screen replaces the Home / Scan / Cart / Checkout stack.
+
+| Wireframe | Built as |
+|---|---|
+| Full-screen camera, all frames | Live `CameraView` behind everything. Tap anywhere, or the dock's Scan, to capture |
+| Top-right dark circle | **Profile**: name, linked HSA/FSA and Visa cards (last 4 only), insurance, the current accessibility mode, and all 1.5 settings |
+| Half-circle dock, round button | Navy gradient dock, amber gradient Talk button with a dark ring. Tap to talk, hold to speak, tap to interrupt. Cart and Scan buttons beside it |
+| Frame 2: gray pill | Captions. Grows leftward out of the profile button when Rewind speaks; shows the user's last words too. Tap to repeat with a buzz. Instant with Reduce Motion |
+| Frame 3: brown panel | See-through info panel (opacity setting 0.75 to 0.95, default 0.85). Shows onboarding steps, scan result, pill-bottle drug name and strength read-back (`confirm_strength`), cart, checkout split, declined payment, receipt |
+
+**Onboarding (frame 1):**
+1. Plain-language reason, then the phone's camera and microphone permission prompts.
+2. Name by voice (or typed), read back, then greeted aloud by first name.
+3. Demo phone verification with one preset mock number (`DEMO_MODE`, `+1 (415) 555-0100`; 555-01xx numbers reach no one).
+4. Insurance card by camera.
+5. HSA/FSA and Visa cards by camera.
+
+The name and insurance are stored on the phone only.
+
+**Haptics:**
+- Talk tap: medium impact.
+- Answer finished: success.
+- Decline, alert, or error: error.
+- Every buzz comes with speech and text, and the user can turn vibration off.
+
+Measured contrast for every new element: `app/ACCESSIBILITY.md`.
+
+### Decisions that need team sign-off
+
+1. **Decision 12 changed.** The persistent top-right button now opens Profile. "Tap to repeat" moved to tapping the caption pill. Long press is no longer used.
+2. **Real insurance and payment cards are scanned** to test text extraction. This conflicts with business spec 6.1 ("no real insurance card is scanned") and the mock-only rule in 0.1 #1. Mitigations: only the last 4 digits ever reach the app, images are deleted after upload, and nothing is logged. The image still reaches the backend and its vision model.
+3. **Name and phone collected at onboarding.** They are not in the specs. The phone number is a fixed mock number; the name stays on the phone.
+4. **Onboarding wording is app-side** (`lib/phrases.ts`). No endpoint or `compose.py` wording exists for it.
+
+### Proposed contract additions (Atharv and Tiea)
+
+| Proposed | Shape | Owner |
+|---|---|---|
+| `POST /v1/onboarding/card-scan` | multipart `image`, `kind` (`insurance` or `payment`) → `{state: read\|unclear, framing_hint, insurance: {insurer_name, plan_name, member_id_last4} \| null, payment: {network, card_type, last4} \| null}`. Last 4 only; never return or log a full number | Tiea (vision prompt), Atharv (endpoint) |
+| `POST /v1/cards` | `{type, nickname, last4, network}` → `Card` | Atharv |
+| `Card.last4`, `Card.network` | optional fields on `/v1/cards` | Atharv |
+| `use_proposed_split` on `/v1/checkout/confirm` | `false` charges the original cards. A group over its card's balance fails all-or-nothing with `E_CARD_DECLINED` and charges nothing | Atharv |
+| `E_CARD_DECLINED` | new error code; `speech` says which card, its balance, the total, and that nothing was charged | Atharv |
+| `/v1/command` "no" with a live `confirm_checkout` reroute | means "keep my cards": confirm with `use_proposed_split: false` | Atharv |
 
 ---
 

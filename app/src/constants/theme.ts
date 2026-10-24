@@ -40,10 +40,16 @@ export type Palette = {
   /** Caption pill (frame 2). */
   pill: string;
   onPill: string;
+  /** 2px pill edge: one fill can't contrast with both a white and a black scene; the edge covers the other. */
+  pillBorder: string;
   /** Info panel base color (frame 3). Drawn at the user's panel opacity, 0.75 to 0.95. */
   panel: string;
   onPanel: string;
   onPanelMuted: string;
+  /** Decline panel edge; dark red is invisible on the brown panel (1.06:1), so a light red. */
+  panelDanger: string;
+  /** Edge of cards drawn inside the panel. */
+  panelCardBorder: string;
   /** Top-right profile button: dark disc with a light ring so it stands out on any camera image. */
   profileBg: string;
   onProfile: string;
@@ -83,9 +89,12 @@ export const Palettes: Record<ThemeName, Palette> = {
     talkRing: '#14181F',
     pill: '#E6E3DD',
     onPill: '#14181F',
+    pillBorder: '#14181F',
     panel: '#2B211D',
     onPanel: '#FFFFFF',
     onPanelMuted: '#E8E2DE',
+    panelDanger: '#FFB4AB',
+    panelCardBorder: '#6B7280',
     profileBg: '#14181F',
     onProfile: '#FFFFFF',
     profileRing: '#FFFFFF',
@@ -121,9 +130,12 @@ export const Palettes: Record<ThemeName, Palette> = {
     talkRing: '#14181F',
     pill: '#2A3646',
     onPill: '#F3F4F6',
+    pillBorder: '#F3F4F6',
     panel: '#2B211D',
     onPanel: '#FFFFFF',
     onPanelMuted: '#E8E2DE',
+    panelDanger: '#FFB4AB',
+    panelCardBorder: '#B8C0CC',
     profileBg: '#14181F',
     onProfile: '#FFFFFF',
     profileRing: '#FFFFFF',
@@ -159,9 +171,12 @@ export const Palettes: Record<ThemeName, Palette> = {
     talkRing: '#FFFFFF',
     pill: '#000000',
     onPill: '#FFFFFF',
+    pillBorder: '#FFFFFF',
     panel: '#000000',
     onPanel: '#FFFFFF',
     onPanelMuted: '#FFFFFF',
+    panelDanger: '#FF9C94',
+    panelCardBorder: '#FFFFFF',
     profileBg: '#000000',
     onProfile: '#FFFFFF',
     profileRing: '#FFE000',

@@ -41,7 +41,7 @@ export function InfoPanel({
         Elevation.floating,
         {
           backgroundColor: withOpacity(palette.panel, themeName === 'highContrast' ? 1 : settings.panelOpacity),
-          borderColor: danger ? palette.danger : themeName === 'highContrast' ? palette.onPanel : 'transparent',
+          borderColor: danger ? palette.panelDanger : themeName === 'highContrast' ? palette.onPanel : 'transparent',
           borderWidth: danger ? 4 : themeName === 'highContrast' ? 2 : 0,
         },
       ]}>
@@ -49,8 +49,8 @@ export function InfoPanel({
         {title ? (
           <View style={styles.titleRow}>
             {danger ? (
-              <View style={[styles.dangerChip, { backgroundColor: palette.danger }]}>
-                <AppText kind="label" color="onPanel" accessible={false}>
+              <View style={[styles.dangerChip, { backgroundColor: palette.panelDanger }]}>
+                <AppText kind="label" color="onAccent" accessible={false}>
                   ⚠
                 </AppText>
               </View>

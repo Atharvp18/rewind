@@ -1,56 +1,56 @@
-# Welcome to your Expo app 👋
+# Rewind app (Expo SDK 57)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Voice-first, camera-first shopping assistant for older and low-vision shoppers. Point the phone at a product and hear what it is, what it costs, and which card to pay with. Product rules live in `../specs/`.
 
-## Get started
+**Demo build only.** All payments are simulated. It is not HIPAA compliant and not production ready. Card data is mock except where noted below.
 
-1. Install dependencies
+## Run it
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Requires Node 22.13+ or 24.3+.
 
 ```bash
-npm run reset-project
+cd app
+npm install
+npx expo start            # same Wi-Fi as the phone
+npx expo start --tunnel   # if the venue Wi-Fi blocks it
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Scan the QR code with **Expo Go** (SDK 57). Log in to the same Expo account on the laptop and the phone (needed for SDK 57 on iOS). **Do not update Expo Go on the demo phone**; the SDK 58 store build will not open this app (tech spec 0.4).
 
-### Other setup steps
+Every native module this app uses is included in Expo Go: camera, audio, speech, haptics, image manipulator, file system, linear gradient, AsyncStorage. No development build is needed. Only adding a library with native code that Expo Go does not include would require one (`npx expo run:ios` or EAS).
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Backend or mock
 
-## Learn more
+`src/lib/api.ts` is the only file that talks to the backend.
 
-To learn more about developing your project with Expo, look at the following resources:
+- `USE_MOCK = true` (default): an offline copy of the demo script (`src/lib/mock-backend.ts`). It can't hear, so speech answers are fixed: the name "Alex Rivera", "yes" to questions, "credit card" for the card type. Card photos return synthetic cards.
+- `USE_MOCK = false`: set `BASE_URL` to the laptop's IP, port 8000.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+**Reading real cards.** Only the real backend reads a card held up to the camera, through the proposed `POST /v1/onboarding/card-scan` endpoint. The app keeps only the last 4 digits and deletes the photo right after upload. The image does go to the backend and its vision model.
 
-## Join the community
+## How it works
 
-Join our community of developers creating universal apps.
+One camera screen (wireframe frames 1 to 3):
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- **Camera** fills the screen. Tap anywhere, or the dock's Scan button, to scan.
+- **Top right:** profile button. Opens your cards, insurance, accessibility mode, and settings.
+- **Caption pill** grows out of the profile button when Rewind speaks. Tap it to hear the line again.
+- **See-through panel** shows onboarding steps, scan results, cart, checkout, a declined payment, and the receipt.
+- **Dock:** round Talk button (tap to talk, hold to speak, tap to interrupt), with Cart and Scan beside it.
+
+First launch walks through: permissions → name (spoken back) → demo phone check → insurance card → HSA/FSA and Visa cards.
+
+**Demo runs.** Use Profile → Demo controls.
+
+- **Run 1** (HSA $340.00) ends at $321.52.
+- **Run 2** (HSA $15.00): Rewind offers to move the bandages to the Visa. "No, keep my cards" shows a simulated decline. "Yes" pays.
+
+## Checks
+
+```bash
+npx tsc --noEmit
+npx expo lint
+npx expo-doctor
+```
+
+Accessibility audit with measured contrast: [ACCESSIBILITY.md](ACCESSIBILITY.md).
