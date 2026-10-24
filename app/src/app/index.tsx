@@ -1,139 +1,129 @@
-import { router } from 'expo-router';
+import { useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from 'expo-router';
+import { useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText } from '@/components/app-text';
-import { Screen } from '@/components/screen';
-import { Radius, Spacing, Target } from '@/constants/theme';
+import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
+import { HealthBanner } from '@/components/health-banner';
+import { OnboardingFlow } from '@/components/onboarding-flow';
+import { ProfileButton } from '@/components/profile-button';
+import { VoiceDock, type DockAction } from '@/components/voice-dock';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
-import { centsForScreenReader, formatCents } from '@/lib/money';
+import { Phrases } from '@/lib/phrases';
+import { useProfile } from '@/lib/profile';
 import { useAgent } from '@/state/agent';
 
+/**
+ * The one camera screen (wireframe frames 1 to 3). Layers, back to front:
+ * live camera → tap-anywhere capture area → top row (caption pill + profile
+ * button) and info panel → half-circle dock.
+ */
 export default function Home() {
   const { palette } = useA11y();
-  const { state } = useAgent();
-  const itemCount = state.cart.groups.reduce((n, g) => n + g.items.length, 0);
+  const { profile, loaded } = useProfile();
+  const { state, beginCapture, scanFrame, sayLocal, showView } = useAgent();
+  const [camera, requestCamera] = useCameraPermissions();
+  const focused = useIsFocused();
+  const stage = useRef<CameraStageHandle>(null);
+  const onboardingCapture = useRef<(() => void) | null>(null);
+
+  const onboarding = loaded && !profile.onboarded;
+  const busy = state.phase === 'capturing' || state.phase === 'awaiting_scan';
+  const granted = !!camera?.granted;
+
+  const scan = useCallback(async () => {
+    if (onboardingCapture.current) {
+      onboardingCapture.current();
+      return;
+    }
+    if (onboarding || busy || !granted) {
+      if (!granted && !onboarding) sayLocal(Phrases.cameraDenied);
+      return;
+    }
+    beginCapture();
+    const shot = await stage.current?.capture();
+    if (!shot) {
+      sayLocal(Phrases.offline);
+      return;
+    }
+    await scanFrame(shot.uri, shot.barcode, shot.discard);
+  }, [onboarding, busy, granted, beginCapture, scanFrame, sayLocal]);
+
+  const registerCapture = useCallback((fn: (() => void) | null) => {
+    onboardingCapture.current = fn;
+  }, []);
+
+  const left: DockAction | undefined = onboarding
+    ? undefined
+    : { label: 'Cart', icon: '🛒', hint: 'Shows your cart, grouped by card.', onPress: () => showView('cart') };
+  const right: DockAction | undefined = onboarding
+    ? undefined
+    : {
+        label: busy ? 'Looking…' : 'Scan',
+        icon: '📷',
+        hint: 'Takes a photo of the item in front of the phone.',
+        onPress: () => void scan(),
+        disabled: busy,
+      };
 
   return (
-    <Screen
-      title="Rewind"
-      back={false}
-      dockLeft={{ label: 'Cart', icon: '🛒', href: '/cart' }}
-      dockRight={{ label: 'Scan', icon: '📷', href: '/scan' }}>
-      {!state.caption ? (
-        <AppText kind="body" color="textMuted">
-          Point your phone at a product to hear what it is, what it costs, and which card to pay with.
-        </AppText>
-      ) : null}
+    <View style={[styles.root, { backgroundColor: palette.bg }]}>
+      <CameraStage ref={stage} granted={granted} active={focused} />
 
-      <View style={styles.tiles}>
-        <Tile
-          icon="📷"
-          label="Scan item"
-          hint="Opens the camera"
-          onPress={() => router.push('/scan')}
-          primary
-        />
-        <Tile
-          icon="🛒"
-          label={itemCount ? `Cart · ${itemCount}` : 'Cart'}
-          a11yLabel={`Cart, ${itemCount} ${itemCount === 1 ? 'item' : 'items'}`}
-          onPress={() => router.push('/cart')}
-        />
-      </View>
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={() => void scan()}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={onboarding ? 'Camera. Tap anywhere to take the photo.' : 'Camera. Tap anywhere to scan the item in front of the phone.'}
+        accessibilityState={{ busy }}
+      />
 
-      <View
-        style={[styles.balances, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-        <AppText kind="heading" accessibilityRole="header">
-          Your cards
-        </AppText>
-        {state.cards.length === 0 ? (
-          <AppText kind="body" color="textMuted">
-            No cards linked yet.
-          </AppText>
-        ) : (
-          state.cards.map((c) => (
-            <View
-              key={c.id}
-              style={styles.balanceRow}
-              accessible
-              accessibilityLabel={`${c.nickname}, balance ${centsForScreenReader(c.balance_cents)}`}>
-              <AppText kind="body" style={styles.flex}>
-                {c.type === 'general' ? '💳' : '✚'} {c.nickname}
-              </AppText>
-              <AppText kind="heading">{formatCents(c.balance_cents)}</AppText>
-            </View>
-          ))
-        )}
-      </View>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.overlay} pointerEvents="box-none">
+        <View style={styles.topRow} pointerEvents="box-none">
+          <View style={styles.flex} pointerEvents="box-none" />
+          <ProfileButton />
+        </View>
 
-      <AppText kind="small" color="textMuted">
-        Simulated payments. All card and insurance data is mock.
-      </AppText>
-    </Screen>
-  );
-}
+        <View style={styles.panelArea} pointerEvents="box-none">
+          <HealthBanner />
+          {onboarding ? (
+            <OnboardingFlow
+              camera={camera}
+              requestCamera={requestCamera}
+              registerCapture={registerCapture}
+              capture={async () => (await stage.current?.capture()) ?? null}
+            />
+          ) : null}
+        </View>
+      </SafeAreaView>
 
-function Tile({
-  icon,
-  label,
-  a11yLabel,
-  hint,
-  onPress,
-  primary,
-}: {
-  icon: string;
-  label: string;
-  a11yLabel?: string;
-  hint?: string;
-  onPress: () => void;
-  primary?: boolean;
-}) {
-  const { palette } = useA11y();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={a11yLabel ?? label}
-      accessibilityHint={hint}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.tile,
-        {
-          backgroundColor: primary ? palette.primary : palette.surface,
-          borderColor: primary ? palette.primary : palette.border,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}>
-      <AppText kind="title" color={primary ? 'onPrimary' : 'text'} accessible={false}>
-        {icon}
-      </AppText>
-      <AppText kind="label" color={primary ? 'onPrimary' : 'text'} style={styles.center} accessible={false}>
-        {label}
-      </AppText>
-    </Pressable>
+      <VoiceDock left={left} right={right} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  tile: {
-    flexGrow: 1,
-    flexBasis: 140,
-    minHeight: Target.tile,
-    borderRadius: Radius.card,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  balances: { borderWidth: 2, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
-  balanceRow: {
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  overlay: { flex: 1 },
+  topRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
-  flex: { flexShrink: 1, flexGrow: 1 },
-  center: { textAlign: 'center' },
+  panelArea: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
 });

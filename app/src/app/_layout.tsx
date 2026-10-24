@@ -5,18 +5,20 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { A11yProvider, useA11y } from '@/lib/a11y';
+import { ProfileProvider, useProfile } from '@/lib/profile';
 import { AgentProvider } from '@/state/agent';
 
 SplashScreen.preventAutoHideAsync();
 
 function Navigator() {
   const { palette, themeName, reduceMotion, loaded } = useA11y();
+  const profile = useProfile();
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
+    if (loaded && profile.loaded) SplashScreen.hideAsync();
+  }, [loaded, profile.loaded]);
 
-  // Stack, not tabs: no small icons, a large Back button on every screen (1.8).
+  // One camera screen plus Profile (top-right button). No tabs.
   return (
     <>
       <StatusBar style={themeName === 'standard' ? 'dark' : 'light'} />
@@ -27,12 +29,9 @@ function Navigator() {
           animation: reduceMotion ? 'none' : 'slide_from_right',
         }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="scan" />
-        <Stack.Screen name="cart" />
-        <Stack.Screen name="checkout" />
         <Stack.Screen
-          name="settings"
-          options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }}
+          name="profile"
+          options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }}
         />
       </Stack>
     </>
@@ -43,9 +42,11 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <A11yProvider>
-        <AgentProvider>
-          <Navigator />
-        </AgentProvider>
+        <ProfileProvider>
+          <AgentProvider>
+            <Navigator />
+          </AgentProvider>
+        </ProfileProvider>
       </A11yProvider>
     </SafeAreaProvider>
   );

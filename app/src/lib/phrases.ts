@@ -20,4 +20,38 @@ export const Phrases = {
   micDenied:
     'Microphone access is off. You can still use every button on screen. To talk, allow the microphone in your phone settings.',
   nothingToRepeat: "I haven't said anything yet. Tap Talk to start.",
+  declinedTitle: 'Payment declined',
+} as const;
+
+/**
+ * Onboarding lines. Onboarding has no endpoint or wording in the tech spec
+ * (0.6, 3.11), so the app speaks these itself until the backend owns them.
+ */
+export const Onboarding = {
+  cameraWhy:
+    'Rewind uses your camera to read product labels, prices, and your cards. Photos are not saved. Tap Allow camera, then choose Allow.',
+  micWhy:
+    'Rewind uses your microphone so you can talk to it. It only listens while you tap or hold the round button. Tap Allow microphone, then choose Allow.',
+  askName:
+    "Hi, I'm Rewind. I tell you what a product is, what it costs, and which card to pay with. What's your first and last name? Tap the round button at the bottom and say your name.",
+  confirmName: (full: string) => `I heard ${full}. Is that right?`,
+  nameAgain: "Let's try again. Tap the round button and say your first and last name.",
+  greet: (first: string) => `Nice to meet you, ${first}.`,
+  phoneDemo: (phone: string) =>
+    `This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
+  askInsurance:
+    'Now your insurance card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
+  confirmInsurance: (insurer: string, plan: string | null) =>
+    `I see ${insurer}${plan ? `, ${plan}` : ''}. Is that right?`,
+  askPayment: (first: boolean) =>
+    first
+      ? 'Now your HSA or FSA card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'
+      : 'Hold up your next card, like your Visa card, then tap anywhere on the screen.',
+  askCardType: 'Is this an HSA card, an FSA card, or a regular credit or debit card?',
+  confirmCard: (label: string, last4: string | null) =>
+    `I see ${label}${last4 ? ` ending in ${last4.split('').join(' ')}` : ''}. Is that right?`,
+  cardAdded: (label: string) => `${label} added. Do you want to add another card?`,
+  unclear: 'I could not read that card. Try again with more light, and hold it still.',
+  done: (first: string) =>
+    `You're all set, ${first}. Point your phone at a product and tap anywhere to scan. Your profile and settings are at the top right.`,
 } as const;

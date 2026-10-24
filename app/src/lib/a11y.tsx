@@ -8,7 +8,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, useColorScheme } from 'react-native';
 
-import { Palettes, type Palette, type ThemeName } from '@/constants/theme';
+import { PanelOpacity, Palettes, type Palette, type ThemeName } from '@/constants/theme';
+import { setHapticsEnabled } from '@/lib/haptics';
 
 export type ThemeChoice = 'system' | ThemeName;
 export type SpeechRate = 'slow' | 'normal' | 'fast';
@@ -24,6 +25,10 @@ export interface Settings {
   /** Push-to-talk is the default because the venue is loud (1.4). */
   continuousListening: boolean;
   reduceMotion: boolean;
+  /** Info panel opacity, PanelOpacity.min to max. */
+  panelOpacity: number;
+  /** Haptics are never the only feedback; this turns them off entirely. */
+  haptics: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +39,8 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   continuousListening: false,
   reduceMotion: false,
+  panelOpacity: PanelOpacity.default,
+  haptics: true,
 };
 
 export const TEXT_SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
@@ -83,6 +90,10 @@ export function A11yProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    setHapticsEnabled(settings.haptics);
+  }, [settings.haptics]);
+
   const value = useMemo<A11yContextValue>(() => {
     const themeName: ThemeName =
       settings.theme === 'system' ? (scheme === 'dark' ? 'dark' : 'standard') : settings.theme;
@@ -104,6 +115,12 @@ export function A11yProvider({ children }: { children: ReactNode }) {
 
   return <A11yContext.Provider value={value}>{children}</A11yContext.Provider>;
 }
+
+export const THEME_LABEL: Record<ThemeName, string> = {
+  standard: 'Standard',
+  dark: 'Dark',
+  highContrast: 'High contrast',
+};
 
 export function useA11y(): A11yContextValue {
   const ctx = useContext(A11yContext);

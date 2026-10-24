@@ -13,6 +13,9 @@ import { randomUUID } from 'expo-crypto';
 
 import type {
   Card,
+  CardScanKind,
+  CardScanResult,
+  LinkCardRequest,
   Cart,
   CartGroup,
   CartItem,
@@ -282,11 +285,66 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
   };
 }
 
-export async function stt(): Promise<SttResponse> {
-  // No real speech recognition offline: answer the live question with "yes",
-  // otherwise ask about the cart. Enough to exercise the voice loop.
+/** What the caller is listening for, so the mock (which cannot hear) can answer sensibly. */
+export type SttHint = 'name' | 'yes_no' | 'card_type';
+
+export async function stt(hint?: SttHint): Promise<SttResponse> {
+  // No real speech recognition offline: answer with a fixed demo name, "yes"
+  // to a live question, otherwise ask about the cart.
   await wait(400);
+  if (hint === 'name') return { transcript: 'Alex Rivera', confidence: 0.93 };
+  if (hint === 'yes_no') return { transcript: 'yes', confidence: 0.95 };
+  if (hint === 'card_type') return { transcript: 'credit card', confidence: 0.95 };
   return { transcript: livePrompt() ? 'yes' : "what's in my cart", confidence: 0.95 };
+}
+
+// ---------------------------------------------------------------------------
+// PROPOSED onboarding endpoints. Fixed synthetic results; a real card held up
+// to the camera is only read by the real backend.
+// ---------------------------------------------------------------------------
+
+let paymentScans = 0;
+
+export async function scanCard(kind: CardScanKind): Promise<CardScanResult> {
+  await wait(1200);
+  if (kind === 'insurance') {
+    return {
+      state: 'read',
+      framing_hint: null,
+      insurance: { insurer_name: 'Mock Plan A (synthetic)', plan_name: null, member_id_last4: '0042' },
+      payment: null,
+    };
+  }
+  const first = paymentScans++ % 2 === 0;
+  return {
+    state: 'read',
+    framing_hint: null,
+    insurance: null,
+    payment: first
+      ? { network: 'visa', card_type: 'hsa', last4: '4821' }
+      : { network: 'visa', card_type: null, last4: '1234' },
+  };
+}
+
+export async function linkCard(body: LinkCardRequest): Promise<Card> {
+  await wait(300);
+  // Reuse the seeded card of the same type so the demo balances (3.3) still apply.
+  const seeded = state.cards.find((c) => c.type === body.type || (body.type === 'fsa' && c.type === 'hsa'));
+  if (seeded) {
+    Object.assign(seeded, { last4: body.last4, network: body.network, nickname: body.nickname, type: body.type });
+    return { ...seeded };
+  }
+  const card: Card = {
+    id: `card_${body.type}_${state.cards.length + 1}`,
+    type: body.type,
+    nickname: body.nickname,
+    balance_cents: body.type === 'general' ? 500000 : 34000,
+    status: 'active',
+    last4: body.last4,
+    network: body.network,
+  };
+  state.cards.push(card);
+  return { ...card };
 }
 
 export async function tts(): Promise<TtsResponse> {
@@ -379,13 +437,32 @@ export async function checkoutPreview(): Promise<CheckoutPreview> {
   };
 }
 
-export async function checkoutConfirm(idempotencyKey: string, promptId: string): Promise<CheckoutResult> {
+export async function checkoutConfirm(
+  idempotencyKey: string,
+  promptId: string,
+  useProposedSplit = true,
+): Promise<CheckoutResult> {
   await wait(800);
   const existing = state.payments.get(idempotencyKey);
   if (existing) return existing;
   consumePrompt(promptId, 'confirm_checkout');
 
-  const cart = buildCart(state.proposedSplit);
+  const cart = buildCart(useProposedSplit ? state.proposedSplit : null);
+
+  // Simulated decline: a group larger than its card's balance is refused,
+  // all or nothing, and nothing is charged (3.6).
+  const over = cart.groups.find((g) => g.subtotal_cents > card(g.card_id).balance_cents);
+  if (over) {
+    const c = card(over.card_id);
+    const nickname = c.nickname;
+    throw new ApiError({
+      code: 'E_CARD_DECLINED',
+      message: `simulated decline on ${c.id}`,
+      speech: `Your ${nickname} was declined. The balance is ${formatCents(c.balance_cents)} and these items total ${formatCents(over.subtotal_cents)}. Nothing was charged. Want me to move some items to another card?`,
+      retryable: false,
+    });
+  }
+
   for (const g of cart.groups) card(g.card_id).balance_cents -= g.subtotal_cents;
   state.items = [];
   state.proposedSplit = null;
@@ -445,6 +522,11 @@ export async function command(transcript: string, promptId: string | null): Prom
       const res = await clearCart(liveId!);
       return { action: 'cart_cleared', result: res.cart, voice: res.voice };
     }
+  }
+  if (live?.scope === 'confirm_checkout' && state.proposedSplit && has(t, 'no', 'keep')) {
+    // The user turned down the reroute: charge the original cards, which declines.
+    const res = await checkoutConfirm(randomUUID(), liveId!, false);
+    return { action: 'checkout_confirmed', result: res, voice: res.voice };
   }
   if (has(t, 'skip', 'no')) {
     if (liveId && live) live.consumed = true;

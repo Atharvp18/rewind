@@ -124,7 +124,13 @@ export interface Card {
   nickname: string;
   balance_cents: number;
   status: 'active' | 'frozen' | 'closed' | 'expired';
+  /** PROPOSED (not in 0.6): last 4 digits for display. The full number never reaches the app. */
+  last4?: string | null;
+  /** PROPOSED (not in 0.6): card network read from the card face. */
+  network?: CardNetwork | null;
 }
+
+export type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover' | 'other';
 
 export interface CartItem {
   id: string;
@@ -194,6 +200,37 @@ export interface CommandResponse {
   voice: VoiceRequest;
 }
 
+// ---------------------------------------------------------------------------
+// PROPOSED onboarding endpoints (not in tech spec 0.6; need Atharv and Tiea).
+// Card images go through the same never-retained path as shelf frames, and
+// responses carry the last 4 digits only, never a full card or member number.
+// ---------------------------------------------------------------------------
+
+export type CardScanKind = 'insurance' | 'payment';
+
+export interface CardScanResult {
+  /** `unclear` means try again; `framing_hint` says how ("move closer", "hold steady"). */
+  state: 'read' | 'unclear';
+  framing_hint: string | null;
+  insurance: { insurer_name: string; plan_name: string | null; member_id_last4: string | null } | null;
+  payment: {
+    network: CardNetwork | null;
+    /** null when the card face does not say HSA or FSA; the app then asks. */
+    card_type: Card['type'] | null;
+    last4: string | null;
+  } | null;
+}
+
+export interface LinkCardRequest {
+  type: Card['type'];
+  nickname: string;
+  last4: string | null;
+  network: CardNetwork | null;
+}
+
+/** PROPOSED error code: a simulated charge exceeded a card's balance at confirm time. */
+export const E_CARD_DECLINED = 'E_CARD_DECLINED';
+
 export interface SttResponse {
   transcript: string;
   confidence: number;
@@ -209,6 +246,7 @@ export interface TtsResponse {
 // ---------------------------------------------------------------------------
 
 export { ApiError, type ErrorEnvelope } from '@/lib/api-error';
+export type { SttHint } from '@/lib/mock-backend';
 
 /** Raised when the backend cannot be reached at all (no envelope to speak). */
 export const E_NETWORK = 'E_NETWORK';
@@ -283,8 +321,9 @@ export function scan(
   return request('/v1/scan', { method: 'POST', body: form });
 }
 
-export function stt(audioUri: string): Promise<SttResponse> {
-  if (USE_MOCK) return mock.stt();
+/** `mockHint` only steers the offline mock, which cannot hear; the real backend ignores it. */
+export function stt(audioUri: string, mockHint?: mock.SttHint): Promise<SttResponse> {
+  if (USE_MOCK) return mock.stt(mockHint);
   const form = new FormData();
   form.append('audio', { uri: audioUri, name: 'speech.wav', type: 'audio/wav' } as any);
   return request('/v1/stt', { method: 'POST', body: form });
@@ -339,12 +378,36 @@ export function checkoutPreview(): Promise<CheckoutPreview> {
   return request('/v1/checkout/preview', { method: 'POST' });
 }
 
-export function checkoutConfirm(idempotencyKey: string, promptId: string): Promise<CheckoutResult> {
-  if (USE_MOCK) return mock.checkoutConfirm(idempotencyKey, promptId);
+/**
+ * `useProposedSplit: false` (PROPOSED field) means the user declined the
+ * reroute and wants the original cards charged, which can be declined
+ * (E_CARD_DECLINED) when a group exceeds its card's balance.
+ */
+export function checkoutConfirm(
+  idempotencyKey: string,
+  promptId: string,
+  useProposedSplit = true,
+): Promise<CheckoutResult> {
+  if (USE_MOCK) return mock.checkoutConfirm(idempotencyKey, promptId, useProposedSplit);
   return request(
     '/v1/checkout/confirm',
-    json({ idempotency_key: idempotencyKey, prompt_id: promptId }),
+    json({ idempotency_key: idempotencyKey, prompt_id: promptId, use_proposed_split: useProposedSplit }),
   );
+}
+
+/** PROPOSED: read an insurance or payment card held up to the camera. */
+export function scanCard(imageUri: string, kind: CardScanKind): Promise<CardScanResult> {
+  if (USE_MOCK) return mock.scanCard(kind);
+  const form = new FormData();
+  form.append('image', { uri: imageUri, name: 'card.jpg', type: 'image/jpeg' } as any);
+  form.append('kind', kind);
+  return request('/v1/onboarding/card-scan', { method: 'POST', body: form });
+}
+
+/** PROPOSED: link a card confirmed during onboarding. */
+export function linkCard(body: LinkCardRequest): Promise<Card> {
+  if (USE_MOCK) return mock.linkCard(body);
+  return request('/v1/cards', json(body));
 }
 
 export function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {

@@ -11,7 +11,6 @@
  */
 
 import { randomUUID } from 'expo-crypto';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import {
   createContext,
@@ -28,6 +27,7 @@ import { AppState } from 'react-native';
 import * as api from '@/lib/api';
 import {
   ApiError,
+  E_CARD_DECLINED,
   type Card,
   type Cart,
   type CheckoutPreview,
@@ -36,10 +36,12 @@ import {
   type Health,
   type ResponseScope,
   type ScanResponse,
+  type SttHint,
   type VoiceRequest,
 } from '@/lib/api';
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
 import { configureAudio, speaker, useMic } from '@/lib/audio';
+import { haptic } from '@/lib/haptics';
 import { Phrases } from '@/lib/phrases';
 
 export type Phase =
@@ -59,8 +61,22 @@ export interface LivePrompt {
   expiresAt: number;
 }
 
+export interface TranscriptLine {
+  id: string;
+  who: 'agent' | 'user';
+  text: string;
+}
+
+/** Which content the info panel shows over the camera (one screen, tech spec 1.8 redesign). */
+export type PanelView = 'camera' | 'cart' | 'checkout';
+
 export interface AgentState {
   phase: Phase;
+  view: PanelView;
+  /** Everything said, both sides, newest last (captions, WCAG 1.2.2). Never logged or sent anywhere. */
+  transcript: TranscriptLine[];
+  /** Spoken text of a declined simulated payment, shown in a red panel until the next checkout. */
+  declined: string | null;
   caption: string | null;
   captionIsAlert: boolean;
   lastVoice: VoiceRequest | null;
@@ -94,7 +110,10 @@ type Action =
   | { type: 'preview'; preview: CheckoutPreview | null }
   | { type: 'receipt'; receipt: CheckoutResult | null }
   | { type: 'clear_scan' }
-  | { type: 'mic_denied' };
+  | { type: 'mic_denied' }
+  | { type: 'user_said'; text: string }
+  | { type: 'declined'; message: string | null }
+  | { type: 'view'; view: PanelView };
 
 const PROMPT_TTL_MS = 15_000;
 const SILENCE_MS = 8_000;
@@ -104,8 +123,16 @@ const LISTEN_WINDOW_MS = 6_000;
 /** Phases an interim line may finish in without ending them. */
 const BUSY: Phase[] = ['listening', 'capturing', 'awaiting_scan', 'submitting'];
 
+const TRANSCRIPT_MAX = 30;
+
+const pushLine = (t: TranscriptLine[], line: TranscriptLine) =>
+  t[t.length - 1]?.id === line.id ? t : [...t, line].slice(-TRANSCRIPT_MAX);
+
 const initial: AgentState = {
   phase: 'idle',
+  view: 'camera',
+  transcript: [],
+  declined: null,
   caption: null,
   captionIsAlert: false,
   lastVoice: null,
@@ -128,7 +155,7 @@ function reducer(s: AgentState, a: Action): AgentState {
     case 'scan_sent':
       return { ...s, phase: 'awaiting_scan' };
     case 'scan_received':
-      return { ...s, phase: 'speaking_result', lastScan: a.res };
+      return { ...s, phase: 'speaking_result', lastScan: a.res, view: 'camera' };
     case 'error':
       return { ...s, phase: 'speaking_error' };
     case 'submit':
@@ -146,6 +173,7 @@ function reducer(s: AgentState, a: Action): AgentState {
       return {
         ...s,
         caption: a.voice.text,
+        transcript: pushLine(s.transcript, { id: a.voice.request_id, who: 'agent', text: a.voice.text }),
         captionIsAlert: a.voice.priority === 'alert',
         lastVoice: a.remember ? a.voice : s.lastVoice,
         livePrompt: prompt,
@@ -176,6 +204,12 @@ function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, lastScan: null };
     case 'mic_denied':
       return { ...s, micDenied: true, phase: 'idle' };
+    case 'user_said':
+      return { ...s, transcript: pushLine(s.transcript, { id: `user-${Date.now()}`, who: 'user', text: a.text }) };
+    case 'declined':
+      return { ...s, declined: a.message };
+    case 'view':
+      return { ...s, view: a.view };
   }
 }
 
@@ -186,8 +220,13 @@ export interface AgentApi {
   /** Talk button: hold to talk. */
   talkHoldStart: () => void;
   talkHoldEnd: () => void;
-  /** Accessibility button short tap: repeat the last prompt with a haptic pulse. */
+  /** Caption pill tap: repeat the last prompt with a haptic pulse (decision 12). */
   repeat: () => void;
+  /**
+   * Onboarding: route the next thing the user says to `fn` instead of
+   * /v1/command. Pass null to restore normal commands.
+   */
+  setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => void;
   beginCapture: () => void;
   scanFrame: (imageUri: string, barcode: string | null, discard: () => void) => Promise<void>;
   addToCart: (cardId: string) => Promise<void>;
@@ -198,12 +237,16 @@ export interface AgentApi {
   askClearCart: () => Promise<void>;
   confirmClearCart: () => Promise<void>;
   startCheckout: () => Promise<void>;
-  confirmCheckout: () => Promise<void>;
+  /** `useProposedSplit: false` charges the original cards, which can be declined. */
+  confirmCheckout: (useProposedSplit?: boolean) => Promise<void>;
   resetDemo: (run: 1 | 2) => Promise<void>;
+  showView: (view: PanelView) => void;
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
 }
 
 const AgentContext = createContext<AgentApi | null>(null);
+
+export const isLocalVoice = (v: VoiceRequest) => v.request_id.startsWith('local-');
 
 const localVoice = (text: string, priority: 'alert' | 'normal' = 'normal'): VoiceRequest => ({
   request_id: `local-${Date.now()}`,
@@ -234,6 +277,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const holding = useRef(false);
   const checkoutKey = useRef<string | null>(null);
   const onDoneRef = useRef<(v: VoiceRequest) => void>(() => {});
+  const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void } | null>(null);
 
   // --- speech -------------------------------------------------------------
 
@@ -258,6 +302,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         const id = voice.prompt_id;
         promptTimer.current = setTimeout(() => dispatch({ type: 'prompt_expired', id }), PROMPT_TTL_MS);
       }
+      if (voice.priority === 'alert') haptic.error();
       if (screenReaderOn) {
         // Decision 13: mute our own voice, send the text through the screen reader.
         announce(voice.text);
@@ -279,6 +324,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const handleError = useCallback(
     (e: unknown) => {
       dispatch({ type: 'error' });
+      haptic.error();
+      if (e instanceof ApiError && e.code === E_CARD_DECLINED) {
+        dispatch({ type: 'declined', message: e.speech });
+        dispatch({ type: 'preview', preview: null });
+        dispatch({ type: 'clear_prompt' });
+        checkoutKey.current = null;
+      }
       // The envelope's speech is always safe to speak (0.6). Without one the
       // backend was unreachable, so the app supplies the line.
       say(localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline));
@@ -354,13 +406,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           break;
         case 'read_cart':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
-          router.push('/cart');
+          dispatch({ type: 'view', view: 'cart' });
           break;
         case 'checkout_preview':
           checkoutKey.current = randomUUID();
+          dispatch({ type: 'declined', message: null });
           dispatch({ type: 'preview', preview: res.result as CheckoutPreview });
           dispatch({ type: 'receipt', receipt: null });
-          router.push('/checkout');
+          dispatch({ type: 'view', view: 'checkout' });
           break;
         case 'checkout_confirmed':
           dispatch({ type: 'receipt', receipt: res.result as CheckoutResult });
@@ -373,7 +426,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'clear_prompt' });
           break;
         case 'open_settings':
-          router.push('/settings');
+          router.push('/profile');
           break;
       }
       say(res.voice);
@@ -404,7 +457,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       say(localVoice(Phrases.micDenied), false);
       return;
     }
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     dispatch({ type: 'listen' });
     if (autoStop) {
       if (listenTimer.current) clearTimeout(listenTimer.current);
@@ -423,8 +475,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
     dispatch({ type: 'submit' });
     try {
-      const { transcript, confidence } = await api.stt(rec.uri);
-      await sendTranscript(transcript, confidence);
+      const handler = listenHandler.current;
+      const { transcript, confidence } = await api.stt(rec.uri, handler?.hint);
+      dispatch({ type: 'user_said', text: transcript });
+      if (handler) {
+        dispatch({ type: 'idle' });
+        handler.fn(transcript);
+      } else {
+        await sendTranscript(transcript, confidence);
+      }
     } catch (e) {
       handleError(e);
     } finally {
@@ -434,6 +493,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const onSpeechDone = (voice: VoiceRequest) => {
     dispatch({ type: 'speak_done', voice });
+    if (!isLocalVoice(voice)) haptic.done();
     if (pendingAlert.current && pendingAlert.current.request_id !== voice.request_id) {
       // Never drop an alert: replay it in full after the interruption (1.2).
       const alert = pendingAlert.current;
@@ -482,6 +542,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   };
 
   const talkTap = useCallback(() => {
+    haptic.tap();
     const s = stateRef.current;
     if (s.phase === 'listening') {
       void stopListening();
@@ -492,7 +553,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void startListening(true);
       return;
     }
-    if (s.livePrompt) {
+    if (s.livePrompt || listenHandler.current) {
       void startListening(true);
       return;
     }
@@ -504,6 +565,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const talkHoldStart = useCallback(() => {
     holding.current = true;
+    haptic.tap();
     if (speaker.speaking) bargeIn();
     void startListening(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -516,8 +578,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const setListenHandler = useCallback(
+    (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => {
+      listenHandler.current = fn ? { hint, fn } : null;
+    },
+    [],
+  );
+
   const repeat = useCallback(() => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.done();
     const last = stateRef.current.lastVoice;
     if (speaker.speaking) speaker.interrupt();
     say(last ?? localVoice(Phrases.nothingToRepeat), false);
@@ -527,7 +596,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const beginCapture = useCallback(() => {
     if (speaker.speaking) bargeIn();
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    haptic.capture();
     dispatch({ type: 'capture' });
   }, []);
 
@@ -600,6 +669,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const startCheckout = useCallback(async () => {
     dispatch({ type: 'submit' });
     dispatch({ type: 'receipt', receipt: null });
+    dispatch({ type: 'declined', message: null });
+    dispatch({ type: 'view', view: 'checkout' });
     try {
       const preview = await api.checkoutPreview();
       checkoutKey.current = randomUUID();
@@ -610,14 +681,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, [say, handleError]);
 
-  const confirmCheckout = useCallback(async () => {
+  const confirmCheckout = useCallback(async (useProposedSplit = true) => {
     const s = stateRef.current;
     const promptId = s.preview?.voice.prompt_id;
     if (!promptId || s.livePrompt?.id !== promptId) return;
     if (!checkoutKey.current) checkoutKey.current = randomUUID();
     dispatch({ type: 'submit' });
     try {
-      const receipt = await api.checkoutConfirm(checkoutKey.current, promptId);
+      const receipt = await api.checkoutConfirm(checkoutKey.current, promptId, useProposedSplit);
       dispatch({ type: 'receipt', receipt });
       dispatch({ type: 'preview', preview: null });
       dispatch({ type: 'clear_prompt' });
@@ -638,8 +709,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'cart', cart: res.cart });
         dispatch({ type: 'preview', preview: null });
         dispatch({ type: 'receipt', receipt: null });
+        dispatch({ type: 'declined', message: null });
         dispatch({ type: 'clear_scan' });
         dispatch({ type: 'clear_prompt' });
+        dispatch({ type: 'view', view: 'camera' });
       } catch (e) {
         handleError(e);
       }
@@ -647,13 +720,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [handleError],
   );
 
+  const showView = useCallback((view: PanelView) => {
+    if (view === 'cart') void refreshCart();
+    dispatch({ type: 'view', view });
+  }, [refreshCart]);
+
   const value = useMemo<AgentApi>(
     () => ({
+      showView,
       state,
       talkTap,
       talkHoldStart,
       talkHoldEnd,
       repeat,
+      setListenHandler,
       beginCapture,
       scanFrame,
       addToCart,
@@ -669,9 +749,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       sayLocal,
     }),
     [
-      state, talkTap, talkHoldStart, talkHoldEnd, repeat, beginCapture, scanFrame, addToCart, skip,
+      state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal,
+      confirmCheckout, resetDemo, sayLocal, showView,
     ],
   );
 

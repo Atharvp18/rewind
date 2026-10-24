@@ -30,6 +30,24 @@ export type Palette = {
   danger: string;
   dangerBg: string;
   scrim: string;
+  /** Half-circle dock gradient, top to bottom (amber Talk sits on it: ≥5.4:1). */
+  dockTop: string;
+  dockBottom: string;
+  /** Talk button gradient and its ring. */
+  talkTop: string;
+  talkBottom: string;
+  talkRing: string;
+  /** Caption pill (frame 2). */
+  pill: string;
+  onPill: string;
+  /** Info panel base color (frame 3). Drawn at the user's panel opacity, 0.75 to 0.95. */
+  panel: string;
+  onPanel: string;
+  onPanelMuted: string;
+  /** Top-right profile button: dark disc with a light ring so it stands out on any camera image. */
+  profileBg: string;
+  onProfile: string;
+  profileRing: string;
   /** Width of control borders. High contrast draws a visible edge on everything. */
   controlBorderWidth: number;
 };
@@ -58,6 +76,19 @@ export const Palettes: Record<ThemeName, Palette> = {
     danger: '#B3261E',
     dangerBg: '#FCE8E6',
     scrim: 'rgba(20,24,31,0.55)',
+    dockTop: '#123E6B',
+    dockBottom: '#0A2540',
+    talkTop: '#FFC233',
+    talkBottom: '#F2A900',
+    talkRing: '#14181F',
+    pill: '#E6E3DD',
+    onPill: '#14181F',
+    panel: '#2B211D',
+    onPanel: '#FFFFFF',
+    onPanelMuted: '#E8E2DE',
+    profileBg: '#14181F',
+    onProfile: '#FFFFFF',
+    profileRing: '#FFFFFF',
     controlBorderWidth: 0,
   },
   dark: {
@@ -83,6 +114,19 @@ export const Palettes: Record<ThemeName, Palette> = {
     danger: '#FF8A80',
     dangerBg: '#3A1614',
     scrim: 'rgba(0,0,0,0.6)',
+    dockTop: '#1A232E',
+    dockBottom: '#0A2540',
+    talkTop: '#FFC233',
+    talkBottom: '#F2A900',
+    talkRing: '#14181F',
+    pill: '#2A3646',
+    onPill: '#F3F4F6',
+    panel: '#2B211D',
+    onPanel: '#FFFFFF',
+    onPanelMuted: '#E8E2DE',
+    profileBg: '#14181F',
+    onProfile: '#FFFFFF',
+    profileRing: '#FFFFFF',
     controlBorderWidth: 0,
   },
   highContrast: {
@@ -108,6 +152,19 @@ export const Palettes: Record<ThemeName, Palette> = {
     danger: '#FF9C94',
     dangerBg: '#000000',
     scrim: 'rgba(0,0,0,0.85)',
+    dockTop: '#000000',
+    dockBottom: '#000000',
+    talkTop: '#FFE000',
+    talkBottom: '#FFE000',
+    talkRing: '#FFFFFF',
+    pill: '#000000',
+    onPill: '#FFFFFF',
+    panel: '#000000',
+    onPanel: '#FFFFFF',
+    onPanelMuted: '#FFFFFF',
+    profileBg: '#000000',
+    onProfile: '#FFFFFF',
+    profileRing: '#FFE000',
     controlBorderWidth: 2,
   },
 };
@@ -152,3 +209,23 @@ export const Radius = {
 } as const;
 
 export const MaxContentWidth = 640;
+
+/** Info panel opacity (frame 3). Below 0.75 white text can drop under 4.5:1 over a bright scene. */
+export const PanelOpacity = { min: 0.75, default: 0.85, max: 0.95, step: 0.05 } as const;
+
+export const Motion = {
+  /** Caption pill grow / shrink. */
+  pill: 260,
+  /** Info panel slide in. */
+  panel: 200,
+} as const;
+
+export const Elevation = {
+  floating: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+} as const;
