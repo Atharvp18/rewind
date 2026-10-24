@@ -1318,7 +1318,7 @@ async def scan(image: UploadFile, barcode: str | None = None, hint_price_cents: 
 ## 3.12 Atharv's definition of done
 
 - `pytest` covers group rules 1 to 3 with the demo numbers: $340.00, $15.00, $12.99, $5.49, $4.99.
-- Run 1 ends at **$321.52**. Run 2 produces the documented reroute.
+- Run 1 ends with the FSA at **$6.52** (FSA $25.00 minus $18.48). Run 2 produces the documented reroute.
 - `reset_demo()` runs twice with identical output.
 - After reset: two cards, two insurer profiles, three cached demo products, and three demo `eligibility_items` rows exist in Supabase.
 - A repeated `idempotency_key` returns the original payment and does not charge twice.
@@ -1392,7 +1392,7 @@ These are the **facts** each line must contain. The exact sentence may be phrase
 
 > Must contain "HSA card", "can't cover", "$18.48", "Advil Ibuprofen 200mg", "Bandages", "Visa credit" → yes. **Must not contain "$15.00".**
 
-Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 32152. Any other stored balance means routing or money handling is wrong.
+Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 2500 − 1848 = 652 (the FSA). Any other stored balance means routing or money handling is wrong.
 
 ## 4.5 Test matrix
 
