@@ -19,7 +19,7 @@
 | Primary audience | Elderly and low-vision adults who shop independently for groceries and pharmacy items |
 | Secondary audience | Older adults, including those with tremor, for whom small buttons and menus are hard (future scope) |
 | Platform | Voice-first mobile app (Expo, React Native) |
-| Data policy | Mock data only. No real cards, balances (Nessie API), or personal information. Prescriptions use real data for users. Receipts use real data. The user's UnitedHealthcare profile is also mock. United is real insurance; BlueCross insurance is real; the other three providers use mock data |
+| Data policy | Mock data only. No real cards, balances (Nessie API), or personal information. Prescriptions use real data for users. Receipts use real data. The user's UnitedHealthcare profile is also mock. United is real insurance; BlueCross insurance is real; the other three providers use mock data (conflicts with the mock-only statements in sections 6.1, 10, and 14; see section 17) |
 
 ---
 
@@ -39,12 +39,14 @@
 2. The app captures the image and sends it to the backend, where a vision LLM API determines the product name, whether it is a medical item (boolean), and the price. The agent then speaks this information to the user
 3. If the user says yes to buy the product:
 
-**Medical item flow:**
+**Medical item flow**
+
 - Check if the user has an insurance card added in the app
 - If yes, use the scraped or AI-generated data for that specific insurance provider and tier to determine whether insurance covers the item
 - If covered, determine the copay from the data
 
-**Payment routing flow** (applies to all products; uses the price from step 2 for non-medical items, or the remaining amount after copay for medical items):
+**Payment routing flow** (applies to all products; uses the price from step 2 for non-medical items, or the remaining amount after copay for medical items)
+
 - Check if the item is HSA/FSA eligible (using a curated list of eligible items)
   - **If eligible:** check if the HSA or FSA balance has enough funds
     - **Sufficient balance:** notify the user and add to the HSA/FSA cart
@@ -161,7 +163,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation
 6. The user confirms by voice, and the item joins a cart grouped by payment method
 
-**Medication wording** (all estimates; always end with a pharmacist check):
+**Medication wording** (all estimates; always end with a pharmacist check)
 
 | Scenario | What the agent says |
 |---|---|
@@ -209,22 +211,24 @@ Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "
 
 ## 7. Technical Stack and Architecture
 
-| Layer | Choice | Notes |
-|---|---|---|
-| Mobile app | Expo (React Native) in Expo Go | Camera and mic. No native AR |
-| Vision and reasoning | Claude (main), Gemini Flash (fallback if credits run out) | Confirm credits at the Anthropic booth |
-| Speech to text | Cartesia Ink, streaming | Idle WebSocket closes after 3 min (secondary source); build reconnect |
-| Text to speech | Cartesia Sonic, streaming | Start speaking before the reply is complete |
-| Retrieval | Moss | JS and Python SDKs. React Native support unconfirmed; call from the backend |
-| Account data | Nessie mock accounts | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
-| Database | Supabase (primary), SQLite (backup) | One backend setting switches between them |
-| Backend | Python 3.12 or 3.13, functions behind an API | FastAPI suggested. The app talks to the backend, not the database |
-| Optional | Fetch.ai uAgents, one catalog scraper | Only if time allows. One uAgents example reports problems on Python 3.14 |
+Owners are listed per layer and follow the ownership split in section 11. Owner assignments are proposed and need confirmation (see section 17).
+
+| Layer | Choice | Owner | Notes |
+|---|---|---|---|
+| Mobile app | Expo (React Native) in Expo Go | Nak | Camera and mic. No native AR |
+| Vision and reasoning | Claude (main), Gemini Flash (fallback if credits run out) | Tiea | Confirm credits at the Anthropic booth |
+| Speech to text | Cartesia Ink, streaming | Nak | Idle WebSocket closes after 3 min (secondary source); build reconnect |
+| Text to speech | Cartesia Sonic, streaming | Nak | Start speaking before the reply is complete |
+| Retrieval | Moss | Tiea | JS and Python SDKs. React Native support unconfirmed; call from the backend |
+| Account data | Nessie mock accounts | Atharv | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
+| Database | Supabase (primary), SQLite (backup) | Atharv | One backend setting switches between them |
+| Backend | Python 3.12 or 3.13, functions behind an API | Atharv | FastAPI suggested. The app talks to the backend, not the database |
+| Optional | Fetch.ai uAgents, one catalog scraper | Tiea | Only if time allows. One uAgents example reports problems on Python 3.14 |
 
 ### 7.1 Request Flow
 
 ```
-App (camera frame + voice) 
+App (camera frame + voice)
   → Cartesia Ink (speech to text)
   → Claude Vision (structured JSON)
   → Moss (eligibility lookup + classification)
@@ -245,7 +249,7 @@ App (camera frame + voice)
 | Payments (stretch) | mock history rows with a per-item eligibility flag |
 | Moss collections | eligibility database and session memory (kept separate) |
 
-**Message formats** (agree before building):
+**Message formats** (agree before building)
 
 - **ScanResult:** name, price, category, confidence, eligibility
 - **PaymentRecommendation:** item, card id, balance before, reroute flag, reason
@@ -348,26 +352,26 @@ All payments use simulated data and mock accounts only.
 
 ## 11. Team Roles
 
-The team has discussed several splits. Informal preferences were: Nak on Cartesia and Figma, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item.
+The team has discussed several splits. Informal preferences were: Nak on Cartesia and Figma, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item and the work previously held by Aesha, who is no longer on the team.
 
 | Person | Owns |
 |---|---|
-| Nak | Expo shell, camera, mic, Cartesia voice loop, main screens |
-| Tiea | Claude vision and tool-calling orchestration; Fetch.ai only if there is spare time |
-| Atharv | Database, cart, routing, reroute, Nessie, simulated checkout |
+| Nak | Expo, camera, mic, Cartesia voice loop, main screens, shared components, design system contrast and tap target rules, accessibility test plan |
+| Tiea | Claude vision and tool-calling orchestration, Moss, Apify (optional catalog), Fetch.ai (optional), eligibility data and source |
+| Atharv | Backend, Supabase and SQLite backup, cart, routing, reroute, Visa (card routing and simulated checkout), Capital One (Nessie) |
 
 **Working rules**
 
-- One owner per file area: screens (Nak), shared components (Aesha), backend (Atharv), agents (Tiea)
+- One owner per file area: screens and shared components (Nak), backend (Atharv), agents and retrieval (Tiea)
 - Agree on message formats before building starts
-- If no fourth member joins, Tiea and Nak split cart and routing, and Aesha pairs on the eligibility data
+- If a fourth member joins, reassign the design system and the accessibility test plan first
 - Nobody adds a feature without removing one
 
 ---
 
 ## 12. Community Feature (stretch)
 
-- Invoices of previous store visit: name, address, amount, tax-estimation based on state. 
+- Invoices of previous store visit: name, address, amount, tax-estimation based on state
 - Not planned: automatic store assignment from scan history, because it tracks where vulnerable users shop
 
 ---
@@ -401,6 +405,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | Scope | Too many sponsors for one weekend |
 | Voice connection | Cartesia closes idle connections after 3 min (secondary source; confirm in Cartesia's docs) |
 | Venue network | Cartesia, Claude, and possibly Moss need internet |
+| Team capacity | With three owners, Tiea carries Claude vision, Moss, eligibility data, and the optional Fetch.ai and Apify work, and Nak carries the voice loop, screens, and accessibility work (see section 17) |
 
 ---
 
@@ -420,17 +425,30 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 
 1. Partner with organizations serving blind and low-vision people and recruit beta testers
 2. Reach caregivers through aging-services groups and senior centers
-3. Offer one local pharmacy a pilot in exchange for feedback, partner with CVS/Walmart Pharmacy or big companies later.
+3. Offer one local pharmacy a pilot in exchange for feedback, and partner with CVS or Walmart Pharmacy or other large companies later
 4. Link real accounts through the user's provider or an aggregator, with consent and subject to provider support
-5. Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim on HSA/FSA User Portal
+5. Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim on the HSA/FSA user portal
 6. True AR and a store community are future use cases
+
+---
+
+## 17. Open Decisions (added in this revision, requires team confirmation)
+
+The earlier draft referenced this section but did not include it. The items below are drawn only from conflicts and gaps in the document.
+
+1. **Working name.** Section 1 lists Rewind as a working name. Decide whether to keep it
+2. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which statement is correct and align all sections
+3. **Ownership of Aesha's former work.** Stated by Nak: Moss, Fetch.ai, Apify to Tiea; backend, Supabase, Visa, Capital One to Atharv; Cartesia, Expo, camera, mic to Nak. Not stated and assigned provisionally: shared components, design system rules, and the accessibility test plan to Nak (follows Expo and screens); eligibility data and source to Tiea (follows Moss). Confirm or reassign
+4. **Tiea's workload.** Tiea now holds Claude vision, Moss, eligibility data, and the optional Fetch.ai and Apify work
+5. **Cart and routing.** Assigned to Atharv with Visa and the backend. Confirm
+6. **Eligibility source.** Section 14 states that no documented source has been chosen
+7. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
 
 ---
 
 ## 18. Review Checklist by Person
 
-- **Nak:** voice loop gate, reconnect logic, screen list, and one quote from a user
-- **Tiea:** message formats, Claude vision prompt and failure handling, agent boundaries
-- **Aesha:** design system contrast and tap target rules, eligibility source, accessibility test plan
-- **Atharv:** schema, `reset_demo()`, simulated checkout, the SQLite switch
+- **Nak:** voice loop gate, reconnect logic, screen list, one quote from a user, design system contrast and tap target rules, accessibility test plan
+- **Tiea:** message formats, Claude vision prompt and failure handling, agent boundaries, Moss collections, eligibility source
+- **Atharv:** schema, `reset_demo()`, simulated checkout, the SQLite switch, Nessie accounts
 - **Everyone:** the open decisions in section 17, and that no real personal data appears anywhere
