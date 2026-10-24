@@ -16,7 +16,7 @@
 
 | Field | Detail |
 |---|---|
-| Name | Rewind (working name, see section 17) |
+| Name | Rewind (working name) |
 | Pitch | Point your phone at any product and hear what it is, what it costs, and which card to pay with |
 | Primary audience | Elderly and low-vision adults who shop independently for groceries and pharmacy items |
 | Secondary audience | Older adults, including those with tremor, for whom small buttons and menus are hard (future scope) |
@@ -159,7 +159,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 2. Claude vision returns product name, price, category, and confidence
 3. The app classifies the item as "HSA eligible" or "is not HSA eligible" and displays the confidence with it. The confidence display is required because HSA/FSA eligible items are marked publicly (team assumption: posters and tags on Walmart and Amazon listings). Sources to back this assumption are still needed (unverified)
 4. If the item is a medication, the app checks the selected insurer profile
-5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation. For a medication with a plan copay, the agent also states the copay and the remaining charge after the copay, and suggests that the remaining charge go to the HSA/FSA. The team's basis is that an item covered through insurance is HSA/FSA eligible (unverified)
+5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation. For a medication with a plan copay, the agent also states the copay and the remaining charge after the copay, and suggests that the remaining charge go to the HSA/FSA only after a certified source confirms it can be paid that way (section 20.5). The insurer's share is never routed to the HSA/FSA
 6. The user confirms by voice, and the item joins a cart grouped by payment method
 
 **Eligibility confirmation (replaces "may be eligible" wording)**
@@ -167,12 +167,12 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 The agent does not say "this may be eligible." It researches the item first, then states a result and its confidence, or says it could not confirm.
 
 1. Claude vision reads the package and shelf tag for an HSA/FSA eligibility marking, and for the product name, brand, size, and category
-2. The backend checks the category and product against the eligibility rules in Moss (source not yet chosen, section 17 item 6)
+2. The backend checks the category and product against the eligibility rules in Moss (source not yet chosen, section 17 item 2)
 3. The two results are compared. If they agree, the app states "HSA eligible" or "is not HSA eligible" with a confidence level
-4. If they disagree, or either step is unclear, the app does not guess. It says "I could not confirm eligibility" and asks which card to use (third label, section 17 item 20)
+4. If they disagree, or either step is unclear, the app does not guess. It says "I could not confirm eligibility" and asks which card to use (third label, section 17 item 5)
 5. The user hears the result, and the item joins the cart only after the user confirms
 
-**Medication items (team decision):** eligibility confidence is 100 percent, because medication eligibility is published online. This applies only when the product is matched exactly (name, strength, and form) to a published listing. The claim that every medication is published online is unverified, and the product match itself can still fail, so an unmatched product falls back to "I could not confirm eligibility." The insurance-covered portion is still not eligible (section 23.2), and copays always end with a pharmacist check.
+**Medication items (team decision):** when the product is matched exactly (name, strength, and form) to a published listing, the agent states the eligibility result plainly and does not read out a confidence number. The claim that every medication is published online is unverified, and the product match itself can still fail, so an unmatched product falls back to "I could not confirm eligibility." The insurance-covered portion is still not eligible (section 23.2), and copays always end with a pharmacist check.
 
 What counts as confirmed for non-medication items (confidence thresholds) is not yet set. Set it by testing on the demo shelf.
 
@@ -180,7 +180,7 @@ What counts as confirmed for non-medication items (confidence thresholds) is not
 
 | Scenario | What the agent says |
 |---|---|
-| OTC item | "This is HSA eligible, 100 percent confidence. Your plan may also have an over-the-counter benefit." If the item could not be confirmed: "I could not confirm eligibility" |
+| OTC item | "This is HSA eligible. Your plan may also have an over-the-counter benefit." If the item could not be confirmed: "I could not confirm eligibility" |
 | Prescription item also sold OTC | Give the OTC price, say a prescription version may be covered, and say to check with the pharmacist for the copay |
 | Prescription-only item | Say it is a prescription medication and to check with the pharmacist for the copay |
 | Prescription with a copay under the selected plan | Say the plan has a copay for this prescription and suggest that the user walk to the pharmacist and confirm the copay |
@@ -207,7 +207,7 @@ Prescriptions are scanned from the pill bottle label, then the agent reads the d
 
 ### 6.5 Interface and Voice Interaction
 
-This section groups the interface details by screen element so design and build share one reference. Phases are proposed and need confirmation (see section 17). Interface work is shared by the whole team.
+This section groups the interface details by screen element so design and build share one reference. Phases are proposed and need confirmation by the team. Interface work is shared by the whole team.
 
 **A. Home screen**
 
@@ -278,14 +278,14 @@ A persistent accessibility button appears on every screen, including onboarding,
 - The button is reachable by screen reader (VoiceOver and TalkBack), with a clear spoken label
 - The user can open it by voice ("accessibility settings")
 - Settings apply immediately across the whole app
-- Settings persist between sessions. Storage location (on device or in the database) is not decided (see section 17)
+- Settings persist between sessions. Storage location (on device or in the database) is not decided
 - Each setting is tested against its WCAG criterion before the demo
 
 ---
 
 ## 7. Technical Stack and Architecture
 
-Owners are listed per layer and follow the ownership split in section 11. Owner assignments are proposed and need confirmation (see section 17).
+Owners are listed per layer and follow the ownership split in section 11. Owner assignments are proposed and need team confirmation.
 
 | Layer | Choice | Owner | Notes |
 |---|---|---|---|
@@ -373,7 +373,7 @@ The earlier 1-second claim is dropped because nothing supports it.
 
 | Step | Item | What the agent says |
 |---|---|---|
-| 1 | Advil | "I see Advil, ibuprofen 200mg, $12.99. HSA eligible, 100 percent confidence. Your HSA balance is $340. Want to use your HSA card?" User says yes |
+| 1 | Advil | "I see Advil, ibuprofen 200mg, $12.99. HSA eligible. Your HSA balance is $340. Want to use your HSA card?" User says yes |
 | 2 | Bandages | Same flow, $5.49 (placeholder; set to the real shelf price) |
 | 3 | Kettle corn | "Kettle corn, $4.99. Not HSA eligible, high confidence. I'll put this on your Visa credit card" |
 | 4 | Checkout | "Two items totaling $18.48 on your HSA card. One item totaling $4.99 on your Visa credit. Ready to check out?" User confirms |
@@ -486,7 +486,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | Scope | Too many sponsors for one weekend |
 | Voice connection | Cartesia closes idle connections after 3 min (secondary source; confirm in Cartesia's docs) |
 | Venue network | Cartesia, Claude, and possibly Moss need internet |
-| Team capacity | With three owners, Tiea carries Claude vision, product lookup, Moss, eligibility data, and the optional Fetch.ai work, and Nak carries the voice loop, screens, and accessibility work (see section 17) |
+| Team capacity | With three owners, Tiea carries Claude vision, product lookup, Moss, eligibility data, and the optional Fetch.ai work, and Nak carries the voice loop, screens, and accessibility work |
 | Product lookup coverage | No official public product API was found for Walgreens or CVS, and the Walmart API's portal status is unverified (secondary sources). Automated lookups may also breach retailer terms (unverified). The shelf tag is therefore the primary price source (section 19) |
 | Store Expo Go update | The App Store Expo Go supports SDK 57 today and is expected to move to SDK 58 within weeks (Expo SDK 58 post). Do not update Expo Go on the demo phone, or the SDK 57 app will stop opening (section 21) |
 
@@ -515,37 +515,25 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 
 ---
 
-## 17. Open Decisions (added in this revision, requires team confirmation)
+## 17. Open Decisions
 
-The earlier draft referenced this section but did not include it. The items below are drawn only from conflicts and gaps in the document.
+Only decisions the team has not covered that affect the build or the pitch. Resolved items, naming, and team assignments are not listed here.
 
-1. **Working name.** Section 1 lists Rewind as a working name. Decide whether to keep it
-2. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which statement is correct and align all sections. The rationale for mock insurance plan data is now stated in section 6.1, but the real-versus-mock statements for United and BlueCross, prescriptions, and receipts remain unresolved
-2a. **Restricted prescriptions.** Section 6.1 states that some prescriptions are restricted under an insurance plan and not eligible. The agent's wording for a restricted, not-eligible prescription is not defined. Provide it or approve a draft
-3. **Ownership of Aesha's former work.** Stated by Nak: Moss and Fetch.ai to Tiea; backend, Supabase, Visa, Capital One to Atharv; Cartesia, Expo, camera, mic to Nak. Not stated and assigned provisionally: shared components, design system rules, and the accessibility test plan to Nak (follows Expo and screens); eligibility data and source to Tiea (follows Moss). Confirm or reassign
-4. **Tiea's workload.** Tiea now holds Claude vision, Moss, eligibility data, and the optional Fetch.ai work
-5. **Cart and routing.** Assigned to Atharv with Visa and the backend. Confirm
-6. **Eligibility source.** Section 14 states that no documented source has been chosen
-7. **WCAG target.** Section 6.7 requires a WCAG conformance level and version, which are not chosen. Confirm against the primary source
-8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
-9. **Settings storage.** On device or in the database (Atharv). Not decided
-10. **Product catalog.** Resolved by the team: there is no hand-built product catalog. Products are looked up live (section 19). Sections 5, 7, 11, 14, and 18 are updated to match
-11. **Interface phases.** The table in section 6.5 assigns phases that the team did not state. Confirm or change them
-12. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address on the invoice and shows where past purchases were made. Section 6.6 says no tracked locations, and section 12 says no automatic store assignment from scan history. Decide how store address is entered (for example chosen by the user or taken from seeded mock data) so it does not conflict
-13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Resolved by the team: "may be eligible" wording is not used. Sections 6.2, 8, 10, 6.6, and 20 are aligned to the research-and-confirm flow in section 6.2
-14. **Two buttons.** Section 6.7 describes the accessibility button. Section 6.5 group A describes a backup button with vibration. Confirm whether they are the same button or separate
-15. **Insurance and HSA/FSA eligibility.** The team basis that an insured item is HSA/FSA eligible is unverified. It needs a source before it is stated to judges
-16. **Nothing covers it.** Section 6.4 no longer says "do not choose for the user." Confirm that the credit card suggestion still requires voice confirmation, as the section states for every change
-17. **Public eligibility sources.** The assumption about posters and tags on Walmart and Amazon listings needs cited sources
-18. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
-19. **Retailer lookup scope.** Which of Walmart, CVS, and Walgreens are in the build, given that only Walmart has a documented lookup and that scraping may breach terms (section 19). Default proposed in section 19: shelf tag is the price source, retailers are optional enrichment
-20. **Third eligibility state.** Sections 6.2 and 6.5 define two labels. Section 20 needs a third, "could not confirm," for ambiguous items. Approve or reject
-21. **Fetch.ai status.** Section 4 says "Integrated, necessary." Sections 5 and 7 say optional and off the live path. Pick one
-22. **Screen reader overlap.** When VoiceOver or TalkBack is on, the app's own voice and the screen reader can speak at once. Decide whether the app mutes its own speech or uses screen reader announcements (section 20)
-23. **Supabase plus SQLite versus SQLite only.** Section 21 proposes SQLite only. Confirm
-24. **Camera frame retention.** Section 20 proposes that frames are not stored after processing. Confirm
-25. **Weighted and produce items.** Section 20 proposes they are out of scope for v1. Confirm
-26. **100 percent confidence for medication.** Team decision in section 6.2. Needs a source showing that medication eligibility is published online (for example the eligible-item list chosen in item 6), and a rule for what happens when the exact product is not in that list
+1. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which is correct and align every section
+2. **Eligibility source.** No documented source has been chosen for the eligibility rules, and the assumption that eligible items are marked publicly on Walmart and Amazon listings has no cited source (section 23.2). Items 3 and 4 depend on this
+3. **Medication eligibility stated plainly.** Section 6.2 has the agent state eligibility without a confidence number for exact matches, because medication eligibility is published online. That claim is unverified. Decide the source that backs it and what happens when the exact product is not listed
+4. **Certified source for copays.** Section 20.5 requires a certified source to confirm that the remaining charge after a copay can be paid from an HSA/FSA. Choose it (the plan administrator's rules, the IIAS eligible item list, or the IRS publications). Section 20.5 proposes that the app never defaults to the HSA/FSA when the source is unavailable
+5. **Third eligibility label.** Sections 6.2 and 6.5 define two labels. Section 20 uses a third, "I could not confirm eligibility." Approve it
+6. **Restricted prescription wording.** Section 6.1 says some prescriptions are restricted under a plan. The agent's wording for a restricted, not-eligible prescription is not defined
+7. **Retailer lookup scope.** Which of Walmart, CVS, and Walgreens are in the build, given that only Walmart has a documented lookup (for sellers) and that scraping may breach terms (sections 19 and 23.3). Proposed default: the shelf tag is the price source and retailers are optional extras.
+8. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address and shows where past purchases were made. Sections 6.6 and 12 say no tracked locations. Decide how the address is entered (for example chosen by the user or taken from seeded mock data)
+9. **Fetch.ai status.** Section 4 says "Integrated, necessary." Sections 5 and 7 say optional and off the live path. Pick one
+10. **Database.** Section 21.5 proposes SQLite only instead of Supabase plus SQLite. Confirm
+11. **WCAG target.** Choose a conformance level. Proposal: AA, which covers the criteria in section 23.1
+12. **One accessibility button or two.** Section 6.7 describes an accessibility button and section 6.5 group A a backup button with vibration. Decide whether they are the same
+13. **Screen reader overlap.** With VoiceOver or TalkBack on, the app's voice and the screen reader can speak at once. Decide whether the app mutes its own speech or uses screen reader announcements
+14. **Camera frame retention.** Section 20 proposes that frames are not stored after processing. Confirm
+15. **Weighted and produce items.** Section 20 proposes they are out of scope for v1. Confirm
 
 ---
 
@@ -570,7 +558,7 @@ The team decided that products are not pre-loaded into a catalog. Every product 
 | Barcode (UPC) scan | An exact product identity | Needs the barcode in frame. `expo-camera` barcode scanning in SDK 57 is unverified; check the expo-camera docs | Optional. Use it to make the cache and retailer lookups exact |
 | Local cache | A prior result for the same UPC or normalized name | After the first scan | Fast, works offline |
 | Walmart | A documented product lookup by item ID and UPC exists (secondary source: third-party wrappers; developer portal and key availability unverified) | Needs a developer key | Optional enrichment |
-| Walgreens | No official public API found. One third-party scraper listing describes an unofficial route, and says search pages sit behind a client-side verification step (secondary source) | Not sanctioned | Do not depend on it |
+| Walgreens | No official public API found | Not sanctioned | Do not depend on it |
 | CVS | No product or price API found | None found | Do not depend on it |
 
 ### 19.2 Lookup chain
@@ -579,7 +567,7 @@ The team decided that products are not pre-loaded into a catalog. Every product 
 2. If a barcode is present, use it as the key. Otherwise build a normalized key from brand, name, and size
 3. Check the cache. A hit returns instantly
 4. On a cache miss, run the retailer lookups that are enabled, in parallel, with a hard timeout (proposed 2 seconds, estimate). A slow or failed lookup is skipped, never waited on
-5. Classify eligibility with Moss, using category and product name against the eligibility rules (source not yet chosen, section 17 item 6)
+5. Classify eligibility with Moss, using category and product name against the eligibility rules (source not yet chosen, section 17 item 2)
 6. Write the result to the cache with its source label
 7. Speak the result. Speak what is known first. If a retailer result arrives later, offer it only if it changes the answer
 
@@ -615,12 +603,12 @@ No list can cover every possible scenario. This is the known set. When the team 
 | No price tag in frame | Say the price was not found. Ask the user to point at the shelf tag or say the price |
 | The tag may belong to the neighboring product | Read back "The tag says $X. Is that for this item?" Require a yes before adding (feasibility of detecting this is unverified) |
 | Multi-buy or sale text ("2 for $5", unit price) | Speak the shelf price and the condition. Ask for quantity |
-| Weighted or produce items (price per pound) | Out of scope for v1 (open, item 25). Say the per-pound price only and that a total needs a weight |
+| Weighted or produce items (price per pound) | Out of scope for v1 (open, item 15). Say the per-pound price only and that a total needs a weight |
 | Same product in several sizes | Size must be read. If it is not visible, ask |
 | Damaged, foreign-language, or partly hidden label | "I could not confirm this item" |
 | Camera permission denied | Spoken and on-screen instructions to enable it in phone settings. Fall back to the user saying the product name |
 | Camera busy or unavailable | Same fallback, plus a retry |
-| People or faces in the frame | Frames are not stored after processing (open, item 24) |
+| People or faces in the frame | Frames are not stored after processing (open, item 14) |
 
 ### 20.2 Voice and audio
 
@@ -641,7 +629,7 @@ No list can cover every possible scenario. This is the known set. When the team 
 
 | Scenario | Expected behavior |
 |---|---|
-| Eligibility unknown | Do not route to the HSA/FSA automatically. Say "I could not confirm eligibility" and ask which card (needs a third label, open item 20) |
+| Eligibility unknown | Do not route to the HSA/FSA automatically. Say "I could not confirm eligibility" and ask which card (needs a third label, open item 5) |
 | Ambiguous items (sunscreen, vitamins, protein bars) | Run the confirmation research (section 6.2). If it still cannot settle it, say "I could not confirm eligibility" and ask which card |
 | Bundle with eligible and non-eligible parts | Treat as not confirmed. Ask |
 | User has only an FSA, or both | Terminology rule: HSA means HSA and FSA. Use the account the user linked. Ask if two |
@@ -656,32 +644,73 @@ No list can cover every possible scenario. This is the known set. When the team 
 | Drug name or strength misread | Read both back. The user corrects by voice. Nothing proceeds until confirmed |
 | Same drug in several strengths | Confirm the strength |
 | User asks for medical advice (dose, interactions, "is it safe") | Decline: "I can't give medical advice. Please ask the pharmacist." Put this in the Claude system prompt and test it |
-| No insurance profile linked | Skip coverage. Say once: "Add your insurance in settings to hear coverage" |
-| Plan has no data for this drug, or copay unknown | "I don't have the copay. Please ask the pharmacist." Never estimate silently |
-| Restricted prescription under the plan | Wording undefined (section 17 item 2a) |
 | Prescription picked up at the counter | The app gives information only. It does not add a counter prescription to the simulated cart (open) |
 | Controlled or pharmacy-only item | Direct the user to the pharmacist. No payment routing |
 
-### 20.5 Payment, balances, and cart
+### 20.5 Insurance-covered medication and copay
+
+Applies when the selected insurer profile covers the medication. The insurer's share is never routed to an HSA/FSA, because only the part not compensated by insurance can be a qualified expense (IRS Pub 969 and Pub 502, section 23.2). If there is a copay, the remaining amount the user pays may go to the HSA/FSA only after it is confirmed with a certified source.
+
+**Certified source (definition, to be chosen):** a source that carries authority for the question "can this out-of-pocket amount be paid from an HSA/FSA?" Candidates: the user's plan administrator's published eligibility rules, the IIAS-certified eligible item list (section 23.3), or the IRS publications cited in section 23. The team has not chosen which one the app uses (open item 4). The app does not claim certification itself.
 
 | Scenario | Expected behavior |
 |---|---|
-| No card linked | Prompt to link one. Checkout is blocked |
-| Balance exactly equals the total | Counts as sufficient |
+| No insurance profile linked | Skip coverage. Say once: "Add your insurance in settings to hear coverage" |
+| Plan has no data for this drug, or copay unknown | "I don't have the copay. Please ask the pharmacist." Never estimate silently |
+| Covered with a copay | Say the drug, the plan copay, and the remaining charge. Run the certified-source check on the remaining charge before suggesting any HSA/FSA payment. Then ask the user to confirm by voice |
+| Certified source confirms the remaining charge is payable from the HSA/FSA | Suggest the HSA/FSA for the remaining charge, apply the balance rules in section 20.6, and ask for voice confirmation |
+| Certified source says the remaining charge is not payable from the HSA/FSA | Say so and why. Route to the normal Visa card after voice confirmation |
+| Certified source could not be reached or gave no answer | Say "I could not confirm that your HSA or FSA can pay the remaining charge." Do not default to the HSA/FSA. Ask which card to use |
+| Covered with a zero copay | Nothing remains to pay. Do not add the item to any card. Say the plan shows no copay and to confirm at the pharmacy counter |
+| Plan uses coinsurance, a deductible, or another structure the mock profile does not model | "I only have copay information for your plan. Please ask the pharmacist." No estimate |
+| Shelf (cash) price differs from the plan copay | Say both numbers and which one applies to the covered prescription. Never add both to the cart |
+| Same drug is sold OTC and by prescription | Confirm which one the user means before any amount is stated |
+| Restricted prescription, prior authorization, or quantity limit | Wording undefined (section 17 item 6). Until set, say "your plan may restrict this prescription; please ask the pharmacist" and route no payment |
+| The remaining charge is larger than the HSA/FSA balance | Apply the balance rules in section 6.4 to the remaining charge only, not to the full price |
+| The pharmacist quotes a different copay than the app | The pharmacist's number wins. The app updates the cart on voice confirmation |
+| User is enrolled in Medicare | Make no claim in either direction (section 3) |
+| Dependent's or family member's prescription | Out of scope for v1 (open) |
+| Insurance data is mock, real, or out of date | Follows the data-policy decision (open item 1). The app never says the data is current |
+
+### 20.6 HSA/FSA payments
+
+| Scenario | Expected behavior |
+|---|---|
+| No HSA/FSA card linked | Prompt to link one. Route everything to the normal Visa card until then |
+| Both an HSA and an FSA linked | Ask which to use. Do not choose silently |
+| Only an FSA is linked | Terminology rule: HSA means HSA and FSA. Use the FSA. FSA plan-year deadlines are not modeled (unverified) |
+| Several HSA/FSA cards linked | Ask which card, unless the user has set a default |
+| Item confirmed eligible and balance is sufficient | Add to the HSA/FSA cart (section 2, payment routing flow) |
+| Item confirmed eligible but balance is not sufficient | Warn and ask whether to use the Visa card instead. Voice confirmation required |
+| Item confirmed not eligible | Add to the Visa card. Say why. Do not route to the HSA/FSA, even if the user asks. The tax effect of a non-qualified HSA purchase is not researched here (unverified), so the app only says it cannot confirm eligibility |
+| Item eligibility could not be confirmed | Do not route to the HSA/FSA automatically. Say "I could not confirm eligibility" and ask which card |
+| User prefers the Visa card for an eligible item | Allow it by voice. Record it as a possible reimbursement (stretch, section 6.6) |
+| Balance exactly equals the amount | Counts as sufficient |
 | Balance is zero or negative | Treat as insufficient. Use rule 3 in section 6.4 |
-| Balance changed since the scan | Fetch balances again at checkout and rerun routing if they differ |
+| Balance changed since the scan | Fetch the balance again at checkout and rerun routing if it differs |
 | Nessie slow or down | Use last known balances, say they are last known, and warn. In the demo, fall back to seeded balances |
+| HSA/FSA account frozen, closed, or card expired | Treat as no card linked |
+| Eligible and ineligible items in one cart | Group by card. Read the split aloud before checkout (section 6.3) |
+| One card's group exceeds its balance | Rule 2 in section 6.4. Say the amounts aloud and ask before moving any item |
+| Balance crosses the low-balance level after a purchase | Speak an alert, with priority over routine replies |
+| A real store's register behaves differently from the app | The app is guidance only. Stores that use IIAS may block ineligible items on the card regardless (section 23.3). Say "this is a simulated payment" in the demo |
 | Money math | Use whole cents. Totals are before tax and the agent says "before tax" (tax estimate is stretch) |
+
+### 20.7 Cart and checkout
+
+| Scenario | Expected behavior |
+|---|---|
+| No card linked at all | Prompt to link one. Checkout is blocked |
 | Same item scanned twice | Ask "add another, or is it the same item?" |
 | Remove, change quantity, clear cart | Support "remove last item" and "clear cart" (with confirmation) |
 | Checkout with an empty cart | "Your cart is empty" |
 | User says "yes" to a stale question | Each confirmation is tied to one prompt and expires after a short time (proposed 15 seconds, estimate) |
 | Double confirm at checkout | Simulated payment is all-or-nothing with an idempotency key, so it cannot run twice |
-| Nothing covers the total | Section 6.4 rule 3, with voice confirmation (open item 16) |
+| Nothing covers the total | Section 6.4 rule 3, with voice confirmation |
 | Refunds and returns | Out of scope |
 | Non-US currency | Out of scope (USD only) |
 
-### 20.6 Network and services
+### 20.8 Network and services
 
 | Scenario | Expected behavior |
 |---|---|
@@ -693,28 +722,28 @@ No list can cover every possible scenario. This is the known set. When the team 
 | Retailer lookup slow or blocked | Skip it (section 19) |
 | Venue Wi-Fi blocks traffic or needs a login page | Use a phone hotspot. Rehearse it |
 
-### 20.7 Accessibility
+### 20.9 Accessibility
 
 | Scenario | Expected behavior |
 |---|---|
-| VoiceOver or TalkBack on while the app also speaks | Two voices at once. Decide: mute app speech or use screen reader announcements (open item 22) |
+| VoiceOver or TalkBack on while the app also speaks | Two voices at once. Decide: mute app speech or use screen reader announcements (open item 13) |
 | Largest text size | Layouts must not clip or hide controls. Test at the maximum |
 | Reduced motion, dark mode, high contrast | Honored by the settings panel (section 6.7) |
 | Tremor or accidental touches | Large targets. Confirm destructive actions by voice or a second tap |
 | One-handed or left-handed use | Primary controls reachable at the bottom of the screen |
 | Deaf or hard of hearing | Captions on, adjustable volume, tap alternatives |
 
-### 20.8 Privacy and data
+### 20.10 Privacy and data
 
 | Scenario | Expected behavior |
 |---|---|
-| Camera frames | Not saved after processing (open item 24) |
+| Camera frames | Not saved after processing (open item 14) |
 | Logs | No API keys, card numbers, or full transcripts in logs |
 | Real pill-bottle label (patient name on it) | Demo uses a prop label only. A real version would send that image to a third party and needs its own review |
 | Session recall | Per session only. No location tracking (sections 6.6 and 12) |
 | API keys | Backend `.env`, gitignored. Never in the app |
 
-### 20.9 Demo day
+### 20.11 Demo day
 
 | Scenario | Expected behavior |
 |---|---|
@@ -785,7 +814,7 @@ Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visib
 
 | Choice | Default | Why |
 |---|---|---|
-| Database | SQLite only | Section 7.3 already allows it, and it removes one failure point. Open item 23 |
+| Database | SQLite only | Section 7.3 already allows it, and it removes one failure point. Open item 10 |
 | TTS playback | Backend returns one audio file per sentence; the app plays each as it arrives | Playing a raw streamed audio feed in Expo Go is unverified. Sentence files are a safer first version |
 | STT | App sends microphone audio to the backend; the backend relays to Ink | Keeps keys off the phone |
 | Tests | `pytest` for routing, reset, and money math using the demo numbers | Cheapest way to protect the demo |
@@ -800,17 +829,17 @@ Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visib
 
 | Blocker | Where |
 |---|---|
-| Data policy conflict: "mock only" versus real prescriptions, receipts, and United and BlueCross insurance | Section 1 against sections 6.1, 10, 14 (item 2) |
-| Eligibility source not chosen | Item 6, section 14 |
-| Retailer lookup scope | Section 19, item 19 |
-| Third eligibility label ("could not confirm") | Item 20 |
-| Wording of eligibility lines differs between sections 6.2, 8, and 10 | Item 13 |
-| Fetch.ai is "necessary" in one section and optional in others | Item 21 |
-| Store address versus the no-tracking rule | Item 12 |
-| One button or two (accessibility and backup) | Item 14 |
-| Restricted prescription wording | Item 2a |
-| Workload: Nak and Tiea each carry too much | Items 3 and 4 |
-| WCAG level and version | Item 7 |
+| Data policy conflict: "mock only" versus real prescriptions, receipts, and United and BlueCross insurance | Section 17 item 1 |
+| Eligibility source not chosen | Item 2 |
+| Source behind stating medication eligibility plainly | Item 3 |
+| Certified source for copay payments | Item 4 |
+| Third eligibility label ("could not confirm") | Item 5 |
+| Restricted prescription wording | Item 6 |
+| Retailer lookup scope | Section 19, item 7 |
+| Store address versus the no-tracking rule | Item 8 |
+| Fetch.ai is "necessary" in one section and optional in others | Item 9 |
+| WCAG level and version | Item 11 |
+| One accessibility button or two | Item 12 |
 
 ### 22.2 Acceptance criteria for Must items (proposed; spec to copy these)
 
@@ -842,7 +871,7 @@ Each row says what was checked, what the source says, and what the document shou
 | Spending an existing HSA balance after Medicare (was unverified) | Pub 969 says "You are permitted to take a distribution from your HSA at any time" and tax-free for qualified medical expenses. It lists Medicare coverage as a permitted premium use for people 65 or older. The excerpt does not say Medicare enrollment blocks spending | [IRS Pub 969](https://www.irs.gov/publications/p969) (partial). Still avoid claims about Medicare users in the pitch |
 | OTC medicines are eligible without a prescription | The IRS says the CARES Act made OTC products and medications reimbursable without a prescription, for amounts paid after Dec. 31, 2019, and added menstrual care products | [IRS newsroom](https://www.irs.gov/newsroom/irs-outlines-changes-to-health-care-spending-available-under-cares-act) |
 | Bandages are a medical expense | "You can include in medical expenses the cost of medical supplies such as bandages" | [IRS Pub 502](https://www.irs.gov/publications/p502) (partial) |
-| WCAG levels and the criteria in section 6.7 | WCAG 2.2 is a W3C Recommendation, published 12 December 2024. Levels A, AA, AAA. Contrast minimum 4.5:1 (AA, 1.4.3); enhanced 7:1 (AAA, 1.4.6); use of color (A, 1.4.1); text spacing (AA, 1.4.12); resize text to 200 percent (AA, 1.4.4); pause, stop, hide (A, 2.2.2); three flashes (A, 2.3.1); captions (A, 1.2.2); target size minimum (AA, 2.5.8, new in 2.2) | [WCAG 2.2](https://www.w3.org/TR/WCAG22/) (partial). Open item 7 can now be closed by choosing a level; proposal: AA |
+| WCAG levels and the criteria in section 6.7 | WCAG 2.2 is a W3C Recommendation, published 12 December 2024. Levels A, AA, AAA. Contrast minimum 4.5:1 (AA, 1.4.3); enhanced 7:1 (AAA, 1.4.6); use of color (A, 1.4.1); text spacing (AA, 1.4.12); resize text to 200 percent (AA, 1.4.4); pause, stop, hide (A, 2.2.2); three flashes (A, 2.3.1); captions (A, 1.2.2); target size minimum (AA, 2.5.8, new in 2.2) | [WCAG 2.2](https://www.w3.org/TR/WCAG22/) (partial). Open item 11 can now be closed by choosing a level; proposal: AA |
 | `expo-camera` barcode scanning in SDK 57 | `onBarcodeScanned` and `barcodeScannerSettings` exist. Types include `ean13`, `upc_a`, `upc_e` | [expo-camera docs](https://docs.expo.dev/versions/latest/sdk/camera/) |
 | Playing audio when the phone is in silent mode | `setAudioModeAsync` has `playsInSilentMode`, default `true`. Other options: `shouldPlayInBackground`, `interruptionMode`, `allowsRecording` (iOS only) | [expo-audio docs](https://docs.expo.dev/versions/latest/sdk/audio/) |
 | `EXPO_PUBLIC_` variables are visible | "These variables will be visible in plain-text in your compiled application"; do not store private keys in them | [Expo environment variables](https://docs.expo.dev/guides/environment-variables/) |
@@ -853,11 +882,11 @@ Each row says what was checked, what the source says, and what the document shou
 
 | Claim in this document | Finding | Source |
 |---|---|---|
-| "The team basis that an insured item is HSA/FSA eligible" (section 6.2 step 5, open item 15) | The sources say the opposite for the insured part. Qualified expenses count "only to the extent the amounts are not compensated for by insurance or otherwise," and expenses paid by insurance cannot be included. The part the shopper pays out of pocket (such as a copay) can still be a qualified medical expense, but that must be checked per plan. Do not say that an insured item is eligible. Say the remaining out-of-pocket amount may be eligible | [IRS Pub 969](https://www.irs.gov/publications/p969), [IRS Pub 502](https://www.irs.gov/publications/p502) (both partial) |
+| "The team basis that an insured item is HSA/FSA eligible" (section 6.2 step 5) | The sources say the opposite for the insured part. Qualified expenses count "only to the extent the amounts are not compensated for by insurance or otherwise," and expenses paid by insurance cannot be included. The part the shopper pays out of pocket (such as a copay) can still be a qualified medical expense, but that must be checked per plan. Do not say that an insured item is eligible. Say the remaining out-of-pocket amount may be eligible | [IRS Pub 969](https://www.irs.gov/publications/p969), [IRS Pub 502](https://www.irs.gov/publications/p502) (both partial) |
 | Cartesia idle timeout is "3 minutes (secondary source)" | Three different figures from three sources. Cartesia's own agent (Line) WebSocket docs say 180 seconds, that any client message or ping resets it, and recommend pings every 60 to 90 seconds. Pipecat (third party) says 3 minutes for speech-to-text and 5 minutes for text-to-speech. The Cartesia TTS reference page does not state it. Plan: send a keepalive about every 60 seconds and reconnect on close | [Cartesia Line WebSocket API](https://docs.cartesia.ai/line/integrations/websocket-api.md), [Pipecat Cartesia TTS](https://docs.pipecat.ai/api-reference/server/services/tts/cartesia), [Pipecat Cartesia STT](https://docs.pipecat.ai/api-reference/server/services/stt/cartesia) |
 | Sonic first audio "about 90 ms (vendor), about 188 ms (third-party)" | Vendor figure of about 90 ms is model latency. A 50-trial Humanness Index test measured a median of 159 ms including network for Sonic 2. Another comparison page cites 199 ms at the 90th percentile; its method is unclear. Use 90 ms (vendor) and about 160 to 200 ms (measured over a network) | [Humanness Index, Sonic 2](https://humannessindex.vapi.ai/models/cartesia-sonic-2) |
 | Moss lookup "under 10 ms, to be confirmed" | Vendor-run only. The Moss repository README reports P50 3.1 ms, P95 4.3 ms, P99 5.4 ms for 100,000 documents on a MacBook Pro M4 Pro. The Moss quickstart makes no latency claim. No independent benchmark was found. Over the network from the backend, expect more | [Moss README mirror](https://awesome.ecosyste.ms/projects/github.com%2Fusemoss%2Fmoss), [Moss quickstart](https://docs.moss.dev/docs/start/quickstart.md) |
-| Where eligible items are marked publicly (section 6.2 step 3, open item 17) | Walmart has a "FSA/HSA Eligible" hub and badges, but no official page explains how items are chosen. Sources are guides and a promotional page. Treat the team assumption as plausible, not confirmed | [Walmart FSA/HSA hub](https://www.walmart.com/cp/6120851) |
+| Where eligible items are marked publicly (section 6.2 step 3, open item 2) | Walmart has a "FSA/HSA Eligible" hub and badges, but no official page explains how items are chosen. Sources are guides and a promotional page. Treat the team assumption as plausible, not confirmed | [Walmart FSA/HSA hub](https://www.walmart.com/cp/6120851) |
 
 ### 23.3 Backed by a secondary source only
 
@@ -868,7 +897,7 @@ Each row says what was checked, what the source says, and what the document shou
 | Plaid and HSA | Plaid's schema, as reproduced by Layer, puts `hsa` under the investment type. Plaid Exchange's definitions put health savings accounts under depository with a `health` subtype. The two disagree | [Layer, Plaid account](https://docs.layerfi.com/api-reference/plaid-account/plaid-account), [Plaid Exchange definitions](https://plaid.com/plaid-exchange/docs/reference/data-definitions/) | Read Plaid's current schema before any future-plan claim |
 | How the register blocks ineligible items | HSA/FSA debit cards use IIAS (Inventory Information Approval System), which compares the UPC or SKU of purchased items against an eligible list at certified merchants. Non-certified merchants rely on a merchant category code and manual receipts. Common decline causes: insufficient balance, ineligible item, or a non-IIAS merchant. Mostly employer benefit documents | [Visa, IIAS requirements](https://myanmar.visa.com/supporting-info/healthcare-card-iias-modal.html), [Vanderbilt FSA substantiation](https://hr.vanderbilt.edu/benefits/FSA_Substantiation_Requirements.pdf) | Add to the pitch honestly: at IIAS stores, ineligible items may already be blocked automatically. Rewind's value is telling the shopper before the register, and which card to use |
 | Walmart lookup | The Walmart Marketplace Item Search API (`GET /v3/items/walmart/search`, by UPC or GTIN) is documented but needs a seller token, so it is for sellers, not shoppers. The shopper-side Affiliate API is mentioned only by an unofficial wrapper | [Walmart Item Search](https://developer.walmart.com/us-marketplace/docs/item-search-for-the-walmart-catalog), [WIOpy](https://pypi.org/project/WIOpy/) | Treat Walmart lookup as likely unavailable for a hackathon. Do not plan on it |
-| Walgreens and CVS | No official public product API found. One third-party scraper listing describes an unofficial Walgreens route | [Apify Walgreens listing](https://apify.com/crawlerbros/walgreens-scraper.md) | Keep out of the build |
+| Walgreens and CVS | No official public product API found for either retailer | None found | Keep out of the build |
 
 ### 23.4 Still unverified (no source found)
 
