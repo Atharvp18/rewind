@@ -97,7 +97,6 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Apify | Selected | Offline catalog only. Bright Data and Context.dev are not used |
 | Fetch.ai | Integrated | Necessary |
 | Meta | Stretch | Community feature only |
-| Bitdeer, Atlassian, Wajo, Greptile | Not planned | Not on the demo path |
 
 **Anthropic judging criteria**
 
