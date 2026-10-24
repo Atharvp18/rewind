@@ -44,6 +44,7 @@
 - Check if the user has an insurance card added in the app
 - If yes, use the scraped or AI-generated data for that specific insurance provider and tier to determine whether insurance covers the item
 - If covered, determine the copay from the data
+- If the user's plan has a copay for the selected prescription, the agent suggests that the user walk to the pharmacist and confirm the copay
 
 **Payment routing flow** (applies to all products; uses the price from step 2 for non-medical items, or the remaining amount after copay for medical items)
 
@@ -79,7 +80,7 @@
 
 ## 4. Tracks and Prizes
 
-Sponsor details come from sponsor announcements. Full track briefs were read only for Hyphenate. Confirm each prize and rule at the sponsor's booth.
+Sponsor details come from sponsor announcements. Full track briefs were not read for the tracks below. Confirm each prize and rule at the sponsor's booth.
 
 | Track | Fit | Notes |
 |---|---|---|
@@ -91,13 +92,9 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 | Microsoft, Built for the Real World | Plausible | Accessibility and real-world users |
 | MLH Commit Fellowship category | Opt in | Interview for a 3-week sprint. Needs the opt-in checkbox and supplemental form |
 | Figma | Plausible | Wireframes and design system |
-| Mana | Ask first | $5,000 for best project. Unknown whether our own stack qualifies |
-| Apify, Bright Data, Context.dev | Optional | Pick at most one. Offline catalog only |
+| Apify | Selected | Offline catalog only. Bright Data and Context.dev are not used |
 | Fetch.ai | Integrated | Necessary |
-| Spacetime | Not planned | Expo and Python support unconfirmed |
 | Meta | Stretch | Community feature only |
-| Hyphenate | Dropped | Organizers said corporate payments only |
-| CRS | Dropped | Does not match card verification |
 | Bitdeer, Atlassian, Wajo, Greptile | Not planned | Not on the demo path |
 
 **Anthropic judging criteria**
@@ -116,7 +113,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 - Expo shell with camera and mic
 - Voice loop: Cartesia Ink, Claude, Cartesia Sonic
 - Claude vision returning structured product JSON
-- Eligibility lookup (Moss, or a plain table first)
+- Eligibility lookup (Moss only, no Apify needed)
 - Cart, card routing, and reroute logic
 - Simulated checkout and a seeded database
 
@@ -124,6 +121,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 
 - Moss session recall ("what was that cheaper cereal from earlier?")
 - Captions, spoken camera framing guidance, large tap targets
+- Universal accessibility button with user-adjustable display settings (see section 6.7)
 - Spoken low-balance alerts
 - Two mock insurer profiles with prescription branches
 
@@ -138,7 +136,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 ### Cut
 
 - Three-agent Fetch.ai Bureau as the default backend (use plain Python functions; Fetch.ai only as an optional add-on)
-- Apify catalog as a requirement (hand-build about 30 products instead)
+- Apify catalog as a requirement for the demo path (hand-build about 30 products instead)
 - Five insurers (build two, list the others as planned)
 - Coupon payment methods
 - True 3D AR (needs ViroReact, which does not run in Expo Go)
@@ -152,6 +150,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 - The user links their HSA card and other payment cards once
 - The demo uses mock accounts only
 - The user picks one of two mock insurer profiles
+- Insurance plan data is mock because some prescriptions are restricted under a given insurance plan and are not eligible under it. Plan-specific coverage differs by insurer and tier, so each mock profile carries its own prescription rules
 - No real insurance card is scanned, because a card cannot confirm that someone has an HSA
 
 ### 6.2 In-Store Scan
@@ -170,6 +169,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 | OTC item | "This may be HSA eligible. Some plans include an over-the-counter benefit, so check your plan" |
 | Prescription item also sold OTC | Give the OTC price, say a prescription version may be covered, and say to check with the pharmacist for the copay |
 | Prescription-only item | Say it is a prescription medication and to check with the pharmacist for the copay |
+| Prescription with a copay under the selected plan | Say the plan has a copay for this prescription and suggest that the user walk to the pharmacist and confirm the copay |
 | Plan without prescription benefits | Say the plan may not include prescription coverage, and that the item may still be HSA eligible |
 
 Prescriptions are scanned from the pill bottle label, then the agent reads the drug name and strength back for the user to confirm. Fallback: the user says the drug name.
@@ -207,6 +207,29 @@ Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "
 - Tax estimate: fixed rate for one state, labeled as an estimate. Tax treatment of groceries and medicine varies and is unverified
 - Reimbursement rules differ by plan and administrator (unverified), so every packet carries "may be eligible, check your plan"
 
+### 6.7 Universal Accessibility Button
+
+A persistent accessibility button appears on every screen, including onboarding, scan, cart, and checkout. It opens a settings panel the user can operate by voice or by touch. The design follows WCAG. The target conformance level and the specific success criteria are not yet chosen and must be confirmed against the primary WCAG source (unverified).
+
+| Setting group | Options |
+|---|---|
+| Color vision | Color-blind-safe palettes (for example red-green and blue-yellow variants), and a mode where no information depends on color alone (status shown with text, icons, or patterns) |
+| Contrast | Standard, high contrast, and dark mode |
+| Text | Adjustable text size, bold text, adjustable spacing, and a high-legibility font choice |
+| Low vision | Magnified controls and tap targets, reduced visual clutter, and a simplified screen option |
+| Motion | Reduced motion and no flashing content |
+| Audio | Speech rate, volume, and a repeat-everything option |
+| Captions | On-screen captions on or off |
+| Input | Voice or tap alternatives for every action, and a push-to-talk option |
+
+**Requirements**
+
+- The button is reachable by screen reader (VoiceOver and TalkBack), with a clear spoken label
+- The user can open it by voice ("accessibility settings")
+- Settings apply immediately across the whole app
+- Settings persist between sessions. Storage location (on device or in the database) is not decided (see section 17)
+- Each setting is tested against its WCAG criterion before the demo
+
 ---
 
 ## 7. Technical Stack and Architecture
@@ -223,7 +246,7 @@ Owners are listed per layer and follow the ownership split in section 11. Owner 
 | Account data | Nessie mock accounts | Atharv | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
 | Database | Supabase (primary), SQLite (backup) | Atharv | One backend setting switches between them |
 | Backend | Python 3.12 or 3.13, functions behind an API | Atharv | FastAPI suggested. The app talks to the backend, not the database |
-| Optional | Fetch.ai uAgents, one catalog scraper | Tiea | Only if time allows. One uAgents example reports problems on Python 3.14 |
+| Optional | Fetch.ai uAgents, Apify catalog scraper | Tiea | Only if time allows. One uAgents example reports problems on Python 3.14 |
 
 ### 7.1 Request Flow
 
@@ -319,6 +342,7 @@ The earlier 1-second claim is dropped because nothing supports it.
 |---|---|
 | Voice first | Every piece of information is spoken |
 | High contrast | Large, high-contrast labels; never relying on color alone |
+| Universal accessibility button | A persistent button opens user-adjustable settings for color vision, contrast, text, motion, audio, captions, and input (section 6.7) |
 | Tremor/dexterity | Large tap targets, tap-anywhere confirm, voice commands in place of small buttons |
 | Camera framing | Spoken guidance such as "move left" or "tilt up" |
 | Captions | On-screen text of everything the agent says, for deaf and hard-of-hearing users |
@@ -385,7 +409,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | 3 | Moss and eligibility: lookup and eligibility flag | |
 | 4 | Cart and routing: card groups, balances, reroute logic | |
 | 5 | Simulated checkout and alerts | |
-| 6 | Polish: captions, framing guidance, demo rehearsal | |
+| 6 | Polish: accessibility button and settings, captions, framing guidance, demo rehearsal | |
 | 7 | Stretch items, only if the steps above are reliable | |
 
 **Cut order if time runs short:** community → overlay → tax check → payment history → insurer branches → Moss session recall
@@ -437,12 +461,17 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 The earlier draft referenced this section but did not include it. The items below are drawn only from conflicts and gaps in the document.
 
 1. **Working name.** Section 1 lists Rewind as a working name. Decide whether to keep it
-2. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which statement is correct and align all sections
+2. **Data policy conflict.** Section 1 states mock data only, then says prescriptions and receipts use real data and that United and BlueCross insurance are real. Sections 6.1, 10, and 14 state mock data only. Decide which statement is correct and align all sections. The rationale for mock insurance plan data is now stated in section 6.1, but the real-versus-mock statements for United and BlueCross, prescriptions, and receipts remain unresolved
+2a. **Restricted prescriptions.** Section 6.1 states that some prescriptions are restricted under an insurance plan and not eligible. The agent's wording for a restricted, not-eligible prescription is not defined. Provide it or approve a draft
 3. **Ownership of Aesha's former work.** Stated by Nak: Moss, Fetch.ai, Apify to Tiea; backend, Supabase, Visa, Capital One to Atharv; Cartesia, Expo, camera, mic to Nak. Not stated and assigned provisionally: shared components, design system rules, and the accessibility test plan to Nak (follows Expo and screens); eligibility data and source to Tiea (follows Moss). Confirm or reassign
 4. **Tiea's workload.** Tiea now holds Claude vision, Moss, eligibility data, and the optional Fetch.ai and Apify work
 5. **Cart and routing.** Assigned to Atharv with Visa and the backend. Confirm
 6. **Eligibility source.** Section 14 states that no documented source has been chosen
-7. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
+7. **WCAG target.** Section 6.7 requires a WCAG conformance level and version, which are not chosen. Confirm against the primary source
+8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
+9. **Settings storage.** On device or in the database (Atharv). Not decided
+10. **Apify scope.** Apify is now the selected scraper track (Tiea). Section 5 still lists the Apify catalog as cut from the requirements, with about 30 hand-built products as the default. Confirm whether Apify stays optional or moves to Should
+11. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
 
 ---
 
