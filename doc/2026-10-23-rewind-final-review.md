@@ -354,8 +354,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 |---|---|
 | Nak | Expo shell, camera, mic, Cartesia voice loop, main screens |
 | Tiea | Claude vision and tool-calling orchestration; Fetch.ai only if there is spare time |
-| Aesha | Figma design system, shared Expo components, captions and accessibility testing, catalog and Moss eligibility data |
-| Atharv (not yet confirmed) | Database, cart, routing, reroute, Nessie, simulated checkout |
+| Atharv | Database, cart, routing, reroute, Nessie, simulated checkout |
 
 **Working rules**
 
