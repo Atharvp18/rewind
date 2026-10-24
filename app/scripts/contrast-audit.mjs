@@ -82,6 +82,18 @@ const pairs = (p) => [
   ['Orange alert accent bar vs tint', cr(p.warningEdge, p.warningBg), 3],
 ];
 
+// --- card colors (same in every theme, like physical cards; see components/card-art.tsx) ---
+const CARD_ART = {
+  'Visa (Visa Blue → digital blue)': ['#1A1F71', '#1434CB'],
+  'HSA (health green)': ['#0B5E44', '#0E7A57'],
+  'FSA (plum)': ['#4E2470', '#6B3394'],
+};
+const cardRows = Object.entries(CARD_ART).map(([name, [a, b]]) => [
+  `${name}: white text, worst end`,
+  Math.min(cr('#FFFFFF', a), cr('#FFFFFF', b)),
+  4.5,
+]);
+
 // --- color-vision simulation (Machado 2009, severity 1.0, linear RGB) ---
 const CVD = {
   protanopia: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
@@ -123,11 +135,15 @@ const rows = pairs(themes[names[0]]).map(([label, , need], i) => {
   return [label, vals, need];
 });
 
+for (const [, v, need] of cardRows) if (v < need) failures++;
+
 if (md) {
   console.log(`| Element | ${names.join(' | ')} | Needs |\n|---|${names.map(() => '---').join('|')}|---|`);
   for (const [label, vals, need] of rows) {
     console.log(`| ${label} | ${vals.map((v) => `${v.toFixed(2)}${v < need ? ' FAIL' : ''}`).join(' | ')} | ${need}:1 |`);
   }
+  console.log('\n| Card colors (all themes) | Ratio | Needs |\n|---|---|---|');
+  for (const [label, v, need] of cardRows) console.log(`| ${label} | ${v.toFixed(2)}${v < need ? ' FAIL' : ''} | ${need}:1 |`);
   console.log(`\n| Status colors (ΔE, standard theme) | ${KINDS.join(' | ')} |\n|---|${KINDS.map(() => '---').join('|')}|`);
   for (const [label, a, b] of statusPairs(themes.standard)) {
     const d = KINDS.map((k) => dE(lab(k === 'normal' ? rgb(a).map(lin) : simulate(a, k)), lab(k === 'normal' ? rgb(b).map(lin) : simulate(b, k))));
@@ -143,6 +159,8 @@ if (md) {
     const d = KINDS.map((k) => dE(lab(k === 'normal' ? rgb(a).map(lin) : simulate(a, k)), lab(k === 'normal' ? rgb(b).map(lin) : simulate(b, k))));
     console.log(`  ${label.padEnd(36)} ${KINDS.map((k, i) => `${k} ${d[i].toFixed(0)}`).join(', ')}`);
   }
+  console.log('\nCard colors (all themes):');
+  for (const [label, v, need] of cardRows) console.log(`  ${label.padEnd(50)} ${v.toFixed(2)}${v < need ? ' FAIL' : ''}  (>= ${need})`);
   console.log(`\n${failures === 0 ? 'PASS' : `FAIL: ${failures} pair(s) below WCAG 2.2 AA`} (themes: ${names.join(', ')})`);
 }
 process.exit(failures ? 1 : 0);

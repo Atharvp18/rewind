@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { Icon } from '@/components/icon';
+import { CardArt } from '@/components/card-art';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Radius, Spacing } from '@/constants/theme';
 import type { Card, CartGroup } from '@/lib/api';
@@ -18,7 +18,7 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
       accessibilityLabel={`${group.nickname}. ${count}. Subtotal ${centsForScreenReader(group.subtotal_cents)}.`}>
       <View style={styles.head}>
         <View style={styles.titleRow}>
-          <Icon name="card" size={24} />
+          {card ? <CardArt type={card.type} size="swatch" /> : null}
           <AppText kind="heading" accessibilityRole="header" style={styles.itemName}>
             {group.nickname}
           </AppText>
