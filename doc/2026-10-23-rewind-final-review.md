@@ -1,72 +1,79 @@
 # Rewind: Final Project Documentation for Team Review
 
-Status: Final draft for team review (Cal Hacks 13.0). Not approved by anyone outside the team. Nothing here is an approved institutional or sponsor position.
+**Status:** Final draft for team review (Cal Hacks 13.0). Not approved by anyone outside the team. Nothing here is an approved institutional or sponsor position.
 
-Labels used in this document
+**Labels used in this document**
 
-- (unverified): not checked against a primary source
-- (estimate): a planning figure, not a measurement
-- (secondary source): confirmed only through a third-party page
+- **(unverified):** not checked against a primary source
+- **(estimate):** a planning figure, not a measurement
+- **(secondary source):** confirmed only through a third-party page
+
+---
 
 ## 1. Overview
 
-- Name: Rewind (working name, see section 17)
-- One-line pitch: Point your phone at any product and hear what it is, what it costs, and which card to pay with
-- Named community: Elderly and low-vision adults who shop independently for groceries and pharmacy items
-- Secondary group: Older adults, including those with tremor, for whom small buttons and menus are hard (future scope)
-- Platform: Voice-first mobile app (Expo, React Native)
-- Data policy: Mock data only. No real cards, balances(Nessie API)  prescriptions(Real data for users) , receipts(Real data) , or personal information and the user's united healthcare profile is also mock accept(United is real insurance, BluecROSS insurance, and the other three had mock data) 
+| Field | Detail |
+|---|---|
+| Name | Rewind (working name, see section 17) |
+| Pitch | Point your phone at any product and hear what it is, what it costs, and which card to pay with |
+| Primary audience | Elderly and low-vision adults who shop independently for groceries and pharmacy items |
+| Secondary audience | Older adults, including those with tremor, for whom small buttons and menus are hard (future scope) |
+| Platform | Voice-first mobile app (Expo, React Native) |
+| Data policy | Mock data only. No real cards, balances (Nessie API), or personal information. Prescriptions use real data for users. Receipts use real data. The user's UnitedHealthcare profile is also mock. United is real insurance; BlueCross insurance is real; the other three providers use mock data |
+
+---
 
 ## 2. Problem and Solution
 
-Problem
+### Problem
+
 - Elderly and low-vision adults who shop on their own can find price tags hard to read
 - They can have difficulty telling whether an item may be HSA/FSA eligible
 - They may not know which card to use
 - A low HSA/FSA balance can be discovered only when the card is declined at the register
 - They may not know how much their insurance will cover
 
-Solution
+### Solution
 
-- The user points their phone at a product.
-- the app captures the image and sends it to the backend where we a vision llm api to determine the product name, if its a medicalItem(boolean) and the price . then the agent speaks it out to the user. If the user says yes to buy the product then..
-- If the product is a medical item:
-    - then we check if the user has an insurance card added in our app, if yes then we use the data(which we scraped or generated using AI for that specific insurance provider and tier) to determine if the insurance covers it or not. if yes, then we determine (again from the data) how much is the copay.
-- The next flow would be common for all the other products (use the price from point 1 if non medical and if medical then either use the remaining amount after copay or the price from point 1)
-- now we check if it is hsa/fsa eligible (think if we can find a list of items or generate),
-    - if yes:
-        then we check if their hsa or fsa balance has enough money for it
-            if they have enough:
-                let the user know that this is covered by hsa/fsa
-                we add it to a cart(hsa/fsa cart)
-            if not enough:
-                let the user know that this is not covered by hsa/fsa, warn them and ask if they should add it to their normal visa card cart instead.
-                if they say yes then
-                  we add it to their normal visa card cart
+1. The user points their phone at a product
+2. The app captures the image and sends it to the backend, where a vision LLM API determines the product name, whether it is a medical item (boolean), and the price. The agent then speaks this information to the user
+3. If the user says yes to buy the product:
 
-    - if no:
-        then let the user know that this is not covered by hsa/fsa
-        we add it to their normal visa card cart
+**Medical item flow:**
+- Check if the user has an insurance card added in the app
+- If yes, use the scraped or AI-generated data for that specific insurance provider and tier to determine whether insurance covers the item
+- If covered, determine the copay from the data
 
-- if the user has finished adding items to cart, they can let the agent know and it can tell them a summary (think of a line to say)
+**Payment routing flow** (applies to all products; uses the price from step 2 for non-medical items, or the remaining amount after copay for medical items):
+- Check if the item is HSA/FSA eligible (using a curated list of eligible items)
+  - **If eligible:** check if the HSA or FSA balance has enough funds
+    - **Sufficient balance:** notify the user and add to the HSA/FSA cart
+    - **Insufficient balance:** warn the user and ask whether to add it to their normal Visa card cart instead. If yes, add it there
+  - **If not eligible:** notify the user and add to their normal Visa card cart
 
-Where this differs from existing checkout systems
+4. When the user finishes adding items, the agent reads a checkout summary
+
+### How This Differs from Existing Checkout Systems
 
 - Retailer registers can already split eligible and non-eligible items (Walmart is one documented example)
 - Rewind's difference is voice-first, pre-purchase guidance while the user is still in the aisle, plus a balance warning before the register
 - Do not claim that other retailers cannot split payments
 
+---
+
 ## 3. Customer Segments
 
-- Primary: Blind and low-vision shoppers who shop independently or want to
-- Primary: Older adults, including those with tremor (for example Parkinson's)
-- Secondary: Caregivers and family members who shop with or for them
-- Future (B2B, unvalidated): Pharmacies and grocery stores that want accessible checkout, and HSA or benefits providers
+- **Primary:** Blind and low-vision shoppers who shop independently or want to
+- **Primary:** Older adults, including those with tremor (for example Parkinson's)
+- **Secondary:** Caregivers and family members who shop with or for them
+- **Future (B2B, unvalidated):** Pharmacies and grocery stores that want accessible checkout, and HSA or benefits providers
 
-Notes
+**Notes**
 
 - Wording rule: say "designed for" until there is user feedback and sourced numbers
 - HSA contributions are limited to zero for months a person is enrolled in Medicare (IRS Publication 969, quoted by secondary sources). This affects who can add money to an HSA. Rules for spending an existing balance after Medicare enrollment are not verified, so do not make claims about older adults on Medicare in either direction
+
+---
 
 ## 4. Tracks and Prizes
 
@@ -80,27 +87,29 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 | Visa, Reimagining Shopping | Strong | $5,000 prize. Card routing and simulated checkout |
 | Capital One, Best Use of Nessie | Strong | Mock accounts and balances |
 | Microsoft, Built for the Real World | Plausible | Accessibility and real-world users |
-| MLH Commit Fellowship category | Opt in | Interview for a 3-week sprint. Needs the opt-in checkbox and the supplemental form |
+| MLH Commit Fellowship category | Opt in | Interview for a 3-week sprint. Needs the opt-in checkbox and supplemental form |
 | Figma | Plausible | Wireframes and design system |
 | Mana | Ask first | $5,000 for best project. Unknown whether our own stack qualifies |
-| Apify, Bright Data, Context.dev | Optional, pick at most one | Offline catalog only |
-| Fetch.ai | It is integrated | Neccessary|
+| Apify, Bright Data, Context.dev | Optional | Pick at most one. Offline catalog only |
+| Fetch.ai | Integrated | Necessary |
 | Spacetime | Not planned | Expo and Python support unconfirmed |
 | Meta | Stretch | Community feature only |
 | Hyphenate | Dropped | Organizers said corporate payments only |
 | CRS | Dropped | Does not match card verification |
 | Bitdeer, Atlassian, Wajo, Greptile | Not planned | Not on the demo path |
 
-Anthropic judging criteria
+**Anthropic judging criteria**
 
 - A named community
 - A real problem, lived or heard from someone who has lived it
 - It works: one thing done well beats a broad demo
 - Thoughtful use of Claude, including where it could go wrong
 
+---
+
 ## 5. Scope
 
-Must
+### Must
 
 - Expo shell with camera and mic
 - Voice loop: Cartesia Ink, Claude, Cartesia Sonic
@@ -109,14 +118,14 @@ Must
 - Cart, card routing, and reroute logic
 - Simulated checkout and a seeded database
 
-Should
+### Should
 
 - Moss session recall ("what was that cheaper cereal from earlier?")
 - Captions, spoken camera framing guidance, large tap targets
 - Spoken low-balance alerts
 - Two mock insurer profiles with prescription branches
 
-Stretch (only after Must is reliable)
+### Stretch (only after Must is reliable)
 
 - Payment history with a "possible reimbursement" receipt packet
 - 2D visual overlay on the camera preview
@@ -124,13 +133,15 @@ Stretch (only after Must is reliable)
 - Sales tax estimate with a fixed rate for one state
 - User-set low-balance level
 
-Cut
+### Cut
 
-- Three-agent Fetch.ai Bureau as the default backend (use plain Python functions, Fetch.ai only as an optional add-on)
+- Three-agent Fetch.ai Bureau as the default backend (use plain Python functions; Fetch.ai only as an optional add-on)
 - Apify catalog as a requirement (hand-build about 30 products instead)
 - Five insurers (build two, list the others as planned)
 - Coupon payment methods
 - True 3D AR (needs ViroReact, which does not run in Expo Go)
+
+---
 
 ## 6. Product Flow
 
@@ -143,39 +154,46 @@ Cut
 
 ### 6.2 In-Store Scan
 
-- The user points the phone at a product
-- Claude vision returns product name, price, category, and confidence
-- The app classifies the item as "may be HSA eligible" or "not likely HSA eligible"
-- If the item is a medication, the app checks the selected insurer profile
-- The agent speaks item, price, eligibility, and card balance, then asks for confirmation
-- The user confirms by voice, and the item joins a cart grouped by payment method
+1. The user points the phone at a product
+2. Claude vision returns product name, price, category, and confidence
+3. The app classifies the item as "may be HSA eligible" or "not likely HSA eligible"
+4. If the item is a medication, the app checks the selected insurer profile
+5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation
+6. The user confirms by voice, and the item joins a cart grouped by payment method
 
-Medication wording (all estimates, always end with a pharmacist check)
+**Medication wording** (all estimates; always end with a pharmacist check):
 
-- OTC item: "This may be HSA eligible. Some plans include an over-the-counter benefit, so check your plan"
-- Prescription item also sold OTC: give the OTC price, say a prescription version may be covered, and say to check with the pharmacist for the copay
-- Prescription-only item: say it is a prescription medication and to check with the pharmacist for the copay
-- Plan without prescription benefits: say the plan may not include prescription coverage, and that the item may still be HSA eligible
-- Prescriptions are scanned from the pill bottle label, then the agent reads the drug name and strength back for the user to confirm. Fallback: the user says the drug name
+| Scenario | What the agent says |
+|---|---|
+| OTC item | "This may be HSA eligible. Some plans include an over-the-counter benefit, so check your plan" |
+| Prescription item also sold OTC | Give the OTC price, say a prescription version may be covered, and say to check with the pharmacist for the copay |
+| Prescription-only item | Say it is a prescription medication and to check with the pharmacist for the copay |
+| Plan without prescription benefits | Say the plan may not include prescription coverage, and that the item may still be HSA eligible |
+
+Prescriptions are scanned from the pill bottle label, then the agent reads the drug name and strength back for the user to confirm. Fallback: the user says the drug name.
 
 ### 6.3 Smart Checkout
 
-- The user says "checkout"
-- The agent reads the split by card and the totals
-- The user confirms, and the app runs a simulated payment and reads the new balances
+1. The user says "checkout"
+2. The agent reads the split by card and the totals
+3. The user confirms, and the app runs a simulated payment and reads the new balances
 
 ### 6.4 Balance Protection and Card Suggestions
 
-- Rule 1, item too large: if one item exceeds a card's balance, suggest another card for that item
-- Rule 2, group too large: if a card's total exceeds its balance, suggest moving items or adding a second card, and say the amounts aloud
-- Rule 3, nothing covers it: say so clearly, and do not choose for the user
+| Rule | Trigger | Behavior |
+|---|---|---|
+| Item too large | One item exceeds a card's balance | Suggest another card for that item |
+| Group too large | A card's total exceeds its balance | Suggest moving items or adding a second card; say the amounts aloud |
+| Nothing covers it | No card has sufficient balance | Say so clearly; do not choose for the user |
+
 - The user confirms every change by voice
 - After a purchase, speak an alert when any balance crosses a threshold
 
 ### 6.5 Voice Commands
 
-- Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "remove last item"
-- "Repeat that" helps users with memory difficulties
+Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "remove last item"
+
+"Repeat that" helps users with memory difficulties.
 
 ### 6.6 Payment History and Reimbursement Packet (stretch)
 
@@ -187,44 +205,51 @@ Medication wording (all estimates, always end with a pharmacist check)
 - Tax estimate: fixed rate for one state, labeled as an estimate. Tax treatment of groceries and medicine varies and is unverified
 - Reimbursement rules differ by plan and administrator (unverified), so every packet carries "may be eligible, check your plan"
 
+---
+
 ## 7. Technical Stack and Architecture
 
 | Layer | Choice | Notes |
 |---|---|---|
 | Mobile app | Expo (React Native) in Expo Go | Camera and mic. No native AR |
 | Vision and reasoning | Claude (main), Gemini Flash (fallback if credits run out) | Confirm credits at the Anthropic booth |
-| Speech to text | Cartesia Ink, streaming | Idle WebSocket closes after 3 minutes (secondary source), so build reconnect |
+| Speech to text | Cartesia Ink, streaming | Idle WebSocket closes after 3 min (secondary source); build reconnect |
 | Text to speech | Cartesia Sonic, streaming | Start speaking before the reply is complete |
-| Retrieval | Moss | JavaScript and Python SDKs. React Native support unconfirmed, so call it from the backend |
-| Account data | Nessie mock accounts | Account types found in third-party docs are Checking, Savings, and Credit Card, so model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
+| Retrieval | Moss | JS and Python SDKs. React Native support unconfirmed; call from the backend |
+| Account data | Nessie mock accounts | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
 | Database | Supabase (primary), SQLite (backup) | One backend setting switches between them |
 | Backend | Python 3.12 or 3.13, functions behind an API | FastAPI suggested. The app talks to the backend, not the database |
 | Optional | Fetch.ai uAgents, one catalog scraper | Only if time allows. One uAgents example reports problems on Python 3.14 |
 
 ### 7.1 Request Flow
 
-1. The app captures a camera frame and streams voice to Cartesia Ink
-2. The backend sends the frame to Claude vision and receives structured JSON
-3. The backend queries Moss for the item's eligibility record and classifies it
-4. The payment function reads balances, runs routing, and reroutes when a balance is insufficient
-5. The voice function calls Cartesia Sonic and streams audio back to the app
-6. The session store records each scan for later recall
+```
+App (camera frame + voice) 
+  → Cartesia Ink (speech to text)
+  → Claude Vision (structured JSON)
+  → Moss (eligibility lookup + classification)
+  → Payment function (balances, routing, reroute)
+  → Cartesia Sonic (streaming audio response)
+  → Session store (scan logged for recall)
+```
 
 ### 7.2 Data Model
 
-- Cards: id, type (HSA or general), nickname, mock balance
-- Products: name, brand, price, category, eligibility flag, source, last updated
-- Cart: items, assigned card, running totals per card
-- Scans: scanned products with timestamps, for session recall
-- Insurers: two mock profiles with prescription benefit flags
-- Payments (stretch): mock history rows with a per-item eligibility flag
-- Moss collections: eligibility database and session memory, kept separate
+| Entity | Fields |
+|---|---|
+| Cards | id, type (HSA or general), nickname, mock balance |
+| Products | name, brand, price, category, eligibility flag, source, last updated |
+| Cart | items, assigned card, running totals per card |
+| Scans | scanned products with timestamps (for session recall) |
+| Insurers | two mock profiles with prescription benefit flags |
+| Payments (stretch) | mock history rows with a per-item eligibility flag |
+| Moss collections | eligibility database and session memory (kept separate) |
 
-Message formats (agree before building)
+**Message formats** (agree before building):
 
-- ScanResult: name, price, category, confidence, eligibility
-- PaymentRecommendation: item, card id, balance before, reroute flag, reason
-- VoiceRequest: text to speak, priority (alerts before routine replies)
+- **ScanResult:** name, price, category, confidence, eligibility
+- **PaymentRecommendation:** item, card id, balance before, reroute flag, reason
+- **VoiceRequest:** text to speak, priority (alerts before routine replies)
 
 ### 7.3 Data Layer Plan
 
@@ -238,15 +263,21 @@ Message formats (agree before building)
 
 ### 7.4 Latency Target
 
-- Goal: about 3 seconds from camera frame to first spoken audio (estimate, to be measured early)
-- Vision call: about 1 to 1.5 seconds (estimate)
-- Moss lookup: under 10 ms per Moss's own claim, to be confirmed
-- Sonic first audio: vendor claims about 90 ms, and third-party blogs report about 188 ms from an independent benchmark (lower reliability)
-- The earlier 1-second claim is dropped because nothing supports it
+**Goal:** ~3 seconds from camera frame to first spoken audio (estimate, to be measured early)
+
+| Step | Estimate | Source |
+|---|---|---|
+| Vision call | ~1 to 1.5 s | estimate |
+| Moss lookup | <10 ms | Moss's own claim, to be confirmed |
+| Sonic first audio | ~90 ms (vendor), ~188 ms (third-party benchmark) | secondary source, lower reliability |
+
+The earlier 1-second claim is dropped because nothing supports it.
+
+---
 
 ## 8. Demo Plan
 
-Setup
+### Setup
 
 - One small shelf: Advil, bandages, kettle corn
 - Mock HSA balance of $340 and a mock Visa credit card
@@ -254,145 +285,173 @@ Setup
 - Use a prop pill bottle with a fake label, never a real prescription
 - Pre-test lighting and the exact shelf
 
-Run 1
+### Run 1 (happy path)
 
-1. Advil: "I see Advil, ibuprofen 200mg, $12.99. This may be HSA eligible. Your HSA balance is $340. Want to use your HSA card?" User says yes
-2. Bandages: same flow, $5.49 (placeholder, set to the real shelf price)
-3. Kettle corn: "Kettle corn, $4.99. Not likely HSA eligible. I'll put this on your Visa credit card"
-4. Checkout: "Two items totaling $18.48 on your HSA card. One item totaling $4.99 on your Visa credit. Ready to check out?" User confirms
-5. Result: "Payment complete. Your HSA balance is now $321.52"
+| Step | Item | What the agent says |
+|---|---|---|
+| 1 | Advil | "I see Advil, ibuprofen 200mg, $12.99. This may be HSA eligible. Your HSA balance is $340. Want to use your HSA card?" User says yes |
+| 2 | Bandages | Same flow, $5.49 (placeholder; set to the real shelf price) |
+| 3 | Kettle corn | "Kettle corn, $4.99. Not likely HSA eligible. I'll put this on your Visa credit card" |
+| 4 | Checkout | "Two items totaling $18.48 on your HSA card. One item totaling $4.99 on your Visa credit. Ready to check out?" User confirms |
+| 5 | Result | "Payment complete. Your HSA balance is now $321.52" |
 
-Run 2 (declined-card moment)
+### Run 2 (declined-card moment)
 
 - Set the HSA balance to $15.00
 - At checkout: "Your HSA balance is only $15.00, which doesn't cover $18.48. Want me to keep the Advil on your HSA and move the bandages to your Visa credit?" User says yes
 
-Live demo safeguards
+### Live Demo Safeguards
 
 - Warm the Cartesia connection and send a test scan before judges arrive
 - Push-to-talk fallback for a noisy hall
 - Recorded backup video of a clean run
 - If a saved result is replayed after a failed scan, say so
 
+---
+
 ## 9. Accessibility and Inclusion
 
-- Voice first: every piece of information is spoken
-- Large, high-contrast labels, never relying on color alone
-- Tremor and dexterity: large tap targets, tap-anywhere confirm, voice commands in place of small buttons
-- Camera framing: spoken guidance such as "move left" or "tilt up"
-- Captions: on-screen text of everything the agent says, for deaf and hard of hearing users
-- Speech fallback: a tap alternative for users whose speech the model misrecognizes
-- Known gaps: deaf and speech-impaired users are served only if captions and tap fallbacks are built
+| Feature | Detail |
+|---|---|
+| Voice first | Every piece of information is spoken |
+| High contrast | Large, high-contrast labels; never relying on color alone |
+| Tremor/dexterity | Large tap targets, tap-anywhere confirm, voice commands in place of small buttons |
+| Camera framing | Spoken guidance such as "move left" or "tilt up" |
+| Captions | On-screen text of everything the agent says, for deaf and hard-of-hearing users |
+| Speech fallback | A tap alternative for users whose speech the model misrecognizes |
+
+**Known gap:** Deaf and speech-impaired users are served only if captions and tap fallbacks are built.
+
+---
 
 ## 10. Role of Claude and Failure Modes
 
-What Claude does
+### What Claude Does
 
 - Reads messy shelf photos and returns structured product data
 - Explains the card choice and reroute in plain, spoken language
 - Answers questions about scan history and spending (stretch)
 - Routing math stays in plain code, not in Claude
 
-Where it could go wrong
+### Where It Could Go Wrong
 
-- Misreading a price or product, so a blind user hears a wrong cost
-- Stating eligibility or a copay too confidently
-- Sounding certain when the image was unclear, when the user cannot check the screen
+| Failure | Mitigation |
+|---|---|
+| Misreading a price or product, so a blind user hears a wrong cost | Read the item back for confirmation |
+| Stating eligibility or a copay too confidently | Say "may be eligible, check your plan" |
+| Sounding certain when the image was unclear | Say "I could not confirm" and ask for another scan when unsure |
+| Incorrect prescription identification | Read drug name and strength back before any prescription estimate |
 
-Mitigations
+All payments use simulated data and mock accounts only.
 
-- Read the item back for confirmation
-- Say "may be eligible, check your plan"
-- Say "I could not confirm" and ask for another scan when unsure
-- Read drug name and strength back before any prescription estimate
-- Simulated payments and mock data only
+---
 
 ## 11. Team Roles (proposed, pending team agreement)
 
-The team has discussed several splits. The informal preferences were: Nak on Cartesia and Figma, Aesha on Moss, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item.
+The team has discussed several splits. Informal preferences were: Nak on Cartesia and Figma, Aesha on Moss, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item.
 
 | Person | Owns |
 |---|---|
 | Nak | Expo shell, camera, mic, Cartesia voice loop, main screens |
-| Tiea | Claude vision and tool-calling orchestration, Fetch.ai only if there is spare time |
+| Tiea | Claude vision and tool-calling orchestration; Fetch.ai only if there is spare time |
 | Aesha | Figma design system, shared Expo components, captions and accessibility testing, catalog and Moss eligibility data |
-| Atharv (not yet confirmed as joined) | Database, cart, routing, reroute, Nessie, simulated checkout |
+| Atharv (not yet confirmed) | Database, cart, routing, reroute, Nessie, simulated checkout |
 
-Working rules
+**Working rules**
 
 - One owner per file area: screens (Nak), shared components (Aesha), backend (Atharv), agents (Tiea)
 - Agree on message formats before building starts
 - If no fourth member joins, Tiea and Nak split cart and routing, and Aesha pairs on the eligibility data
 - Nobody adds a feature without removing one
 
+---
+
 ## 12. Community Feature (stretch)
 
 - Idea: opt-in voice messages tied to a store, played when the app opens
-- Parked until the voice loop and shelf scan are reliable (checkpoint: about hour 16)
-- Cheap version: pre-recorded demo messages for one fake store, user picks the store, opt-in, captions, and a spoken "report this message" command
+- Parked until the voice loop and shelf scan are reliable (checkpoint: ~hour 16)
+- Cheap version: pre-recorded demo messages for one fake store; user picks the store, opt-in, captions, and a spoken "report this message" command
 - Not planned: automatic store assignment from scan history, because it tracks where vulnerable users shop
+
+---
 
 ## 13. Build Plan and Gates
 
-1. Voice loop: Ink to Claude to Sonic, measure latency (gate at about hour 8)
-2. Vision: one still photo returns structured JSON
-3. Moss and eligibility: lookup and eligibility flag
-4. Cart and routing: card groups, balances, reroute logic
-5. Simulated checkout and alerts
-6. Polish: captions, framing guidance, demo rehearsal
-7. Stretch items, only if the steps above are reliable
+| Gate | Milestone | Approx. hour |
+|---|---|---|
+| 1 | Voice loop: Ink → Claude → Sonic, measure latency | ~8 |
+| 2 | Vision: one still photo returns structured JSON | |
+| 3 | Moss and eligibility: lookup and eligibility flag | |
+| 4 | Cart and routing: card groups, balances, reroute logic | |
+| 5 | Simulated checkout and alerts | |
+| 6 | Polish: captions, framing guidance, demo rehearsal | |
+| 7 | Stretch items, only if the steps above are reliable | |
 
-Cut order if time runs short: community, overlay, tax check, payment history, insurer branches, Moss session recall
+**Cut order if time runs short:** community → overlay → tax check → payment history → insurer branches → Moss session recall
+
+---
 
 ## 14. Risks and Limitations
 
-- Eligibility accuracy: build the eligible list from a documented source (not yet chosen)
-- Privacy: synthetic cards and mock data only
-- Simulated payment: not a real Visa transaction. Whether Visa offers a test API is unverified
-- Real balances: HSA balance access through an aggregator such as Plaid is a possible future path. Plaid lists HSA as an account type, but provider coverage and sandbox access are unverified
-- Vision accuracy: keep the demo to one pre-tested shelf
-- Latency and noise: test in a loud room, with push-to-talk
-- Scope: too many sponsors for one weekend
-- Voice connection: Cartesia closes idle connections after 3 minutes (secondary source, confirm in Cartesia's docs)
-- Venue network: Cartesia, Claude, and possibly Moss need internet
+| Risk | Detail |
+|---|---|
+| Eligibility accuracy | Build the eligible list from a documented source (not yet chosen) |
+| Privacy | Synthetic cards and mock data only |
+| Simulated payment | Not a real Visa transaction. Whether Visa offers a test API is unverified |
+| Real balances | HSA balance access through an aggregator such as Plaid is a possible future path. Plaid lists HSA as an account type, but provider coverage and sandbox access are unverified |
+| Vision accuracy | Keep the demo to one pre-tested shelf |
+| Latency and noise | Test in a loud room, with push-to-talk |
+| Scope | Too many sponsors for one weekend |
+| Voice connection | Cartesia closes idle connections after 3 min (secondary source; confirm in Cartesia's docs) |
+| Venue network | Cartesia, Claude, and possibly Moss need internet |
+
+---
 
 ## 15. Validation and Research Needed
 
-- At least one conversation with a blind or low-vision shopper or an accessibility organization, with a quote to use in the pitch
-- Sourced US population counts per segment (CDC disability data, Census American Community Survey, condition organizations)
-- How many people in these groups hold an HSA
-- HSA eligibility rules. Contributions are limited to zero for months enrolled in Medicare (IRS Publication 969, via secondary sources). Rules for spending an existing balance after Medicare are not verified
-- Source for the eligible item list
-- Pharmacy benefit data providers for a future real version (not verified)
-- How HSA and FSA administrators accept reimbursement claims (not verified)
+- [ ] At least one conversation with a blind or low-vision shopper or an accessibility organization, with a quote to use in the pitch
+- [ ] Sourced US population counts per segment (CDC disability data, Census American Community Survey, condition organizations)
+- [ ] How many people in these groups hold an HSA
+- [ ] HSA eligibility rules. Contributions are limited to zero for months enrolled in Medicare (IRS Publication 969, via secondary sources). Rules for spending an existing balance after Medicare are not verified
+- [ ] Source for the eligible item list
+- [ ] Pharmacy benefit data providers for a future real version (not verified)
+- [ ] How HSA and FSA administrators accept reimbursement claims (not verified)
+
+---
 
 ## 16. Future Plan (to share with judges)
 
-- Partner with organizations serving blind and low-vision people and recruit beta testers
-- Reach caregivers through aging-services groups and senior centers
-- Offer one local pharmacy a pilot in exchange for feedback
-- Link real accounts through the user's provider or an aggregator, with consent and subject to provider support
-- Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim
-- True AR and a store community are future use cases
+1. Partner with organizations serving blind and low-vision people and recruit beta testers
+2. Reach caregivers through aging-services groups and senior centers
+3. Offer one local pharmacy a pilot in exchange for feedback
+4. Link real accounts through the user's provider or an aggregator, with consent and subject to provider support
+5. Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim
+6. True AR and a store community are future use cases
+
+---
 
 ## 17. Open Decisions
 
-1. Final role split (section 11), and who owns Claude vision, the Expo shell, the database, and cart routing
-2. Atharv's confirmation that he is joining
-3. Final project name (Rewind, or Tally or Clearcart as alternatives), and a collision search
-4. Whether the Supabase plus SQLite backup is worth the upkeep, or SQLite alone
-5. Who talks to a blind or low-vision shopper
-6. Whether every teammate can commit to the 3-week Commit Fellowship sprint before opting in
-7. Whether Mana's prize applies to a project built in our own repo
-8. Whether Claude credits are available to every team
-9. Which eligible-item source to use
-10. The submission deadline and any rule on code written before kickoff
-11. Submission checklist: Devpost entry, demo video, opt-in checkbox and supplemental form for Commit Fellowship
+| # | Decision |
+|---|---|
+| 1 | Final role split (section 11), and who owns Claude vision, the Expo shell, the database, and cart routing |
+| 2 | Atharv's confirmation that he is joining |
+| 3 | Final project name (Rewind, Tally, or Clearcart as alternatives), and a collision search |
+| 4 | Whether the Supabase + SQLite backup is worth the upkeep, or SQLite alone |
+| 5 | Who talks to a blind or low-vision shopper |
+| 6 | Whether every teammate can commit to the 3-week Commit Fellowship sprint before opting in |
+| 7 | Whether Mana's prize applies to a project built in our own repo |
+| 8 | Whether Claude credits are available to every team |
+| 9 | Which eligible-item source to use |
+| 10 | The submission deadline and any rule on code written before kickoff |
+| 11 | Submission checklist: Devpost entry, demo video, opt-in checkbox and supplemental form for Commit Fellowship |
+
+---
 
 ## 18. Review Checklist by Person
 
-- Nak: voice loop gate, reconnect logic, screen list, and one quote from a user
-- Tiea: message formats, Claude vision prompt and failure handling, agent boundaries
-- Aesha: design system contrast and tap target rules, eligibility source, accessibility test plan
-- Atharv: schema, `reset_demo()`, simulated checkout, the SQLite switch
-- Everyone: the open decisions in section 17, and that no real personal data appears anywhere
+- **Nak:** voice loop gate, reconnect logic, screen list, and one quote from a user
+- **Tiea:** message formats, Claude vision prompt and failure handling, agent boundaries
+- **Aesha:** design system contrast and tap target rules, eligibility source, accessibility test plan
+- **Atharv:** schema, `reset_demo()`, simulated checkout, the SQLite switch
+- **Everyone:** the open decisions in section 17, and that no real personal data appears anywhere
