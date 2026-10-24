@@ -296,12 +296,25 @@ export const E_NETWORK = 'E_NETWORK';
 
 const TIMEOUT_MS = 8000;
 
+/**
+ * How long the user has to answer a question, from the "Time to answer"
+ * setting (WCAG 2.2.1). PROPOSED: sent as a header so the backend's prompt
+ * TTL (tech spec 0.7, 15 s) matches the user's choice.
+ */
+let promptTtlSeconds = 30;
+export function setPromptTtl(seconds: number): void {
+  promptTtlSeconds = seconds;
+  mock.setPromptTtl(seconds);
+}
+export const PROMPT_TTL_HEADER = 'X-Rewind-Prompt-TTL';
+
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...init, signal: controller.signal });
+    const headers = { ...(init.headers as Record<string, string> | undefined), [PROMPT_TTL_HEADER]: String(promptTtlSeconds) };
+    res = await fetch(`${BASE_URL}${path}`, { ...init, headers, signal: controller.signal });
   } catch {
     throw new ApiError({
       code: E_NETWORK,
@@ -436,6 +449,19 @@ export function checkoutConfirm(
     '/v1/checkout/confirm',
     json({ idempotency_key: idempotencyKey, prompt_id: promptId, use_proposed_split: useProposedSplit }),
   );
+}
+
+/**
+ * PROPOSED: a fresh question for a scan whose question expired, so a late
+ * answer is never a dead end (WCAG 2.2.1). The new prompt is bound to the
+ * same scan and scope; the user's tap or "yes" is still the confirmation.
+ */
+export function reissuePrompt(
+  scanId: string,
+  scope: ResponseScope,
+): Promise<{ prompt_id: string; expires_in_s: number }> {
+  if (USE_MOCK) return mock.reissuePrompt(scanId, scope);
+  return request('/v1/prompts/reissue', json({ scan_id: scanId, scope }));
 }
 
 /** PROPOSED: read an insurance or payment card held up to the camera. */

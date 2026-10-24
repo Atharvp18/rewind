@@ -11,7 +11,6 @@
  */
 
 import { randomUUID } from 'expo-crypto';
-import { router } from 'expo-router';
 import {
   createContext,
   useCallback,
@@ -68,7 +67,7 @@ export interface TranscriptLine {
 }
 
 /** Which content the info panel shows over the camera (one screen, tech spec 1.8 redesign). */
-export type PanelView = 'camera' | 'cart' | 'checkout' | 'add_card';
+export type PanelView = 'camera' | 'cart' | 'checkout' | 'add_card' | 'profile';
 
 export interface AgentState {
   phase: Phase;
@@ -102,10 +101,11 @@ type Action =
   | { type: 'submit' }
   | { type: 'interrupted' }
   | { type: 'idle' }
-  | { type: 'speak_start'; voice: VoiceRequest; remember: boolean; interim: boolean }
+  | { type: 'speak_start'; voice: VoiceRequest; remember: boolean; interim: boolean; ttlMs: number }
   | { type: 'speak_done'; voice: VoiceRequest }
   | { type: 'prompt_expired'; id: string }
   | { type: 'clear_prompt' }
+  | { type: 'set_prompt'; prompt: LivePrompt }
   | { type: 'cart'; cart: Cart }
   | { type: 'cards'; cards: Card[] }
   | { type: 'health'; health: Health | null }
@@ -117,7 +117,6 @@ type Action =
   | { type: 'declined'; message: string | null }
   | { type: 'view'; view: PanelView };
 
-const PROMPT_TTL_MS = 15_000;
 const SILENCE_MS = 8_000;
 const LOOKING_MS = 1_000;
 const LISTEN_WINDOW_MS = 6_000;
@@ -171,7 +170,7 @@ function reducer(s: AgentState, a: Action): AgentState {
       // A repeated question keeps its original expiry; only a new prompt starts the clock.
       const isNewPrompt = a.voice.expects_response && a.voice.prompt_id && a.voice.prompt_id !== s.livePrompt?.id;
       const prompt = isNewPrompt
-        ? { id: a.voice.prompt_id!, scope: a.voice.response_scope, expiresAt: Date.now() + PROMPT_TTL_MS }
+        ? { id: a.voice.prompt_id!, scope: a.voice.response_scope, expiresAt: Date.now() + a.ttlMs }
         : s.livePrompt;
       return {
         ...s,
@@ -193,6 +192,8 @@ function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: null, phase: s.phase === 'awaiting_confirm' ? 'idle' : s.phase };
     case 'clear_prompt':
       return { ...s, livePrompt: null };
+    case 'set_prompt':
+      return { ...s, livePrompt: a.prompt };
     case 'cart':
       return { ...s, cart: a.cart };
     case 'cards':
@@ -305,14 +306,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const say = useCallback(
     (voice: VoiceRequest, remember = true, interim = false) => {
       clearSilence();
-      dispatch({ type: 'speak_start', voice, remember, interim });
+      dispatch({ type: 'speak_start', voice, remember, interim, ttlMs: settings.answerSeconds * 1000 });
       // Only a new prompt resets the silence count and expiry timer. Re-asking
       // the same question must not, or the silence prompt would loop (1.2).
       if (voice.expects_response && voice.prompt_id && voice.prompt_id !== stateRef.current.livePrompt?.id) {
         silencePrompts.current = 0;
         if (promptTimer.current) clearTimeout(promptTimer.current);
         const id = voice.prompt_id;
-        promptTimer.current = setTimeout(() => dispatch({ type: 'prompt_expired', id }), PROMPT_TTL_MS);
+        promptTimer.current = setTimeout(() => dispatch({ type: 'prompt_expired', id }), settings.answerSeconds * 1000);
       }
       // Orange level buzz for alerts (low balance, reroute); declines buzz red in handleError.
       if (voice.priority === 'alert' && !voice.request_id.startsWith('declined-')) haptic.warning();
@@ -324,7 +325,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         speaker.speak(voice);
       }
     },
-    [screenReaderOn],
+    [screenReaderOn, settings.answerSeconds],
   );
 
   const sayLocal = useCallback(
@@ -442,7 +443,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'clear_prompt' });
           break;
         case 'open_settings':
-          router.push('/profile');
+          dispatch({ type: 'view', view: 'profile' });
           break;
       }
       say(res.voice);
@@ -450,17 +451,40 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [say, refreshCards],
   );
 
+  /**
+   * The live question for the shown scan. If its window has passed, ask the
+   * backend for a fresh one for the same item (WCAG 2.2.1: a late answer is
+   * never a dead end, and nothing needs rescanning).
+   */
+  const ensurePrompt = useCallback(async (): Promise<string | null> => {
+    const s = stateRef.current;
+    const scan = s.lastScan;
+    const scope = scan?.voice.response_scope;
+    if (!scan || !scope || scope === 'none') return s.livePrompt?.id ?? null;
+    if (s.livePrompt?.scope === scope && s.livePrompt.expiresAt > Date.now()) return s.livePrompt.id;
+    try {
+      const r = await api.reissuePrompt(scan.scan.scan_id, scope);
+      const prompt = { id: r.prompt_id, scope, expiresAt: Date.now() + r.expires_in_s * 1000 };
+      dispatch({ type: 'set_prompt', prompt });
+      stateRef.current = { ...stateRef.current, livePrompt: prompt };
+      return prompt.id;
+    } catch {
+      return s.livePrompt?.id ?? null;
+    }
+  }, []);
+
   const sendTranscript = useCallback(
     async (transcript: string, confidence: number) => {
       dispatch({ type: 'submit' });
       try {
-        const res = await api.command(transcript, confidence, stateRef.current.livePrompt?.id);
+        const promptId = stateRef.current.lastScan ? await ensurePrompt() : stateRef.current.livePrompt?.id;
+        const res = await api.command(transcript, confidence, promptId);
         applyCommand(res);
       } catch (e) {
         handleError(e);
       }
     },
-    [applyCommand, handleError],
+    [applyCommand, handleError, ensurePrompt],
   );
 
   // --- listening ------------------------------------------------------------
@@ -638,11 +662,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const addToCart = useCallback(
     async (cardId: string) => {
-      const s = stateRef.current;
-      if (!s.lastScan || !s.livePrompt) return;
+      const scan = stateRef.current.lastScan;
+      if (!scan) return;
       dispatch({ type: 'submit' });
       try {
-        const res = await api.addCartItem(s.lastScan.scan.scan_id, cardId, s.livePrompt.id);
+        const promptId = await ensurePrompt();
+        if (!promptId) return;
+        const res = await api.addCartItem(scan.scan.scan_id, cardId, promptId);
         dispatch({ type: 'cart', cart: res.cart });
         dispatch({ type: 'clear_scan' });
         dispatch({ type: 'clear_prompt' });
@@ -651,7 +677,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(e);
       }
     },
-    [say, handleError],
+    [say, handleError, ensurePrompt],
   );
 
   // Tap equivalents of spoken commands go through /v1/command so the backend

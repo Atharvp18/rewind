@@ -9,6 +9,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { AccessibilityInfo, useColorScheme } from 'react-native';
 
 import { Palettes, type Palette, type ThemeName } from '@/constants/theme';
+import { setPromptTtl } from '@/lib/api';
 import { setHapticsEnabled } from '@/lib/haptics';
 
 export type ThemeChoice = 'system' | ThemeName;
@@ -27,6 +28,8 @@ export interface Settings {
   reduceMotion: boolean;
   /** Haptics are never the only feedback; this turns them off entirely. */
   haptics: boolean;
+  /** How long a question waits for an answer (WCAG 2.2.1 Timing Adjustable). */
+  answerSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,7 +41,10 @@ export const DEFAULT_SETTINGS: Settings = {
   continuousListening: false,
   reduceMotion: false,
   haptics: true,
+  answerSeconds: 30,
 };
+
+export const ANSWER_SECONDS = [15, 30, 60] as const;
 
 export const TEXT_SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
 
@@ -90,6 +96,10 @@ export function A11yProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setHapticsEnabled(settings.haptics);
   }, [settings.haptics]);
+
+  useEffect(() => {
+    setPromptTtl(settings.answerSeconds);
+  }, [settings.answerSeconds]);
 
   const value = useMemo<A11yContextValue>(() => {
     const themeName: ThemeName =
