@@ -10,8 +10,9 @@ const LOOK: Record<
   EligibilityLabel,
   { icon: IconName; text: string; fg: 'eligible' | 'notEligible' | 'unconfirmed'; bg: 'eligibleBg' | 'notEligibleBg' | 'unconfirmedBg' }
 > = {
-  eligible: { icon: 'eligible', text: 'HSA eligible', fg: 'eligible', bg: 'eligibleBg' },
-  not_eligible: { icon: 'notEligible', text: 'Not HSA eligible', fg: 'notEligible', bg: 'notEligibleBg' },
+  // "HSA/FSA": the spec's terminology rule says "HSA" alone must cover both accounts.
+  eligible: { icon: 'eligible', text: 'HSA/FSA eligible', fg: 'eligible', bg: 'eligibleBg' },
+  not_eligible: { icon: 'notEligible', text: 'Not HSA/FSA eligible', fg: 'notEligible', bg: 'notEligibleBg' },
   could_not_confirm: { icon: 'unconfirmed', text: 'Could not confirm eligibility', fg: 'unconfirmed', bg: 'unconfirmedBg' },
 };
 
@@ -45,7 +46,7 @@ export function EligibilityBadge({
   return (
     <View
       accessible
-      accessibilityLabel={text}
+      accessibilityLabel={text.replace('HSA/FSA', 'HSA and FSA')}
       style={[
         styles.badge,
         compact && styles.compact,

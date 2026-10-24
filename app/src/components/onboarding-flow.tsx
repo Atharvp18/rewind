@@ -5,8 +5,9 @@ import { Linking, StyleSheet, TextInput, View } from 'react-native';
 
 import { BigButton } from '@/components/big-button';
 import type { Capture } from '@/components/camera-stage';
+import { CardArt } from '@/components/card-art';
 import { Notice } from '@/components/icon';
-import { InfoPanel, PanelText } from '@/components/info-panel';
+import { InfoPanel, PanelActions, PanelText } from '@/components/info-panel';
 import { InsuranceSummary } from '@/components/insurance-summary';
 import { Radius, Spacing, Target, Type } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -285,10 +286,10 @@ export function OnboardingFlow({
   if (!step) return null;
 
   const yesNoButtons = (onYes: () => void, onNo: () => void, noLabel = 'No, try again') => (
-    <View style={styles.buttons}>
+    <PanelActions>
       <BigButton label="Yes, that's right" icon="check" variant="primary" size="primary" onPress={onYes} />
       <BigButton label={noLabel} icon="retry" onPress={onNo} />
-    </View>
+    </PanelActions>
   );
 
   const step1of = (n: number) => <PanelText kind="small" muted>{`Step ${n} of 4`}</PanelText>;
@@ -301,10 +302,13 @@ export function OnboardingFlow({
           {camera && !camera.granted && !camera.canAskAgain ? (
             <>
               <PanelText>Camera access is off for Rewind. You can turn it on in your phone settings.</PanelText>
-              <BigButton label="Open phone settings" variant="primary" size="primary" onPress={() => Linking.openSettings()} />
-              <BigButton label="Continue without camera" onPress={() => setStep('perm_mic')} />
+              <PanelActions>
+                <BigButton label="Open phone settings" variant="primary" size="primary" onPress={() => Linking.openSettings()} />
+                <BigButton label="Continue without camera" onPress={() => setStep('perm_mic')} />
+              </PanelActions>
             </>
           ) : (
+            <PanelActions>
             <BigButton
               label="Allow camera"
               icon="camera"
@@ -315,6 +319,7 @@ export function OnboardingFlow({
                 setStep('perm_mic');
               }}
             />
+            </PanelActions>
           )}
         </InfoPanel>
       );
@@ -323,6 +328,7 @@ export function OnboardingFlow({
       return (
         <InfoPanel title="Microphone">
           <PanelText>{Say.micWhy}</PanelText>
+          <PanelActions>
           <BigButton
             label="Allow microphone"
             icon="mic"
@@ -334,6 +340,7 @@ export function OnboardingFlow({
             }}
           />
           <BigButton label="Use buttons only" onPress={() => setStep('phone')} />
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -347,7 +354,9 @@ export function OnboardingFlow({
           <PanelText kind="small" muted>
             {`Prototype: verified with the demo number ${DEMO_PHONE}. No text message is sent.`}
           </PanelText>
+          <PanelActions>
           <BigButton label="Continue" icon="next" variant="primary" size="primary" onPress={verifyPhone} />
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -356,8 +365,10 @@ export function OnboardingFlow({
         <InfoPanel title="Your insurance card">
           {step1of(2)}
           <PanelText>Hold your insurance card flat, about a hand length from the phone. Then tap anywhere on the screen.</PanelText>
+          <PanelActions>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton label="Skip for now" onPress={() => setStep('payment')} />
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -369,6 +380,7 @@ export function OnboardingFlow({
             From your insurance card · is this your name?
           </PanelText>
           <PanelText kind="title">{`${name?.first ?? ''} ${name?.last ?? ''}`.trim()}</PanelText>
+          <PanelActions>
           <View style={styles.row}>
             <View style={styles.grow}>
               <BigButton label="Yes" icon="check" variant="primary" onPress={() => saveName(name)} />
@@ -377,6 +389,7 @@ export function OnboardingFlow({
               <BigButton label="No" icon="close" onPress={() => setStep('name_type')} />
             </View>
           </View>
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -387,6 +400,7 @@ export function OnboardingFlow({
             Type it, or scan the card again.
           </PanelText>
           <NameInput value={typed} onChange={setTyped} onSubmit={onTypedName} />
+          <PanelActions>
           <View style={styles.row}>
             <View style={styles.grow}>
               <BigButton label="Save" icon="check" variant="primary" onPress={onTypedName} disabled={!typed.trim()} />
@@ -395,6 +409,7 @@ export function OnboardingFlow({
               <BigButton label="Scan again" icon="retry" onPress={() => setStep('insurance')} />
             </View>
           </View>
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -416,11 +431,13 @@ export function OnboardingFlow({
               ? 'Hold your HSA or FSA Visa card flat, about a hand length from the phone. Then tap anywhere on the screen.'
               : 'Hold your everyday Visa card, credit or debit, flat about a hand length from the phone. Then tap anywhere on the screen.'}
           </PanelText>
+          <PanelActions>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton
             label={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"}
             onPress={() => setStep('done')}
           />
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -428,12 +445,14 @@ export function OnboardingFlow({
       return (
         <InfoPanel title="What kind of card is this?">
           {step1of(3)}
+          <PanelActions>
           <View style={styles.buttons}>
             <BigButton label="HSA card" variant="primary" onPress={() => chooseType('hsa')} />
             <BigButton label="FSA card" variant="primary" onPress={() => chooseType('fsa')} />
             <BigButton label="Credit card" onPress={() => chooseType('general', 'credit')} />
             <BigButton label="Debit card" onPress={() => chooseType('general', 'debit')} />
           </View>
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -441,10 +460,19 @@ export function OnboardingFlow({
       return (
         <InfoPanel title="Is this your card?">
           {step1of(3)}
-          <PanelText kind="heading">
-            {payment?.card_type ? nicknameFor(payment.card_type, payment.network, debitOrCredit) : ''}
-          </PanelText>
-          {payment?.last4 ? <PanelText kind="display">{`•••• ${payment.last4}`}</PanelText> : null}
+          {payment?.card_type ? (
+            <View
+              accessible
+              accessibilityLabel={`${nicknameFor(payment.card_type, payment.network, debitOrCredit)}${
+                payment.last4 ? ` ending in ${payment.last4.split('').join(' ')}` : ''
+              }`}>
+              <CardArt
+                type={payment.card_type}
+                nickname={nicknameFor(payment.card_type, payment.network, debitOrCredit)}
+                last4={payment.last4}
+              />
+            </View>
+          ) : null}
           <PanelText kind="small" muted>
             Rewind keeps only the last 4 digits.
           </PanelText>
@@ -457,10 +485,12 @@ export function OnboardingFlow({
         <InfoPanel title="Card added">
           {step1of(3)}
           <PanelText>Do you want to add another card?</PanelText>
+          <PanelActions>
           <View style={styles.buttons}>
             <BigButton label="Add another card" icon="add" variant="primary" size="primary" onPress={() => setStep('payment')} />
             <BigButton label="No, I'm done" onPress={() => setStep('done')} />
           </View>
+          </PanelActions>
         </InfoPanel>
       );
 
@@ -469,7 +499,9 @@ export function OnboardingFlow({
         <InfoPanel title={`You're all set, ${profile.firstName || name?.first || ''}`}>
           {step1of(4)}
           <PanelText>Point your phone at a product and tap anywhere to scan. Your cards and settings are under the round button at the top right.</PanelText>
+          <PanelActions>
           <BigButton label="Start shopping" icon="next" variant="primary" size="primary" onPress={finish} />
+          </PanelActions>
         </InfoPanel>
       );
   }

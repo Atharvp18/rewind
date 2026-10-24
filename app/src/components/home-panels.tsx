@@ -3,10 +3,11 @@ import { StyleSheet, View } from 'react-native';
 import { AlertBlock } from '@/components/alert-block';
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
+import { CardArt } from '@/components/card-art';
 import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon } from '@/components/icon';
-import { InfoPanel, PanelText, type PanelTone } from '@/components/info-panel';
+import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Card, PaymentRecommendation, ScanResponse } from '@/lib/api';
@@ -69,13 +70,16 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   const { state, addToCart, skip, answer } = useAgent();
   const { product, eligibility } = res.scan;
   const rec = res.recommendation;
-  const live = state.livePrompt?.id === res.voice.prompt_id ? state.livePrompt : null;
+  // Answers stay active after the question's window: a late answer re-asks for the same item.
+  const busy = state.phase === 'submitting';
 
   if (res.scan.state === 'unresolved') {
     return (
       <InfoPanel title="Could not confirm this item">
         <PanelText>Try another angle, or tap Talk and say what it is.</PanelText>
-        <BigButton label="Scan again" icon="retry" variant="primary" size="primary" onPress={skip} />
+        <PanelActions>
+          <BigButton label="Scan again" icon="retry" variant="primary" size="primary" onPress={skip} />
+        </PanelActions>
       </InfoPanel>
     );
   }
@@ -83,29 +87,27 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
   if (res.voice.response_scope === 'confirm_strength') {
     return (
-      // Compact on purpose: fits without scrolling at 100–150% text (approved).
       <InfoPanel label="Prescription label read-back">
         <PanelText kind="small" muted>
           From the bottle label · is this right?
         </PanelText>
         <PanelText kind="title">{[product.name, product.size].filter(Boolean).join(' ')}</PanelText>
-        <View style={styles.row}>
-          <View style={styles.grow}>
-            <BigButton label="Yes" icon="check" variant="primary" disabled={!live} onPress={() => answer('yes')} />
-          </View>
-          <View style={styles.grow}>
-            <BigButton label="No" icon="close" onPress={() => answer('no')} />
-          </View>
-        </View>
         <PanelText kind="small" muted>
           No medical advice. Ask the pharmacist about dosage or safety.
         </PanelText>
+        <PanelActions>
+          <YesNo yes="Yes, that's right" onYes={() => answer('yes')} onNo={() => answer('no')} busy={busy} />
+        </PanelActions>
       </InfoPanel>
     );
   }
 
   return (
-    <InfoPanel title={product.name} tone={scanTone(rec)}>
+    <InfoPanel tone={scanTone(rec)}>
+      {/* Product card order: name (full width), then price + eligibility side by side. */}
+      <AppText kind="heading" accessibilityRole="header">
+        {product.name}
+      </AppText>
       {product.amount_cents != null ? (
         <View style={styles.priceRow}>
           <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
@@ -113,27 +115,21 @@ function ScanPanel({ res }: { res: ScanResponse }) {
           </View>
           <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
         </View>
-      ) : (
+      ) : null}
+      {product.amount_cents == null ? (
         <AlertBlock level="warning" title="Price not found">
           Point at the shelf tag, or say the price.
         </AlertBlock>
-      )}
+      ) : null}
       {product.amount_cents == null ? (
         <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
       ) : null}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
-      {rec && rec.decision !== 'blocked' && live?.scope !== 'confirm_add' ? (
-        // The question expired (15 s, single use, tech spec 0.7): it can't be answered any more,
-        // so offer the honest next step instead of a dead button.
-        <>
-          <PanelText kind="small" muted>
-            The question timed out.
-          </PanelText>
-          <BigButton label="Scan again" icon="retry" variant="primary" onPress={skip} />
-        </>
-      ) : rec ? (
-        <Actions rec={rec} cards={state.cards} enabled={live?.scope === 'confirm_add'} onAdd={addToCart} onSkip={skip} />
+      {rec ? (
+        <PanelActions>
+          <Actions rec={rec} cards={state.cards} busy={busy} onAdd={addToCart} onSkip={skip} />
+        </PanelActions>
       ) : null}
     </InfoPanel>
   );
@@ -142,13 +138,15 @@ function ScanPanel({ res }: { res: ScanResponse }) {
 function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Card[] }) {
   const card = cardById(cards, rec.card_id);
   if (rec.decision === 'route_to_hsa' || rec.decision === 'route_to_general') {
+    const balance =
+      rec.balance_before_cents != null && card?.type !== 'general' ? ` · ${formatCents(rec.balance_before_cents)} left` : '';
     return (
-      <PanelText>
-        {`Pays with: ${card?.nickname ?? 'card'}`}
-        {rec.balance_before_cents != null && card?.type !== 'general'
-          ? ` (balance ${formatCents(rec.balance_before_cents)})`
-          : ''}
-      </PanelText>
+      <View style={styles.paysWith} accessible accessibilityLabel={`Pays with ${card?.nickname ?? 'card'}${balance}`}>
+        {card ? <CardArt type={card.type} size="swatch" /> : null}
+        <AppText kind="body" accessible={false} style={styles.name}>
+          {`Pays with ${card?.nickname ?? 'card'}${balance}`}
+        </AppText>
+      </View>
     );
   }
   if (rec.decision === 'blocked') {
@@ -171,49 +169,69 @@ function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Car
   return <PanelText>Which card would you like to use?</PanelText>;
 }
 
+/** Yes / No side by side: the primary answer wider, 12 pt apart so they are hard to mis-tap (2.5.8). */
+function YesNo({
+  yes,
+  no = 'No',
+  onYes,
+  onNo,
+  busy,
+}: {
+  yes: string;
+  no?: string;
+  onYes: () => void;
+  onNo: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <View style={styles.row}>
+      <View style={[styles.grow2, styles.cell]}>
+        <BigButton label={yes} icon="check" variant="primary" disabled={busy} onPress={onYes} stretch />
+      </View>
+      <View style={[styles.grow, styles.cell]}>
+        <BigButton label={no} icon="close" disabled={busy} onPress={onNo} stretch />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Buttons use the same words as the spoken question (WCAG 3.2.4):
+ * "Want to use your HSA card?" → "Yes, use HSA card" / "No".
+ */
 function Actions({
   rec,
   cards,
-  enabled,
+  busy,
   onAdd,
   onSkip,
 }: {
   rec: PaymentRecommendation;
   cards: Card[];
-  enabled: boolean;
+  busy: boolean;
   onAdd: (cardId: string) => void;
   onSkip: () => void;
 }) {
   if (rec.decision === 'blocked') {
     return <BigButton label="OK" variant="primary" size="primary" onPress={onSkip} />;
   }
-  const options =
-    rec.decision === 'ask_user'
-      ? rec.card_options.length
-        ? rec.card_options
-        : rec.reroute
-          ? [rec.reroute.to_card_id]
-          : []
-      : rec.card_id
-        ? [rec.card_id]
-        : [];
-  // One choice: Add and Skip side by side. Several cards: one row each, Skip last.
+  const nick = (id: string | null | undefined) => cardById(cards, id)?.nickname ?? 'this card';
+  if (rec.decision === 'route_to_hsa' && rec.card_id) {
+    return <YesNo yes={`Yes, use ${nick(rec.card_id)}`} onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
+  }
+  if (rec.decision === 'route_to_general' && rec.card_id) {
+    return <YesNo yes={`Yes, add to ${nick(rec.card_id)}`} onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
+  }
+  const options = rec.card_options.length ? rec.card_options : rec.reroute ? [rec.reroute.to_card_id] : [];
+  if (options.length === 1) {
+    return <YesNo yes={`Yes, use ${nick(options[0])}`} onYes={() => onAdd(options[0])} onNo={onSkip} busy={busy} />;
+  }
   return (
-    <View style={options.length === 1 ? styles.row : styles.buttons}>
+    <View style={styles.buttons}>
       {options.map((id) => (
-        <View key={id} style={options.length === 1 ? styles.grow2 : undefined}>
-          <BigButton
-            label={rec.decision === 'ask_user' ? `Use ${cardById(cards, id)?.nickname ?? 'this card'}` : 'Add to cart'}
-            icon="check"
-            variant="primary"
-            disabled={!enabled}
-            onPress={() => onAdd(id)}
-          />
-        </View>
+        <BigButton key={id} label={`Use ${nick(id)}`} icon="check" variant="primary" disabled={busy} onPress={() => onAdd(id)} />
       ))}
-      <View style={options.length === 1 ? styles.grow : undefined}>
-        <BigButton label="Skip" icon="close" onPress={onSkip} />
-      </View>
+      <BigButton label="Skip" icon="close" disabled={busy} onPress={onSkip} />
     </View>
   );
 }
@@ -231,7 +249,9 @@ function CartPanel() {
     return (
       <InfoPanel title="Your cart is empty">
         <PanelText>Point your phone at a product and tap anywhere to scan.</PanelText>
-        <BigButton label="Close" onPress={dismiss} />
+        <PanelActions>
+          <BigButton label="Close" onPress={dismiss} />
+        </PanelActions>
       </InfoPanel>
     );
   }
@@ -244,7 +264,7 @@ function CartPanel() {
         <PanelText kind="label">Total, before tax</PanelText>
         <PanelText kind="display">{formatCents(cart.total_cents)}</PanelText>
       </View>
-      <View style={styles.buttons}>
+      <PanelActions>
         <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         <BigButton label="Remove last item" icon="undo" onPress={removeLast} />
         {clearPending ? (
@@ -254,7 +274,7 @@ function CartPanel() {
           <BigButton label="Clear cart" icon="trash" variant="danger" onPress={askClearCart} />
         )}
         <BigButton label="Close" onPress={dismiss} />
-      </View>
+      </PanelActions>
     </InfoPanel>
   );
 }
@@ -278,7 +298,9 @@ function CheckoutPanel() {
   if (!preview.groups.length) {
     return (
       <InfoPanel title="Your cart is empty">
-        <BigButton label="Close" onPress={() => showView('camera')} />
+        <PanelActions>
+          <BigButton label="Close" onPress={() => showView('camera')} />
+        </PanelActions>
       </InfoPanel>
     );
   }
@@ -304,6 +326,7 @@ function CheckoutPanel() {
       <PanelText kind="small" muted>
         This is a simulated payment. No real card is charged.
       </PanelText>
+      <PanelActions>
       {!live ? (
         <BigButton label="Read the split again" icon="retry" variant="primary" size="primary" onPress={startCheckout} />
       ) : reroute ? (
@@ -317,6 +340,7 @@ function CheckoutPanel() {
           <BigButton label="Not now" onPress={() => showView('cart')} />
         </View>
       )}
+      </PanelActions>
     </InfoPanel>
   );
 }
@@ -346,7 +370,9 @@ function ReceiptPanel() {
           <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
         </View>
       ))}
-      <BigButton label="Done" variant="primary" size="primary" onPress={dismiss} />
+      <PanelActions>
+        <BigButton label="Done" variant="primary" size="primary" onPress={dismiss} />
+      </PanelActions>
     </InfoPanel>
   );
 }
@@ -359,18 +385,22 @@ function DeclinedPanel({ message }: { message: string }) {
       <AlertBlock level="danger" title="Declined">
         {message}
       </AlertBlock>
-      <View style={styles.buttons}>
+      <PanelActions>
         <BigButton label="Move items to another card" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         <BigButton label="Add a card" icon="add" onPress={() => showView('add_card')} />
         <BigButton label="Back to cart" onPress={() => showView('cart')} />
-      </View>
+      </PanelActions>
     </InfoPanel>
   );
 }
 
 const styles = StyleSheet.create({
   buttons: { gap: Spacing.sm },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  // Paired buttons: same height (cells stretch), wrap to two rows at large text.
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: Spacing.md },
+  cell: { flexDirection: 'column' },
+  name: { flexShrink: 1, flexGrow: 1 },
+  paysWith: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   grow: { flexGrow: 1, flexBasis: 110 },
   grow2: { flexGrow: 2, flexBasis: 160 },
   priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.md, rowGap: Spacing.xs },

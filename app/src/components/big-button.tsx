@@ -15,6 +15,8 @@ export type BigButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   /** `primary` is 72pt tall for the one main action on a screen; `normal` is 56pt. */
   size?: 'primary' | 'normal';
   fill?: boolean;
+  /** Grow to fill the parent's height (equal-height buttons side by side). */
+  stretch?: boolean;
 };
 
 export function BigButton({
@@ -23,6 +25,7 @@ export function BigButton({
   variant = 'secondary',
   size = 'normal',
   fill = true,
+  stretch = false,
   disabled,
   accessibilityLabel,
   ...rest
@@ -54,6 +57,7 @@ export function BigButton({
           borderWidth: palette.controlBorderWidth,
           opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
           alignSelf: fill ? 'stretch' : 'auto',
+          flexGrow: stretch ? 1 : 0,
         },
       ]}
       {...rest}>
@@ -74,9 +78,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     justifyContent: 'center',
   },
+  // Icon and label always share one row; a long label wraps inside its own text.
   row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
