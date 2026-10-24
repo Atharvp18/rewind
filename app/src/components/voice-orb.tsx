@@ -19,7 +19,7 @@ import { withOpacity } from '@/components/info-panel';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { onMicLevel } from '@/lib/audio';
-import { responsiveFor } from '@/lib/responsive';
+import { responsiveFor, useResponsive } from '@/lib/responsive';
 import { useAgent, type Phase } from '@/state/agent';
 
 /**
@@ -159,25 +159,20 @@ export function OrbGlow() {
  * just a gesture: the tap and the label cover screen readers and switch users.
  */
 function HistoryHandle() {
-  const { reduceMotion } = useA11y();
+  const { reduceMotion, settings } = useA11y();
   const { state, showView } = useAgent();
   const insets = useSafeAreaInsets();
-  const wave = useSharedValue(0);
+  const { type } = useResponsive();
+  const glow = useSharedValue(1);
   const open = state.view === 'history';
   useEffect(() => {
-    cancelAnimation(wave);
-    wave.value = 0;
-    // Two chevrons rise one after the other, like a page being sent up. Still when open or Reduce Motion.
+    cancelAnimation(glow);
+    glow.value = 1;
+    // A calm fade in and out says "something is here" without any movement. Still when open or Reduce Motion.
     if (open || reduceMotion) return;
-    wave.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.out(Easing.quad) }), -1);
-  }, [open, reduceMotion, wave]);
-  const rise = (delay: number) => {
-    'worklet';
-    const t = Math.min(1, Math.max(0, wave.value - delay) / (1 - delay));
-    return { opacity: Math.sin(Math.PI * t), transform: [{ translateY: 7 - 14 * t }] };
-  };
-  const first = useAnimatedStyle(() => rise(0));
-  const second = useAnimatedStyle(() => rise(0.25));
+    glow.value = withRepeat(withTiming(0.45, { duration: 1400, easing: Easing.inOut(Easing.sin) }), -1, true);
+  }, [open, reduceMotion, glow]);
+  const fade = useAnimatedStyle(() => ({ opacity: glow.value }));
   const toggle = () => showView(open ? 'camera' : 'history');
   const pan = useMemo(
     () =>
@@ -190,6 +185,8 @@ function HistoryHandle() {
       }),
     [showView],
   );
+  // Same size as the Cart button's text and icon (20 pt, heavy; 26 pt icon).
+  const fontSize = Math.round(20 * Math.min(settings.textScale, 1.5) * type);
   return (
     <Pressable
       {...pan.panHandlers}
@@ -200,24 +197,11 @@ function HistoryHandle() {
       accessibilityRole="button"
       accessibilityLabel={open ? 'Close purchase history' : 'Open purchase history'}
       accessibilityHint="Swipe up or double tap to see your past purchases and invoices"
-      style={[styles.handle, { bottom: insets.bottom + 6 }]}>
-      <View style={styles.chevrons}>
-        {open ? (
-          <Icon name="chevronDown" size={20} color="onDock" strokeWidth={3} />
-        ) : (
-          <>
-            <Animated.View style={[styles.chevron, reduceMotion ? styles.still : first]}>
-              <Icon name="chevronUp" size={20} color="onDock" strokeWidth={3} />
-            </Animated.View>
-            {reduceMotion ? null : (
-              <Animated.View style={[styles.chevron, second]}>
-                <Icon name="chevronUp" size={20} color="onDock" strokeWidth={3} />
-              </Animated.View>
-            )}
-          </>
-        )}
-      </View>
-      <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
+      style={[styles.handle, { bottom: insets.bottom + 4 }]}>
+      <Animated.View style={fade}>
+        <Icon name={open ? 'chevronDown' : 'chevronUp'} size={26} color="onDock" strokeWidth={3} />
+      </Animated.View>
+      <AppText color="onDock" accessible={false} style={[styles.handleText, { fontSize, lineHeight: Math.round(fontSize * 1.2) }]}>
         {open ? 'Close history' : 'History'}
       </AppText>
     </Pressable>
@@ -371,8 +355,5 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   // Drawn over the dome's bottom edge, outside the layout flow: the dome keeps its old height.
   handle: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 32, minWidth: 44 },
-  chevrons: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  chevron: { position: 'absolute' },
-  still: { opacity: 1 },
-  handleText: { fontWeight: '700' },
+  handleText: { fontWeight: '800' },
 });
