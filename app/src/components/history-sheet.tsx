@@ -13,14 +13,13 @@ import Animated, {
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
 import { Icon } from '@/components/icon';
-import { InvoiceDetail } from '@/components/invoice-view';
+import { InvoiceCard } from '@/components/invoice-view';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { useDomeHeight } from '@/components/voice-orb';
 import { Elevation, Layout, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
 import { shareReimbursementPacketPdf } from '@/lib/invoice-pdf';
-import { longDate } from '@/lib/invoice-text';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 import { useAgent } from '@/state/agent';
 
@@ -187,40 +186,6 @@ export function HistorySheet() {
   );
 }
 
-function InvoiceCard({ invoice: inv, open, onToggle }: { invoice: Invoice; open: boolean; onToggle: () => void }) {
-  const { palette } = useA11y();
-  return (
-    <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border, borderWidth: palette.controlBorderWidth || 1 }]}>
-      <Pressable
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${inv.store.name}, ${longDate(inv.date)}, total ${centsForScreenReader(inv.total_cents)}${inv.reimbursable_cents ? ', possible reimbursement' : ''}`}
-        accessibilityHint={open ? 'Collapse invoice' : 'Show invoice details'}
-        style={styles.cardHead}>
-        <View style={styles.flex}>
-          <AppText kind="label">{inv.store.name}</AppText>
-          <AppText kind="small" color="textMuted">
-            {longDate(inv.date)}
-          </AppText>
-          {inv.reimbursable_cents ? (
-            <View style={styles.inline}>
-              <Icon name="alert" size={16} color="warning" />
-              <AppText kind="small" color="warning">
-                Possible reimbursement {formatCents(inv.reimbursable_cents)}
-              </AppText>
-            </View>
-          ) : null}
-        </View>
-        <AppText kind="heading">{formatCents(inv.total_cents)}</AppText>
-        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={22} color="textMuted" />
-      </Pressable>
-
-      {open ? <InvoiceDetail invoice={inv} /> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', borderRadius: Radius.card + 4, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, borderBottomWidth: 1 },
@@ -229,12 +194,4 @@ const styles = StyleSheet.create({
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   summary: { borderRadius: Radius.card, borderWidth: 2, padding: Spacing.lg, gap: Spacing.sm },
-  card: { borderRadius: Radius.card, overflow: 'hidden' },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.lg },
-  detail: { borderTopWidth: 1, padding: Spacing.lg, gap: Spacing.sm },
-  line: { borderTopWidth: 1, paddingTop: Spacing.sm, gap: Spacing.xs },
-  lineTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, alignItems: 'center' },
-  tag: { borderRadius: Radius.pill, borderWidth: 1, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
-  totals: { borderTopWidth: 2, paddingTop: Spacing.sm, gap: Spacing.xs },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
@@ -17,7 +17,7 @@ import { CardArt } from '@/components/card-art';
 import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon, Notice } from '@/components/icon';
-import { InvoiceDetail } from '@/components/invoice-view';
+import { InvoiceCard } from '@/components/invoice-view';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
 import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -482,8 +482,8 @@ function CheckoutPanel() {
 /**
  * After checkout: the invoice as a widget (same place as the checkout and medication cards).
  * It stays while the agent speaks, then flies down into the History label at the bottom and
- * becomes the newest invoice in the history. It leaves on the user's tap (Save to history, or
- * the close button) or 10 seconds after the agent stops speaking.
+ * becomes the newest invoice in the history (saved automatically). It stays until the phone
+ * leaves the store (or the ✕); without a check-in it leaves 10 s after the agent stops speaking.
  */
 function ReceiptPanel() {
   const { state, dismiss } = useAgent();
@@ -491,6 +491,10 @@ function ReceiptPanel() {
   const { height } = useWindowDimensions();
   const receipt = state.receipt!;
   const lowBalance = receipt.voice.priority === 'alert';
+  // Health cards that ended below the low-balance line (mirrors the backend's $20.00 rule).
+  const low = receipt.new_balances.filter(
+    (b) => cardById(state.cards, b.card_id)?.type !== 'general' && b.balance_cents < 2000,
+  );
   const y = useSharedValue(0);
   const k = useSharedValue(1);
   const [leaving, setLeaving] = useState(false);
@@ -509,13 +513,21 @@ function ReceiptPanel() {
     });
   }, [leaving, reduceMotion, height, y, k, dismiss]);
 
-  // 10 s after the agent has finished speaking.
+  // Checked in at a store: the invoice and the alert stay until the phone leaves the store, then
+  // they go to History by themselves (the ✕ still closes them any time). With no check-in to
+  // go by, they leave 10 s after the agent stops speaking.
+  const atStore = state.checkin?.status === 'in';
   const quiet = state.phase === 'idle' || state.phase === 'awaiting_confirm';
   useEffect(() => {
-    if (!quiet) return;
+    if (atStore || !quiet) return;
     const t = setTimeout(leave, 10_000);
     return () => clearTimeout(t);
-  }, [quiet, leave]);
+  }, [atStore, quiet, leave]);
+  const wasAtStore = useRef(atStore);
+  useEffect(() => {
+    if (wasAtStore.current && !atStore) leave();
+    wasAtStore.current = atStore;
+  }, [atStore, leave]);
 
   const fly = useAnimatedStyle(() => ({
     opacity: k.value,
@@ -528,12 +540,13 @@ function ReceiptPanel() {
         <Notice icon="eligible" color="eligible" kind="body">
           You paid for your items. Please take them with you.
         </Notice>
+        {/* The same card as the purchase history, always open. It is saved there automatically. */}
+        {receipt.invoice ? <InvoiceCard invoice={receipt.invoice} open /> : null}
         {lowBalance ? (
-          <AlertBlock level="warning" title="Low balance">
-            {receipt.voice.text}
+          <AlertBlock level="warning" title="Balance running low">
+            {low.map((b) => `Your ${cardById(state.cards, b.card_id)?.nickname ?? 'card'} balance is now ${formatCents(b.balance_cents)}.`).join(' ')}
           </AlertBlock>
         ) : null}
-        {receipt.invoice ? <InvoiceDetail invoice={receipt.invoice} bordered={false} share={false} /> : null}
         <PanelText kind="label">New balances</PanelText>
         {receipt.new_balances.map((b) => {
           const card = cardById(state.cards, b.card_id);
@@ -548,11 +561,8 @@ function ReceiptPanel() {
           );
         })}
         <PanelText kind="small" muted>
-          Simulated payment. No real card was charged.
+          Saved to your purchase history. Simulated payment, no real card was charged.
         </PanelText>
-        <PanelActions>
-          <BigButton label="Save to history" icon="receipt" variant="primary" size="primary" onPress={leave} />
-        </PanelActions>
       </InfoPanel>
     </Animated.View>
   );

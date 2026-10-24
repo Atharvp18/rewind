@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
@@ -6,7 +6,8 @@ import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Invoice } from '@/lib/api';
-import { isReimbursable } from '@/lib/invoice-text';
+import { Icon } from '@/components/icon';
+import { isReimbursable, longDate } from '@/lib/invoice-text';
 import { shareInvoicePdf } from '@/lib/invoice-pdf';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 
@@ -14,10 +15,10 @@ import { centsForScreenReader, formatCents } from '@/lib/money';
  * An invoice's body: store, items, tax estimate, total, and which card paid. Used by the
  * purchase history and by the checkout invoice widget, so both look the same.
  */
-export function InvoiceDetail({ invoice: inv, bordered = true, share = true }: { invoice: Invoice; bordered?: boolean; share?: boolean }) {
+export function InvoiceDetail({ invoice: inv, share = true }: { invoice: Invoice; share?: boolean }) {
   const { palette } = useA11y();
   return (
-        <View style={[styles.detail, bordered && { borderTopWidth: 1, borderTopColor: palette.border }]}>
+        <View style={[styles.detail, { borderTopColor: palette.border }]}>
           <View accessible accessibilityLabel={`${inv.store.name}. ${inv.store.address}. Phone ${inv.store.phone}.`}>
             <AppText kind="small" color="textMuted" accessible={false}>
               {inv.store.address}
@@ -95,8 +96,60 @@ function Row({ label, cents, strong }: { label: string; cents: number; strong?: 
   );
 }
 
+/**
+ * One invoice as a card: store, date and total on top (with the possible-reimbursement note),
+ * then the full detail. The purchase history lists these (collapsible); the checkout widget shows
+ * the same card, always open, so the two always look the same.
+ */
+export function InvoiceCard({
+  invoice: inv,
+  open,
+  onToggle,
+}: {
+  invoice: Invoice;
+  open: boolean;
+  /** Omit for a card that is always open (the checkout widget). */
+  onToggle?: () => void;
+}) {
+  const { palette } = useA11y();
+  return (
+    <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border, borderWidth: palette.controlBorderWidth || 1 }]}>
+      <Pressable
+        disabled={!onToggle}
+        onPress={onToggle}
+        accessibilityRole={onToggle ? 'button' : 'header'}
+        accessibilityState={onToggle ? { expanded: open } : undefined}
+        accessibilityLabel={`${inv.store.name}, ${longDate(inv.date)}, total ${centsForScreenReader(inv.total_cents)}${inv.reimbursable_cents ? ', possible reimbursement' : ''}`}
+        accessibilityHint={onToggle ? (open ? 'Collapse invoice' : 'Show invoice details') : undefined}
+        style={styles.cardHead}>
+        <View style={styles.flex}>
+          <AppText kind="label">{inv.store.name}</AppText>
+          <AppText kind="small" color="textMuted">
+            {longDate(inv.date)}
+          </AppText>
+          {inv.reimbursable_cents ? (
+            <View style={styles.inline}>
+              <Icon name="alert" size={16} color="warning" />
+              <AppText kind="small" color="warning">
+                Possible reimbursement {formatCents(inv.reimbursable_cents)}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+        <AppText kind="heading">{formatCents(inv.total_cents)}</AppText>
+        {onToggle ? <Icon name={open ? 'chevronUp' : 'chevronDown'} size={22} color="textMuted" /> : null}
+      </Pressable>
+
+      {open ? <InvoiceDetail invoice={inv} /> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  detail: { padding: Spacing.lg, gap: Spacing.sm },
+  card: { borderRadius: Radius.card, overflow: 'hidden' },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.lg },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  detail: { borderTopWidth: 1, padding: Spacing.lg, gap: Spacing.sm },
   flex: { flex: 1 },
   line: { borderTopWidth: 1, paddingTop: Spacing.sm, gap: Spacing.xs },
   lineTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },

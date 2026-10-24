@@ -343,8 +343,8 @@ describe('checkout run 1 (spec 4.4, FSA-first seed)', () => {
       'Two items totaling $18.48 on your FSA card. One item totaling $4.99 on your Visa credit. Ready to check out?',
     );
     const paid = await m.checkoutConfirm('run1', preview.voice.prompt_id!);
-    // Wording extended by Nak (2026-10-24): take your items; invoice is in History. The balance line stays.
-    expect(paid.voice.text).toMatch(/^Payment complete\. You paid for your items, so please take them with you\. Your FSA balance is now \$6.52\. Your invoice is saved in History\.$/);
+    // Wording softened (2026-10-24): thanks, take your items, receipt is in History. The balance line stays.
+    expect(paid.voice.text).toMatch(/^Thank you\. Your payment went through\. Please remember to take your items with you\. Your FSA balance is now \$6.52\. Your receipt is saved in History\.$/);
     expect(paid.voice.priority).toBe('alert'); // $6.52 is under the $20 low-balance level
     expect(paid.new_balances).toEqual([
       { card_id: FSA, balance_cents: 652 },
@@ -414,8 +414,8 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
   it('"yes" to the proposed move pays it, and the amounts add up', async () => {
     const preview = await m.checkoutPreview();
     const paid = await m.checkoutConfirm('k', preview.voice.prompt_id!, true);
-    // Wording extended by Nak (2026-10-24): take your items; invoice is in History. The balance line stays.
-    expect(paid.voice.text).toMatch(/^Payment complete\. You paid for your items, so please take them with you\. Your FSA balance is now \$2.01\. Your invoice is saved in History\.$/);
+    // Wording softened (2026-10-24): thanks, take your items, receipt is in History. The balance line stays.
+    expect(paid.voice.text).toMatch(/^Thank you\. Your payment went through\. Please remember to take your items with you\. Your FSA balance is now \$2.01\. Your receipt is saved in History\.$/);
     expect(paid.new_balances.find((b) => b.card_id === FSA)!.balance_cents).toBe(201);
     const total = paid.groups.reduce((s, g) => s + g.subtotal_cents, 0);
     expect(total).toBe(1299 + 549 + 499);
@@ -762,5 +762,14 @@ describe('store check-in', () => {
 
   it('the invoice never carries coordinates', async () => {
     for (const inv of await m.getPaymentHistory()) expect(Object.keys(inv.store).sort()).toEqual(['address', 'name', 'phone']);
+  });
+});
+
+describe('leaving the store', () => {
+  it('is still at the store within 250 m and gone beyond it', async () => {
+    const w = { lat: 37.8044, lng: -122.2712 };
+    expect(await m.stillAtStore('store_walmart', w)).toBe(true);
+    expect(await m.stillAtStore('store_walmart', { lat: w.lat + 0.01, lng: w.lng })).toBe(false); // about 1.1 km
+    expect(await m.stillAtStore('nope', w)).toBe(false);
   });
 });

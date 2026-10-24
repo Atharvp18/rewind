@@ -123,6 +123,7 @@ export type Action =
   | { type: 'user_said'; text: string }
   | { type: 'declined'; message: string | null }
   | { type: 'review'; id: string | null }
+  | { type: 'caption_clear' }
   | { type: 'checkin'; checkin: AgentState['checkin'] }
   | { type: 'view'; view: PanelView };
 
@@ -207,6 +208,8 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: a.prompt };
     case 'checkin':
       return { ...s, checkin: a.checkin };
+    case 'caption_clear':
+      return { ...s, caption: null, captionIsAlert: false };
     case 'review':
       return { ...s, reviewId: a.id };
     case 'cart':
@@ -259,6 +262,8 @@ export interface AgentApi {
   refreshCards: () => Promise<void>;
   /** Ask "Are you at <store>?" (position used once, on the device, never stored). `simulateStoreId` skips GPS for the demo. */
   startCheckin: (simulateStoreId?: string) => Promise<void>;
+  /** The user left the store (or the demo says so): the checkout alert and invoice go to History. */
+  leaveStore: () => void;
   /** Tap an item in the cart: the agent reads it back and asks whether to remove it. */
   reviewItem: (itemId: string) => Promise<void>;
   removeLast: () => Promise<void>;
@@ -443,6 +448,38 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   // --- commands -------------------------------------------------------------
 
+  // While checked in, watch for leaving the store (foreground only, position never kept).
+  const watcher = useRef<{ remove: () => void } | null>(null);
+  const stopWatch = useCallback(() => {
+    watcher.current?.remove();
+    watcher.current = null;
+  }, []);
+  const leaveStore = useCallback(() => {
+    stopWatch();
+    dispatch({ type: 'checkin', checkin: null });
+    dispatch({ type: 'caption_clear' });
+  }, [stopWatch]);
+  const startWatch = useCallback(
+    async (storeId: string) => {
+      stopWatch();
+      try {
+        watcher.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 30 },
+          (pos) => {
+            void api
+              .stillAtStore(storeId, { lat: pos.coords.latitude, lng: pos.coords.longitude })
+              .then((still) => !still && leaveStore())
+              .catch(() => {});
+          },
+        );
+      } catch {
+        /* no location updates: the card stays until the user closes it */
+      }
+    },
+    [stopWatch, leaveStore],
+  );
+  useEffect(() => stopWatch, [stopWatch]);
+
   const applyCommand = useCallback(
     (res: CommandResponse) => {
       switch (res.action) {
@@ -497,6 +534,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             const store = res.result as Store;
             dispatch({ type: 'checkin', checkin: { store, status: 'in', toast: true } });
             haptic.done(); // the check-in buzz
+            void startWatch(store.id);
             // The confirmation card closes by itself after a few seconds; the check-in stays.
             setTimeout(() => dispatch({ type: 'checkin', checkin: { store, status: 'in', toast: false } }), 7000);
           }
@@ -513,7 +551,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
       say(res.voice);
     },
-    [say, refreshCards],
+    [say, refreshCards, startWatch],
   );
 
   /**
@@ -795,6 +833,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [say],
   );
 
+
   const reviewItem = useCallback(
     async (itemId: string) => {
       dispatch({ type: 'submit' });
@@ -885,6 +924,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const answer = useCallback((text: string) => sendTranscript(text, 1), [sendTranscript]);
 
   const dismiss = useCallback(() => {
+    // The payment alert's caption goes away with the invoice that carried it.
+    if (stateRef.current.receipt) dispatch({ type: 'caption_clear' });
     dispatch({ type: 'receipt', receipt: null });
     dispatch({ type: 'declined', message: null });
     dispatch({ type: 'preview', preview: null });
@@ -910,6 +951,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       refreshCart,
       refreshCards,
       startCheckin,
+      leaveStore,
       reviewItem,
       removeLast,
       askClearCart,
@@ -921,7 +963,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
-      refreshCart, refreshCards, startCheckin, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
+      refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
       confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
     ],
   );

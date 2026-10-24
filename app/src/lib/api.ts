@@ -555,6 +555,12 @@ export function nearbyStore(
   return request<NearbyStore | null>('/v1/checkin/nearby', json({ ...coords }));
 }
 
+/** PROPOSED: while checked in, is the phone still at that store? (Position is sent per update and not kept.) */
+export function stillAtStore(storeId: string, coords: { lat: number; lng: number }): Promise<boolean> {
+  if (isMock()) return mock.stillAtStore(storeId, coords);
+  return request<{ at_store: boolean }>('/v1/checkin/still-here', json({ store_id: storeId, ...coords })).then((r) => r.at_store);
+}
+
 export function reissuePrompt(
   scanId: string,
   scope: ResponseScope,

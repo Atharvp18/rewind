@@ -655,6 +655,14 @@ export async function nearbyStore(
   };
 }
 
+/** Leaving is judged at a wider radius than arriving, so standing at the edge does not flicker. */
+const LEFT_STORE_METERS = 250;
+
+export async function stillAtStore(storeId: string, coords: { lat: number; lng: number }): Promise<boolean> {
+  const s = STORES.find((x) => x.id === storeId);
+  return !!s && metersBetween(coords, s) <= LEFT_STORE_METERS;
+}
+
 export async function getPaymentHistory(): Promise<Invoice[]> {
   return state.invoices.map((i) => ({ ...i }));
 }
@@ -763,7 +771,7 @@ export async function checkoutConfirm(
     groups: cart.groups,
     new_balances: state.cards.map((c) => ({ card_id: c.id, balance_cents: c.balance_cents })),
     voice: voice(
-      `Payment complete. You paid for your items, so please take them with you. ${lines.join(' ')} Your invoice is saved in History.`.replace(/\s+/g, ' '),
+      `Thank you. Your payment went through. Please remember to take your items with you. ${lines.join(' ')} Your receipt is saved in History.`.replace(/\s+/g, ' '),
       { priority: low ? 'alert' : 'normal' },
     ),
   };
