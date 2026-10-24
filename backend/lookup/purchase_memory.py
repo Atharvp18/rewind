@@ -15,6 +15,10 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +184,61 @@ async def recall(since=None, until=None, card_type=None, medicine_only=False, ca
     return sorted((from_doc(d) for d in docs), key=lambda r: r["purchased_at"], reverse=True)
 
 
+# A Moss write holds Python's global lock for about 5 s (measured: a second thread in the same process
+# froze for 4.9 s), which would stall the whole backend or the agent's chat loop. So writes run in a
+# separate process (`python -m lookup.purchase_memory ...`). A file lock keeps a reset and a checkout from
+# writing the index at the same time, across processes.
+_LOCK_FILE = os.path.join(tempfile.gettempdir(), "rewind_purchase_memory.lock")
+
+
+def _spawn(*args: str) -> None:
+    try:
+        subprocess.Popen([sys.executable, "-m", "lookup.purchase_memory", *args],
+                         cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception as exc:
+        logger.warning("could not start the purchase memory job: %s", exc)
+
+
+def mirror_payment(payment_id: str | None) -> None:
+    """Copy one payment's purchase rows into the memory, in another process, whoever ran the checkout.
+
+    Called from Atharv's /v1/checkout and from the agents' checkout. It returns at once; a failure never
+    fails a checkout (Supabase has the rows, and rebuild() can recreate the memory).
+    """
+    if payment_id:
+        _spawn("mirror", payment_id)
+
+
+def clear_in_background() -> None:
+    """Empty the memory for a demo reset without making the reset wait (about 5 s)."""
+    _spawn("clear")
+
+
+def _mirror(payment_id: str) -> None:
+    try:
+        from data import db
+        rows = db.get_purchases(payment_id=payment_id)   # empty until the purchase_items table exists
+        remember_sync(rows)
+    except Exception as exc:
+        logger.warning("purchase history not mirrored to Moss: %s", exc)
+
+
+def main(argv: list[str]) -> int:
+    """The separate process: `mirror <payment_id>` or `clear`."""
+    import fcntl
+    with open(_LOCK_FILE, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if argv[:1] == ["mirror"] and len(argv) == 2:
+            _mirror(argv[1])
+        elif argv[:1] == ["clear"]:
+            clear_sync()
+        else:
+            print("usage: python -m lookup.purchase_memory mirror <payment_id> | clear")
+            return 2
+    return 0
+
+
 def remember_sync(rows: list[dict]) -> int:
     """For worker threads (agents/store.py). Never raises."""
     try:
@@ -187,3 +246,7 @@ def remember_sync(rows: list[dict]) -> int:
     except Exception as exc:
         logger.warning("purchase memory not updated: %s", exc)
         return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

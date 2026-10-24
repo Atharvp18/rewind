@@ -124,9 +124,9 @@ def test_run_2_reroutes_bandages_to_visa():
 
 def test_insufficient_balance_asks_before_moving_single_item():
     s = new_session()
-    s["cards"][0]["balance_cents"] = 1000
+    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover $12.99, and is under the $10 alert line
     f, s = payment_agent.recommend(s, ADVIL())
-    assert "$10.00" not in f.template and "another card" in f.must_say
+    assert "$9.00" not in f.template and "another card" in f.must_say
     assert f.alert == "low_balance" and "running low" in f.template
     assert s["pending"]["scope"] == "choose_card"
     f, s = go("confirm", s)
@@ -198,14 +198,14 @@ def test_balance_query_is_refused_for_privacy():
 
 def test_low_balance_after_checkout_beeps_and_warns():
     s = new_session()
-    s["cards"][0]["balance_cents"] = 2500
+    s["cards"][0]["balance_cents"] = 2000          # $20.00 - $12.99 leaves $7.01: under the $10 alert line
     _, s = payment_agent.recommend(s, ADVIL())
     _, s = go("confirm", s)
     _, s = go("checkout", s)
     f, s = go("confirm", s)
     assert f.alert == "low_balance"
     assert "HSA card is running low. You might want to add funds." in f.template
-    assert "$12.01" not in f.template
+    assert "$7.01" not in f.template                # the balance itself is never spoken
 
 
 def test_handler_does_not_mutate_input_session():

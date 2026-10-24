@@ -53,7 +53,7 @@ class Intent(BaseModel):
 
 
 MODEL = os.environ.get("INTENT_MODEL", "claude-haiku-5-5")
-TIMEOUT_S = float(os.environ.get("INTENT_TIMEOUT_S", "4.0"))
+TIMEOUT_S = float(os.environ.get("INTENT_TIMEOUT_S", "10.0"))
 STUB_MODE = os.environ.get("REWIND_STUB_INTENT", "false").lower() == "true"
 
 SYSTEM_PROMPT = """\

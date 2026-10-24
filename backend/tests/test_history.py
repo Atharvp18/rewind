@@ -267,41 +267,57 @@ async def test_recall_without_moss_raises_so_history_can_fall_back(monkeypatch):
 
 # --- checkout mirrors the new rows into Moss, and can never fail a checkout -----------------------
 
-def test_checkout_copies_this_payments_purchase_rows_into_the_memory(monkeypatch):
-    from agents import store
+def test_the_mirror_copies_this_payments_purchase_rows_into_the_memory(monkeypatch):
     from data import db
     seen = {}
     monkeypatch.setattr(db, "get_purchases", lambda **kw: seen.setdefault("q", kw) and ROWS[:1])
     monkeypatch.setattr(purchase_memory, "remember_sync", lambda rows: seen.setdefault("rows", rows))
-    store._mirror("pay-1")
+    purchase_memory._mirror("pay-1")
     assert seen["q"] == {"payment_id": "pay-1"} and seen["rows"] == ROWS[:1]
 
 
-def test_checkout_does_not_wait_for_the_moss_write(monkeypatch):
-    import threading
-    import time
-    from agents import store
-    started, release = threading.Event(), threading.Event()
-
-    def slow(payment_id):
-        started.set()
-        release.wait(5)
-    monkeypatch.setattr(store, "_mirror", slow)
-    t0 = time.time()
-    store._remember_purchases("pay-1")
-    assert time.time() - t0 < 0.5 and started.wait(2)       # returned while the write is still running
-    release.set()
-
-
 def test_a_missing_table_or_moss_outage_is_swallowed(monkeypatch):
-    from agents import store
     from data import db
 
     def boom(**kw):
         raise RuntimeError("relation purchase_items does not exist")
     monkeypatch.setattr(db, "get_purchases", boom)
-    store._mirror("pay-1")           # must not raise
-    store._remember_purchases(None)
+    purchase_memory._mirror("pay-1")                 # must not raise
+    purchase_memory.mirror_payment(None)             # nothing to do
+
+
+def _record_spawns(monkeypatch):
+    spawned = []
+    monkeypatch.setattr(purchase_memory.subprocess, "Popen", lambda cmd, **kw: spawned.append((cmd, kw)))
+    return spawned
+
+
+def test_checkout_and_reset_hand_the_moss_write_to_another_process(monkeypatch):
+    """A Moss write freezes its whole process for about 5 s, so it must never run in the server or the agent."""
+    import sys
+    spawned = _record_spawns(monkeypatch)
+    purchase_memory.mirror_payment("pay-1")
+    purchase_memory.clear_in_background()
+    purchase_memory.mirror_payment(None)                                  # nothing to copy: no process
+    assert [c[0][1:] for c in spawned] == [["-m", "lookup.purchase_memory", "mirror", "pay-1"],
+                                           ["-m", "lookup.purchase_memory", "clear"]]
+    assert all(c[0][0] == sys.executable and c[1]["start_new_session"] for c in spawned)
+
+
+def test_a_failure_to_start_the_job_never_breaks_a_checkout(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no processes left")
+    monkeypatch.setattr(purchase_memory.subprocess, "Popen", boom)
+    purchase_memory.mirror_payment("pay-1")                               # must not raise
+
+
+def test_the_job_process_runs_the_right_work(monkeypatch):
+    calls = []
+    monkeypatch.setattr(purchase_memory, "_mirror", lambda pid: calls.append(("mirror", pid)))
+    monkeypatch.setattr(purchase_memory, "clear_sync", lambda: calls.append(("clear",)))
+    assert purchase_memory.main(["mirror", "pay-9"]) == 0 and purchase_memory.main(["clear"]) == 0
+    assert purchase_memory.main(["bogus"]) == 2
+    assert calls == [("mirror", "pay-9"), ("clear",)]
 
 
 def test_history_is_a_known_intent():
@@ -325,3 +341,20 @@ async def test_product_agent_loads_the_eligibility_index_at_startup(monkeypatch)
     assert handlers, "no startup handler registered"
     await handlers[0](None)
     assert loaded == [True]
+
+
+def test_claude_calls_stop_waiting_after_ten_seconds_by_default():
+    """Understanding, History questions and wording each give up after 10 s (a stall guard, not a target).
+
+    Checked in a fresh process with the settings removed, so no other test's imports are disturbed.
+    """
+    import os
+    import subprocess
+    import sys
+    env = {k: v for k, v in os.environ.items() if k not in ("INTENT_TIMEOUT_S", "SPEAK_TIMEOUT_S")}
+    code = ("from agents import history, intent, speaker; "
+            "print(intent.TIMEOUT_S, history.TIMEOUT_S, speaker.TIMEOUT_S)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
+                         cwd=os.path.dirname(os.path.dirname(__file__)))
+    # .env is loaded by the agents package; it must not set these either
+    assert out.stdout.split()[-3:] == ["10.0", "10.0", "10.0"], out.stderr[-300:]

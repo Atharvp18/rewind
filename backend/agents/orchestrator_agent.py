@@ -183,7 +183,7 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
         try:
             await asyncio.to_thread(db.reset_demo, run)   # Atharv's seed, one transaction
             from lookup import purchase_memory
-            await asyncio.to_thread(purchase_memory.clear_sync)   # the Moss memory is not in Postgres
+            purchase_memory.clear_in_background()   # the Moss memory is not in Postgres; the reply need not wait
             await speak(ctx, user, say(f"Demo reset for run {run}.", str(run), fixed=True), new_session())
         except db.DBUnavailable:
             await speak(ctx, user, store.DB_DOWN, session)

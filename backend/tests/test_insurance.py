@@ -138,11 +138,11 @@ def test_strength_must_match_exactly():
 
 def test_hsa_too_low_for_copay_suggests_visa_and_warns():
     s = with_plan("uhc_student")
-    s["cards"][0]["balance_cents"] = 1000
+    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover the $15.00 copay, under the $10 alert line
     _, s = start(s)
     f, s = go("confirm", s)
     assert s["pending"]["suggested"] == "card_visa_1"
-    assert f.alert == "low_balance" and "$10.00" not in f.template
+    assert f.alert == "low_balance" and "$9.00" not in f.template
 
 
 # --- privacy -----------------------------------------------------------------------

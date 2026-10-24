@@ -370,3 +370,18 @@ def test_with_no_visa_it_still_asks_which_card():
     s["cards"] = [c for c in s["cards"] if c["type"] != "general"]
     f, _ = unconfirmed(s)
     assert "Which card would you like to use" in f.template
+
+
+# --- low-balance alert: under $10.00 (team decision 2026-10-24) -----------------------------------
+
+def test_low_balance_alert_threshold_is_ten_dollars():
+    from agents.session import LOW_BALANCE_CENTS
+    assert LOW_BALANCE_CENTS == 1000
+    s = new_session()
+    hsa = next(c for c in s["cards"] if c["type"] == "hsa")
+    visa = next(c for c in s["cards"] if c["type"] == "general")
+    for cents, alert in ((999, True), (1000, False), (1500, False), (50, True)):
+        hsa["balance_cents"] = cents
+        assert (payment_agent.low_balance_alert(hsa) is not None) is alert, cents
+    visa["balance_cents"] = 5
+    assert payment_agent.low_balance_alert(visa) is None          # only health cards raise it

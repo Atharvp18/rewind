@@ -24,7 +24,7 @@ from agents.speaker import Facts, say
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("INTENT_MODEL", "claude-haiku-5-5")
-TIMEOUT_S = float(os.environ.get("INTENT_TIMEOUT_S", "4.0"))
+TIMEOUT_S = float(os.environ.get("INTENT_TIMEOUT_S", "10.0"))
 STUB_HISTORY = os.environ.get("REWIND_STUB_HISTORY", "false").lower() == "true"
 CLAIM_EXAMPLES = "Optum Financial or HealthEquity"
 

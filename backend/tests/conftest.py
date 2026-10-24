@@ -18,4 +18,7 @@ def _offline_db(request, monkeypatch):
         raise db.DBUnavailable("tests run offline")
     monkeypatch.setattr(db, "_sb", unavailable)
     monkeypatch.delenv("MOSS_PROJECT_ID", raising=False)   # everyday tests never query the real index; see scripts/check_moss.py
-    monkeypatch.delenv("MOSS_PROJECT_ID", raising=False)   # never query the real Moss index
+    if not request.module.__name__.endswith(("test_history", "test_memory_hooks")):
+        from lookup import purchase_memory      # no background Moss threads in unrelated tests
+        monkeypatch.setattr(purchase_memory, "mirror_payment", lambda payment_id: None)
+        monkeypatch.setattr(purchase_memory, "clear_in_background", lambda: None)

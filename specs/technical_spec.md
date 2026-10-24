@@ -1238,7 +1238,7 @@ Rule 2 is the declined-card moment. For run 2, with HSA at $15.00 and a group of
 - Requires an `idempotency_key` from the app and a live `prompt_id`.
 - One Postgres function, called by RPC: insert into `payments` with the unique key; if the key already exists, return the **existing** payment unchanged; otherwise decrement every card group, write `splits_json`, set `simulated_complete`. All or nothing, in one transaction.
 - Return and speak the new balances.
-- If any balance crosses the low-balance threshold, emit a `priority: "alert"` `VoiceRequest`.
+- If any HSA/FSA balance is **under $10.00 (1000 cents)** after the payment, emit a `priority: "alert"` `VoiceRequest`. (Team decision 2026-10-24: $10.00, down from $20.00 in the agents and $25.00 in `payments/checkout.py`. Both now use `LOW_BALANCE_CENTS = 1000`.) After a successful payment, `payments/checkout.py` also copies the new `purchase_items` rows into History's Moss memory in the background, and `/v1/demo/reset` empties that memory; neither ever delays or fails the response.
 
 Empty cart: "Your cart is empty." No card linked: checkout blocked. Refunds, returns, and non-USD are out of scope.
 
@@ -1376,7 +1376,7 @@ The Apify go/no-go test (2.9) can run in parallel with Gate 2 because it is offl
 
 These are the **facts** each line must contain. The exact sentence may be phrased naturally by Claude, but every listed figure and label must appear verbatim and no other number may (see `backend/agents/speaker.py`).
 
-**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card drops below the low-balance level. Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
+**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card is under **$10.00** (the low-balance level; team decision 2026-10-24). Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
 
 **Run 1, HSA at $340.00:**
 

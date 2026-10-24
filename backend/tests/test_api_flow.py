@@ -293,13 +293,13 @@ def test_an_item_added_after_the_preview_forces_a_new_confirmation(client, fake)
 
 
 def test_low_balance_after_checkout_plays_the_alert_without_the_amount(client, fake):
-    fake.set_balance(FSA, 2500)
+    fake.set_balance(FSA, 2000)                  # $20.00 - $12.99 leaves $7.01, under the $10.00 alert line
     add(client, advil(client))
     p = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "low", "prompt_id": p["voice"]["prompt_id"]}).json()
     assert r["voice"]["priority"] == "alert"
     assert r["voice"]["text"].endswith("Your FSA card is running low. You might want to add funds.")
-    assert "$12.01" not in r["voice"]["text"]
+    assert "$7.01" not in r["voice"]["text"]
 
 
 # --- checkout: run 2 ---------------------------------------------------------------------------------

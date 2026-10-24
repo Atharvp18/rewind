@@ -12,13 +12,15 @@ from typing import Any
 
 from data import db
 from models.schemas import VoiceRequest
+from lookup import purchase_memory
 from payments import cart_store, invoice
 from payments.routing import HEALTH_TYPES, CheckoutGroup, CheckoutPlan, Move, apply_moves, plan_checkout
 from speech import compose
 
 # A health card whose balance falls under this after a checkout triggers the low-balance alert.
-# $25.00: enough that the alert is useful, low enough that the run 1 demo ($321.52 left) stays quiet.
-LOW_BALANCE_CENTS = 2500
+# $10.00 (team decision 2026-10-24, matching the agents and the spec): under this, the alert plays.
+# The run 1 demo ($321.52 left) stays quiet.
+LOW_BALANCE_CENTS = 1000
 
 CHANGED = "Something changed since I last checked, so let me read it again. "
 
@@ -130,6 +132,8 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
         paid = [dict(s, items=[invoice.item_snapshot(i) for i in final_items
                                if i["assigned_card_id"] == s["card_id"]]) for s in splits]
         payment = db.confirm_checkout(idempotency_key, paid)
+        if not payment.get("replayed"):                       # a repeated key charged nothing new
+            purchase_memory.mirror_payment(payment.get("payment_id"))   # History's Moss memory, in the background
     except db.CheckoutFailed as e:
         if e.code not in ("E_CARD_CANNOT_PAY", "E_EMPTY_CART"):
             raise
