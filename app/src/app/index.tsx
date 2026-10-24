@@ -2,7 +2,7 @@ import { useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { CartChip } from '@/components/cart-chip';
@@ -12,7 +12,7 @@ import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
 import { TranscriptPill } from '@/components/transcript-pill';
-import { OrbGlow, VoiceOrb } from '@/components/voice-orb';
+import { domeHeight, OrbGlow, VoiceOrb } from '@/components/voice-orb';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { Phrases } from '@/lib/phrases';
@@ -55,11 +55,14 @@ export default function Home() {
   const granted = !!camera?.granted;
 
   // --- layout: the free area between the top bar and the orb -----------------
-  const [topBottom, setTopBottom] = useState(120);
-  const [orbTop, setOrbTop] = useState(height - 220);
+  // The main widget lives between the cart/profile row and the dome, with a
+  // standard 16 pt gap to each, and is centered in that space.
+  const insets = useSafeAreaInsets();
+  const [rowBottom, setRowBottom] = useState(insets.top + 80);
+  const domeTop = height - domeHeight(height, insets.bottom);
   const area: Rect = useMemo(
-    () => ({ x: 0, y: topBottom + Spacing.sm, w: width, h: Math.max(0, orbTop - topBottom - Spacing.md) }),
-    [topBottom, orbTop, width],
+    () => ({ x: 0, y: rowBottom + Spacing.lg, w: width, h: Math.max(0, domeTop - rowBottom - Spacing.lg * 2) }),
+    [rowBottom, domeTop, width],
   );
 
   // --- onboarding card capture hooks into tap-anywhere ------------------------
@@ -220,27 +223,26 @@ export default function Home() {
         </View>
       </StageContext.Provider>
 
-      <SafeAreaView
-        edges={['top', 'left', 'right']}
-        style={styles.top}
-        pointerEvents="box-none"
-        onLayout={(e) => setTopBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
-        <View style={styles.topRow} pointerEvents="box-none">
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.top} pointerEvents="box-none">
+        <View
+          style={styles.topRow}
+          pointerEvents="box-none"
+          onLayout={(e) => setRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
           {onboarding ? <View /> : <CartChip />}
           <ProfileButton />
         </View>
-        <View style={styles.pillRow} pointerEvents="box-none">
-          <TranscriptPill />
-        </View>
+        {/* While the main widget is up, the caption is its top layer instead. */}
+        {card ? null : (
+          <View style={styles.pillRow} pointerEvents="box-none">
+            <TranscriptPill />
+          </View>
+        )}
         <View style={styles.banner} pointerEvents="box-none">
           <HealthBanner />
         </View>
       </SafeAreaView>
 
-      <View
-        style={styles.bottom}
-        pointerEvents="box-none"
-        onLayout={(e) => setOrbTop(e.nativeEvent.layout.y + Spacing.lg)}>
+      <View style={styles.bottom} pointerEvents="box-none">
         <VoiceOrb hint={hint} />
       </View>
     </View>

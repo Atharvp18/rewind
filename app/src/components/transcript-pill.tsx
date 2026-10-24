@@ -5,9 +5,12 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { AppText } from '@/components/app-text';
 import { Icon } from '@/components/icon';
 import { PROFILE_SIZE } from '@/components/profile-button';
-import { Motion, Spacing } from '@/constants/theme';
+import { Motion, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { useAgent } from '@/state/agent';
+
+/** How far the info card slides under the caption layer. */
+export const LAYER_OVERLAP = 18;
 
 /**
  * Frame 2: the caption pill. When Rewind speaks, a gray pill grows leftward
@@ -103,6 +106,14 @@ export function TranscriptPill() {
 }
 
 const styles = StyleSheet.create({
+  layer: {
+    borderRadius: Radius.card + 4,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    // Extra room at the bottom: the white card tucks under this edge.
+    paddingBottom: Spacing.md + LAYER_OVERLAP,
+    gap: Spacing.xs,
+  },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
   lineText: { flexShrink: 1 },
   row: { flex: 1, alignItems: 'flex-end' },
@@ -116,3 +127,55 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
 });
+
+/**
+ * The caption as the top layer of the stacked widget (wireframe frame 3):
+ * mint = what Rewind is saying, laid over the top edge of the white info card.
+ * Same content and behaviour as the pill: tap to hear it again.
+ */
+export function CaptionLayer() {
+  const { palette, settings, screenReaderOn } = useA11y();
+  const { state, repeat } = useAgent();
+  const lastAgent = [...state.transcript].reverse().find((l) => l.who === 'agent');
+  const last = state.transcript[state.transcript.length - 1];
+  const userLine = last?.who === 'user' ? last : null;
+  const level = state.declined ? 'danger' : 'warning';
+  if (!settings.captions || !(lastAgent || userLine)) return null;
+
+  return (
+    <Pressable
+      onPress={repeat}
+      accessibilityRole="button"
+      accessibilityLiveRegion={screenReaderOn ? 'none' : 'polite'}
+      accessibilityLabel={`${state.captionIsAlert ? 'Alert. ' : ''}Rewind said: ${lastAgent?.text ?? ''}`}
+      accessibilityHint="Tap to hear it again."
+      style={[
+        styles.layer,
+        {
+          backgroundColor: palette.pill,
+          borderColor: state.captionIsAlert
+            ? level === 'danger'
+              ? palette.dangerEdge
+              : palette.warningEdge
+            : palette.pillBorder,
+          borderWidth: state.captionIsAlert ? 2 : palette.controlBorderWidth,
+        },
+      ]}>
+      {userLine ? (
+        <AppText kind="small" color="onPill" accessible={false} numberOfLines={2}>
+          {`You: ${userLine.text}`}
+        </AppText>
+      ) : null}
+      {lastAgent ? (
+        <View style={styles.line}>
+          {state.captionIsAlert ? (
+            <Icon name={level === 'danger' ? 'danger' : 'alert'} size={24} color={level} />
+          ) : null}
+          <AppText kind="caption" color="onPill" accessible={false} style={styles.lineText}>
+            {lastAgent.text}
+          </AppText>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}

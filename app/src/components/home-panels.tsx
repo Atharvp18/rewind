@@ -84,7 +84,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   if (res.voice.response_scope === 'confirm_strength') {
     return (
       // Compact on purpose: fits without scrolling at 100–150% text (approved).
-      <InfoPanel anchored label="Prescription label read-back">
+      <InfoPanel label="Prescription label read-back">
         <PanelText kind="small" muted>
           From the bottle label · is this right?
         </PanelText>
@@ -105,7 +105,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   }
 
   return (
-    <InfoPanel title={product.name} tone={scanTone(rec)} anchored>
+    <InfoPanel title={product.name} tone={scanTone(rec)}>
       {product.amount_cents != null ? (
         <View style={styles.priceRow}>
           <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
@@ -123,13 +123,17 @@ function ScanPanel({ res }: { res: ScanResponse }) {
       ) : null}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
-      {rec ? (
-        <Actions rec={rec} cards={state.cards} enabled={live?.scope === 'confirm_add'} onAdd={addToCart} onSkip={skip} />
-      ) : null}
       {rec && rec.decision !== 'blocked' && live?.scope !== 'confirm_add' ? (
-        <AlertBlock level="warning" title="Question timed out">
-          Tap the caption at the top to hear it again, or scan again.
-        </AlertBlock>
+        // The question expired (15 s, single use, tech spec 0.7): it can't be answered any more,
+        // so offer the honest next step instead of a dead button.
+        <>
+          <PanelText kind="small" muted>
+            The question timed out.
+          </PanelText>
+          <BigButton label="Scan again" icon="retry" variant="primary" onPress={skip} />
+        </>
+      ) : rec ? (
+        <Actions rec={rec} cards={state.cards} enabled={live?.scope === 'confirm_add'} onAdd={addToCart} onSkip={skip} />
       ) : null}
     </InfoPanel>
   );

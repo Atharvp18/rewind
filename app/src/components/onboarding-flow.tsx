@@ -364,7 +364,7 @@ export function OnboardingFlow({
     case 'name_confirm':
       // Same compact pop-up as the prescription read-back, pointing at the card.
       return (
-        <InfoPanel anchored label="Name from your insurance card">
+        <InfoPanel label="Name from your insurance card">
           <PanelText kind="small" muted>
             From your insurance card · is this your name?
           </PanelText>
@@ -382,7 +382,7 @@ export function OnboardingFlow({
 
     case 'name_type':
       return (
-        <InfoPanel anchored title="What’s your name?">
+        <InfoPanel title="What’s your name?">
           <PanelText kind="small" muted>
             Type it, or scan the card again.
           </PanelText>
@@ -400,7 +400,7 @@ export function OnboardingFlow({
 
     case 'insurance_confirm':
       return (
-        <InfoPanel anchored title="Is this your insurance?">
+        <InfoPanel title="Is this your insurance?">
           {step1of(2)}
           {insurance ? <InsuranceSummary card={insurance} /> : null}
           {yesNoButtons(confirmInsurance, () => setStep('insurance'))}
@@ -426,7 +426,7 @@ export function OnboardingFlow({
 
     case 'payment_type':
       return (
-        <InfoPanel anchored title="What kind of card is this?">
+        <InfoPanel title="What kind of card is this?">
           {step1of(3)}
           <View style={styles.buttons}>
             <BigButton label="HSA card" variant="primary" onPress={() => chooseType('hsa')} />
@@ -439,7 +439,7 @@ export function OnboardingFlow({
 
     case 'payment_confirm':
       return (
-        <InfoPanel anchored title="Is this your card?">
+        <InfoPanel title="Is this your card?">
           {step1of(3)}
           <PanelText kind="heading">
             {payment?.card_type ? nicknameFor(payment.card_type, payment.network, debitOrCredit) : ''}

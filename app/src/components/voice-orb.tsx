@@ -65,11 +65,16 @@ const STATUS: Record<Phase, string> = {
  * thin edge. Rendered as its own background layer, *behind* pop-ups, so it
  * never draws over a card. Decorative.
  */
+/** Height of the dome above the bottom edge. Pop-ups stop above this line. */
+export function domeHeight(screenHeight: number, bottomInset: number): number {
+  return Math.min(300, screenHeight * 0.3) + bottomInset;
+}
+
 export function OrbGlow() {
   const { palette } = useA11y();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const glowHeight = Math.min(300, height * 0.3) + insets.bottom;
+  const glowHeight = domeHeight(height, insets.bottom);
   const domeD = Math.max(width * 1.35, glowHeight * 2);
   const f = glowHeight / domeD;
   return (
