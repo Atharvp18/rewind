@@ -715,14 +715,20 @@ export async function checkoutConfirm(
   const charged = cart.groups.map((g) => card(g.card_id)).filter((c) => c.type !== 'general');
   const lines = charged.map((c) => `Your ${short(c)} balance is now ${formatCents(c.balance_cents)}.`);
   const low = charged.some((c) => c.balance_cents < LOW_BALANCE_CENTS);
+  const paymentId = randomUUID();
+  const invoice = invoiceFromGroups(paymentId, new Date().toISOString(), cart.groups);
   const result: CheckoutResult = {
-    payment_id: randomUUID(),
+    payment_id: paymentId,
+    invoice,
     groups: cart.groups,
     new_balances: state.cards.map((c) => ({ card_id: c.id, balance_cents: c.balance_cents })),
-    voice: voice(`Payment complete. ${lines.join(' ')}`.trim(), { priority: low ? 'alert' : 'normal' }),
+    voice: voice(
+      `Payment complete. You paid for your items, so please take them with you. ${lines.join(' ')} Your invoice is saved in History.`.replace(/\s+/g, ' '),
+      { priority: low ? 'alert' : 'normal' },
+    ),
   };
   state.payments.set(idempotencyKey, result);
-  state.invoices.unshift(invoiceFromGroups(result.payment_id, new Date().toISOString(), cart.groups));
+  state.invoices.unshift(invoice);
   return result;
 }
 

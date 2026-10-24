@@ -343,7 +343,8 @@ describe('checkout run 1 (spec 4.4, FSA-first seed)', () => {
       'Two items totaling $18.48 on your FSA card. One item totaling $4.99 on your Visa credit. Ready to check out?',
     );
     const paid = await m.checkoutConfirm('run1', preview.voice.prompt_id!);
-    expect(paid.voice.text).toBe('Payment complete. Your FSA balance is now $6.52.');
+    // Wording extended by Nak (2026-10-24): take your items; invoice is in History. The balance line stays.
+    expect(paid.voice.text).toMatch(/^Payment complete\. You paid for your items, so please take them with you\. Your FSA balance is now \$6.52\. Your invoice is saved in History\.$/);
     expect(paid.voice.priority).toBe('alert'); // $6.52 is under the $20 low-balance level
     expect(paid.new_balances).toEqual([
       { card_id: FSA, balance_cents: 652 },
@@ -413,7 +414,8 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
   it('"yes" to the proposed move pays it, and the amounts add up', async () => {
     const preview = await m.checkoutPreview();
     const paid = await m.checkoutConfirm('k', preview.voice.prompt_id!, true);
-    expect(paid.voice.text).toBe('Payment complete. Your FSA balance is now $2.01.');
+    // Wording extended by Nak (2026-10-24): take your items; invoice is in History. The balance line stays.
+    expect(paid.voice.text).toMatch(/^Payment complete\. You paid for your items, so please take them with you\. Your FSA balance is now \$2.01\. Your invoice is saved in History\.$/);
     expect(paid.new_balances.find((b) => b.card_id === FSA)!.balance_cents).toBe(201);
     const total = paid.groups.reduce((s, g) => s + g.subtotal_cents, 0);
     expect(total).toBe(1299 + 549 + 499);
@@ -709,5 +711,20 @@ describe('payment history', () => {
     expect(after[0].lines.length).toBeGreaterThan(0);
     await m.resetDemo(1);
     expect(await m.getPaymentHistory()).toHaveLength(before);
+  });
+});
+
+describe('checkout invoice and mixed cards', () => {
+  it('pays eligible items with the FSA and the ineligible one with the everyday Visa in one payment', async () => {
+    await scanAndAdd(); // Advil (eligible) -> FSA
+    await scanAndAdd(); // Bandages (eligible) -> FSA
+    const kettle = await scanAndAdd(); // Kettle corn (not eligible) -> everyday Visa, automatically
+    expect(kettle.r.recommendation!.card_id).toBe(VISA);
+    const preview = await m.checkoutPreview();
+    const paid = await m.checkoutConfirm('mixed-1', preview.voice.prompt_id!);
+    expect(paid.groups.map((g) => g.card_id).sort()).toEqual([FSA, VISA].sort());
+    expect(paid.invoice!.payments.map((p) => p.card_id).sort()).toEqual([FSA, VISA].sort());
+    expect(paid.invoice!.lines.find((l) => l.eligibility_label === 'not_eligible')!.card_type).toBe('general');
+    expect(paid.invoice!.total_cents).toBe(paid.invoice!.subtotal_cents + paid.invoice!.tax_cents);
   });
 });

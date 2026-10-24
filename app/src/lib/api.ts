@@ -200,6 +200,8 @@ export interface CheckoutResult {
   payment_id: string;
   groups: CartGroup[];
   new_balances: { card_id: string; balance_cents: number }[];
+  /** PROPOSED: the invoice for this payment (also listed by GET /v1/payments). */
+  invoice?: Invoice;
   voice: VoiceRequest;
 }
 

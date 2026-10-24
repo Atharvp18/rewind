@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
-import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon } from '@/components/icon';
+import { InvoiceDetail } from '@/components/invoice-view';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
+import { useDomeHeight } from '@/components/voice-orb';
 import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
-import { invoiceToText, isReimbursable, longDate, packetToText } from '@/lib/invoice-text';
+import { longDate, packetToText } from '@/lib/invoice-text';
 import { centsForScreenReader, formatCents } from '@/lib/money';
-import { useStage } from '@/lib/stage';
 import { useAgent } from '@/state/agent';
 
 /**
@@ -24,13 +25,30 @@ import { useAgent } from '@/state/agent';
  * Rewind prepares the paperwork; it never files a claim. All values are mock.
  */
 export function HistorySheet() {
-  const { palette, reduceMotion } = useA11y();
+  const { palette, reduceMotion, settings } = useA11y();
   const { showView, state } = useAgent();
-  const { area } = useStage();
   const cue = useScrollCue();
+  const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const dome = useDomeHeight();
+  // A full page: from under the status bar down to the dome, so the orb stays usable.
+  const top = insets.top + Spacing.sm;
+  const pageH = Math.max(0, screenH - dome - top - Spacing.sm);
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const width = Math.min(area.w - Layout.margin * 2, MaxContentWidth);
+  const width = Math.min(screenW - Layout.margin * 2, MaxContentWidth);
+
+  // Closes itself after a while without use (never while the agent is busy). Any touch or
+  // scroll restarts the clock. The wait is twice the "Time to answer" setting, at least 60 s
+  // (WCAG 2.2.1: the user can lengthen it in Settings).
+  const [touched, setTouched] = useState(0);
+  const idle = state.phase === 'idle';
+  const waitMs = Math.max(60, settings.answerSeconds * 2) * 1000;
+  useEffect(() => {
+    if (!idle) return;
+    const t = setTimeout(() => showView('camera'), waitMs);
+    return () => clearTimeout(t);
+  }, [idle, touched, waitMs, showView]);
 
   useEffect(() => {
     let live = true;
@@ -57,10 +75,10 @@ export function HistorySheet() {
         styles.sheet,
         Elevation.floating,
         {
-          top: area.y,
-          left: area.x + (area.w - width) / 2,
+          top,
+          left: (screenW - width) / 2,
           width,
-          height: area.h,
+          height: pageH,
           backgroundColor: palette.bg,
           borderColor: palette.border,
           borderWidth: palette.controlBorderWidth,
@@ -86,7 +104,11 @@ export function HistorySheet() {
       </View>
 
       <View style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.scroll} {...cue.scrollProps}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          {...cue.scrollProps}
+          onTouchStart={() => setTouched((n) => n + 1)}
+          onScrollBeginDrag={() => setTouched((n) => n + 1)}>
           {invoices === null ? <AppText color="textMuted">Loading…</AppText> : null}
           {invoices?.length === 0 ? <AppText color="textMuted">No purchases yet.</AppText> : null}
 
@@ -161,80 +183,7 @@ function InvoiceCard({ invoice: inv, open, onToggle }: { invoice: Invoice; open:
         <Icon name={open ? 'chevronUp' : 'chevronDown'} size={22} color="textMuted" />
       </Pressable>
 
-      {open ? (
-        <View style={[styles.detail, { borderTopColor: palette.border }]}>
-          <View accessible accessibilityLabel={`${inv.store.name}. ${inv.store.address}. Phone ${inv.store.phone}.`}>
-            <AppText kind="small" color="textMuted" accessible={false}>
-              {inv.store.address}
-            </AppText>
-            <AppText kind="small" color="textMuted" accessible={false}>
-              {inv.store.phone}
-            </AppText>
-          </View>
-
-          {inv.lines.map((l, i) => (
-            <View key={i} style={[styles.line, { borderTopColor: palette.surfaceAlt }]}>
-              <View style={styles.lineTop}>
-                <AppText style={styles.flex}>{l.name}</AppText>
-                <AppText kind="label">{formatCents(l.amount_cents)}</AppText>
-              </View>
-              <AppText kind="small" color="textMuted">
-                {`Qty ${l.qty} × ${formatCents(l.unit_cents)} · paid with ${l.card_type === 'general' ? 'everyday card' : l.card_type.toUpperCase() + ' card'}`}
-              </AppText>
-              <View style={styles.tags}>
-                <EligibilityBadge eligibility={{ label: l.eligibility_label }} compact />
-                {isReimbursable(l) ? (
-                  <View style={[styles.tag, { backgroundColor: palette.warningBg, borderColor: palette.warningEdge }]}>
-                    <AppText kind="small" color="warning">
-                      Possible reimbursement
-                    </AppText>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-          ))}
-
-          <View style={[styles.totals, { borderTopColor: palette.text }]}>
-            <Row label="Subtotal" cents={inv.subtotal_cents} />
-            <Row label="Tax (estimate)" cents={inv.tax_cents} />
-            <Row label="Total" cents={inv.total_cents} strong />
-            <AppText kind="small" color="textMuted">
-              {inv.tax_note}
-            </AppText>
-          </View>
-
-          <AppText kind="label">Paid with</AppText>
-          {inv.payments.map((p) => (
-            <View key={p.card_id} style={styles.lineTop}>
-              <AppText style={styles.flex}>{`${p.nickname}${p.last4 ? ` •••• ${p.last4}` : ''}`}</AppText>
-              <AppText>{formatCents(p.amount_cents)}</AppText>
-            </View>
-          ))}
-          <AppText kind="small" color="textMuted">
-            Card amounts are for the items, before tax.
-          </AppText>
-
-          <BigButton
-            label="Share invoice"
-            icon="share"
-            variant="secondary"
-            onPress={() => void Share.share({ title: `Invoice ${inv.invoice_id}`, message: invoiceToText(inv) })}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function Row({ label, cents, strong }: { label: string; cents: number; strong?: boolean }) {
-  return (
-    <View style={styles.lineTop} accessible accessibilityLabel={`${label} ${centsForScreenReader(cents)}`}>
-      <AppText kind={strong ? 'heading' : 'body'} style={styles.flex} accessible={false}>
-        {label}
-      </AppText>
-      <AppText kind={strong ? 'heading' : 'body'} accessible={false}>
-        {formatCents(cents)}
-      </AppText>
+      {open ? <InvoiceDetail invoice={inv} /> : null}
     </View>
   );
 }

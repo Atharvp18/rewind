@@ -1,6 +1,6 @@
 # Purchase history and invoice: design to confirm
 
-Status: **proposal, nothing below is built except step 1.** Tell me what to change.
+Status: **built** (2026-10-24) with the decisions in section 7. Tell me what to change.
 Source: business spec 6.6 (stretch), your messages, and the wireframe (dome, circle, bar).
 
 ## 0. What changed already
@@ -109,3 +109,11 @@ Rewind prepares the paperwork. It never files a claim. Administrator decides.
 - All store names, addresses and phones are fake (business spec 6.6).
 - Tax: one fixed-rate estimate, labeled estimate.
 - New for the backend (not in the tech spec): `GET /v1/payments`, an `invoice` on the checkout result.
+
+## 7. Decisions as built
+- Handle: chevron (bobs upward; still with Reduce Motion or when open) + the word **History** (becomes **Close history** when open). 44 pt touch target; tap is the alternative to the swipe (WCAG 2.5.1, 2.5.8).
+- History page: full width, from under the status bar down to the dome. The orb stays visible and usable.
+- Tapping the orb on the history page: the agent says "You're on your purchase history. You have N invoices. Possible reimbursement: $X. Tap History to go back." then listens.
+- History closes itself after inactivity: twice the "Time to answer" setting, at least 60 s. Touch or scroll restarts the clock; it never closes while the agent is speaking or listening (WCAG 2.2.1: adjustable in Settings).
+- Checkout: the agent says "Payment complete. You paid for your items, so please take them with you. ... Your invoice is saved in History." The invoice widget flies down to the History label on **Save to history**, the close button, or 10 s after the agent stops speaking.
+- Mixed cards: eligible items go to the FSA/HSA, an ineligible item (Kettle corn) goes to the everyday Visa automatically; one payment, one invoice, one "Paid with" line per card.

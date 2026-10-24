@@ -1,5 +1,13 @@
-import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { AlertBlock } from '@/components/alert-block';
 import { AppText } from '@/components/app-text';
@@ -9,6 +17,7 @@ import { CardArt } from '@/components/card-art';
 import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon, Notice } from '@/components/icon';
+import { InvoiceDetail } from '@/components/invoice-view';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
 import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -428,37 +437,82 @@ function CheckoutPanel() {
   );
 }
 
+/**
+ * After checkout: the invoice as a widget (same place as the checkout and medication cards).
+ * It stays while the agent speaks, then flies down into the History label at the bottom and
+ * becomes the newest invoice in the history. It leaves on the user's tap (Save to history, or
+ * the close button) or 10 seconds after the agent stops speaking.
+ */
 function ReceiptPanel() {
   const { state, dismiss } = useAgent();
+  const { reduceMotion } = useA11y();
+  const { height } = useWindowDimensions();
   const receipt = state.receipt!;
   const lowBalance = receipt.voice.priority === 'alert';
+  const y = useSharedValue(0);
+  const k = useSharedValue(1);
+  const [leaving, setLeaving] = useState(false);
+
+  const leave = useCallback(() => setLeaving(true), []);
+
+  useEffect(() => {
+    if (!leaving) return;
+    if (reduceMotion) {
+      dismiss();
+      return;
+    }
+    y.value = withTiming(height * 0.7, { duration: 520, easing: Easing.in(Easing.cubic) });
+    k.value = withTiming(0, { duration: 520, easing: Easing.in(Easing.cubic) }, (done) => {
+      if (done) runOnJS(dismiss)();
+    });
+  }, [leaving, reduceMotion, height, y, k, dismiss]);
+
+  // 10 s after the agent has finished speaking.
+  const quiet = state.phase === 'idle' || state.phase === 'awaiting_confirm';
+  useEffect(() => {
+    if (!quiet) return;
+    const t = setTimeout(leave, 10_000);
+    return () => clearTimeout(t);
+  }, [quiet, leave]);
+
+  const fly = useAnimatedStyle(() => ({
+    opacity: 0.2 + 0.8 * k.value,
+    transform: [{ translateY: y.value }, { scale: 0.25 + 0.75 * k.value }],
+  }));
+
   return (
-    <InfoPanel title="Payment complete" tone={lowBalance ? 'warning' : 'normal'}>
-      <Notice icon="eligible" color="eligible" kind="body">
-        Simulated payment. No real card was charged.
-      </Notice>
-      {lowBalance ? (
-        <AlertBlock level="warning" title="Low balance">
-          {receipt.voice.text}
-        </AlertBlock>
-      ) : null}
-      <PanelText kind="label">New balances</PanelText>
-      {receipt.new_balances.map((b) => {
-        const card = cardById(state.cards, b.card_id);
-        return (
-          <View key={b.card_id} style={styles.balance} accessible accessibilityLabel={`${card?.nickname ?? b.card_id}, ${centsForScreenReader(b.balance_cents)}`}>
-            <View style={styles.paysWith}>
-              {card ? <CardArt type={card.type} size="swatch" /> : null}
-              <PanelText>{card?.nickname ?? b.card_id}</PanelText>
+    <Animated.View style={[StyleSheet.absoluteFill, fly]} pointerEvents={leaving ? 'none' : 'box-none'}>
+      <InfoPanel title="Payment complete" tone={lowBalance ? 'warning' : 'normal'} onClose={leave}>
+        <Notice icon="eligible" color="eligible" kind="body">
+          You paid for your items. Please take them with you.
+        </Notice>
+        {lowBalance ? (
+          <AlertBlock level="warning" title="Low balance">
+            {receipt.voice.text}
+          </AlertBlock>
+        ) : null}
+        {receipt.invoice ? <InvoiceDetail invoice={receipt.invoice} bordered={false} share={false} /> : null}
+        <PanelText kind="label">New balances</PanelText>
+        {receipt.new_balances.map((b) => {
+          const card = cardById(state.cards, b.card_id);
+          return (
+            <View key={b.card_id} style={styles.balance} accessible accessibilityLabel={`${card?.nickname ?? b.card_id}, ${centsForScreenReader(b.balance_cents)}`}>
+              <View style={styles.paysWith}>
+                {card ? <CardArt type={card.type} size="swatch" /> : null}
+                <PanelText>{card?.nickname ?? b.card_id}</PanelText>
+              </View>
+              <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
             </View>
-            <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
-          </View>
-        );
-      })}
-      <PanelActions>
-        <BigButton label="Done" icon="check" variant="primary" size="primary" onPress={dismiss} />
-      </PanelActions>
-    </InfoPanel>
+          );
+        })}
+        <PanelText kind="small" muted>
+          Simulated payment. No real card was charged.
+        </PanelText>
+        <PanelActions>
+          <BigButton label="Save to history" icon="receipt" variant="primary" size="primary" onPress={leave} />
+        </PanelActions>
+      </InfoPanel>
+    </Animated.View>
   );
 }
 

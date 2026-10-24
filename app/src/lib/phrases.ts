@@ -22,6 +22,11 @@ export const Phrases = {
   nothingToRepeat: "I haven't said anything yet. Tap Talk to start.",
   /** The cart review went unanswered: the cart closes. */
   readyToCheckout: "Okay. Let me know when you're ready to checkout.",
+  /** Orb tapped while the purchase history is open. */
+  onHistory: (invoices: number, reimbursable: string | null) =>
+    `You're on your purchase history. You have ${invoices} ${invoices === 1 ? 'invoice' : 'invoices'}.${
+      reimbursable ? ` Possible reimbursement: ${reimbursable}.` : ''
+    } Tap History to go back.`,
   declinedTitle: 'Payment declined',
   /** The camera could not take a photo (busy, or no camera, as in the simulator). */
   captureFailed: "I couldn't take a photo. Hold the phone steady and tap the screen to try again.",

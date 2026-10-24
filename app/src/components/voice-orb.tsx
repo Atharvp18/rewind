@@ -159,8 +159,18 @@ export function OrbGlow() {
  * just a gesture: the tap and the label cover screen readers and switch users.
  */
 function HistoryHandle() {
+  const { reduceMotion } = useA11y();
   const { state, showView } = useAgent();
+  const bob = useSharedValue(0);
   const open = state.view === 'history';
+  useEffect(() => {
+    cancelAnimation(bob);
+    bob.value = 0;
+    // The chevron lifts gently to say "swipe up". Still when the page is open or Reduce Motion is on.
+    if (open || reduceMotion) return;
+    bob.value = withRepeat(withSequence(withTiming(-5, { duration: 700, easing: Easing.inOut(Easing.sin) }), withTiming(0, { duration: 700, easing: Easing.inOut(Easing.sin) })), -1);
+  }, [open, reduceMotion, bob]);
+  const bobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: bob.value }] }));
   const toggle = () => showView(open ? 'camera' : 'history');
   const pan = useMemo(
     () =>
@@ -177,14 +187,16 @@ function HistoryHandle() {
     <Pressable
       {...pan.panHandlers}
       onPress={toggle}
-      hitSlop={{ top: 8, bottom: 4, left: 40, right: 40 }}
+      hitSlop={{ top: 12, bottom: 4, left: 40, right: 40 }}
       accessibilityRole="button"
       accessibilityLabel={open ? 'Close purchase history' : 'Open purchase history'}
       accessibilityHint="Swipe up or double tap to see your past purchases and invoices"
       style={styles.handle}>
-      <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} color="onDock" />
+      <Animated.View style={bobStyle}>
+        <Icon name={open ? 'chevronDown' : 'chevronUp'} size={20} color="onDock" strokeWidth={3} />
+      </Animated.View>
       <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
-        History
+        {open ? 'Close history' : 'History'}
       </AppText>
     </Pressable>
   );
@@ -336,6 +348,6 @@ const styles = StyleSheet.create({
   },
   center: { textAlign: 'center' },
   // Drawn over the dome's bottom edge, outside the layout flow: the dome keeps its old height.
-  handle: { position: 'absolute', bottom: 4, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 28 },
+  handle: { position: 'absolute', bottom: 4, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 28, minWidth: 44 },
   handleText: { fontWeight: '700' },
 });

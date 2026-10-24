@@ -10,6 +10,7 @@
  *   any → interrupted (user speaks while the agent is speaking)
  */
 
+import { formatCents } from '@/lib/money';
 import { randomUUID } from 'expo-crypto';
 import {
   createContext,
@@ -631,6 +632,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
     if (s.livePrompt || listenHandler.current) {
       void startListening(true);
+      return;
+    }
+    if (s.view === 'history') {
+      // Say where the user is, then open the mic.
+      void api
+        .getPaymentHistory()
+        .catch(() => [])
+        .then((list) => {
+          const cents = list.reduce((sum, i) => sum + i.reimbursable_cents, 0);
+          listenAfterSpeech.current = true;
+          say(localVoice(Phrases.onHistory(list.length, cents ? formatCents(cents) : null)), false);
+        });
       return;
     }
     // Greeting first, then the mic opens when it finishes.
