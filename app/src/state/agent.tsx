@@ -22,6 +22,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 
 import * as api from '@/lib/api';
@@ -36,6 +37,7 @@ import {
   type Health,
   type ResponseScope,
   type ScanResponse,
+  type Store,
   type SttHint,
   type VoiceRequest,
 } from '@/lib/api';
@@ -83,6 +85,8 @@ export interface AgentState {
   livePrompt: LivePrompt | null;
   /** The cart item the agent is asking about; its row slides open to Keep / Remove. */
   reviewId: string | null;
+  /** Store check-in (prototype): asking → in. `toast` keeps the confirmation card up briefly. */
+  checkin: { store: Store; status: 'asking' | 'in'; toast: boolean } | null;
   lastScan: ScanResponse | null;
   /** Size of the photo behind lastScan, to place its item_bbox on screen. */
   lastPhoto: { width: number; height: number } | null;
@@ -119,6 +123,7 @@ export type Action =
   | { type: 'user_said'; text: string }
   | { type: 'declined'; message: string | null }
   | { type: 'review'; id: string | null }
+  | { type: 'checkin'; checkin: AgentState['checkin'] }
   | { type: 'view'; view: PanelView };
 
 const SILENCE_MS = 8_000;
@@ -143,6 +148,7 @@ export const initial: AgentState = {
   lastVoice: null,
   livePrompt: null,
   reviewId: null,
+  checkin: null,
   lastScan: null,
   lastPhoto: null,
   cart: { groups: [], total_cents: 0 },
@@ -199,6 +205,8 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: null };
     case 'set_prompt':
       return { ...s, livePrompt: a.prompt };
+    case 'checkin':
+      return { ...s, checkin: a.checkin };
     case 'review':
       return { ...s, reviewId: a.id };
     case 'cart':
@@ -249,6 +257,8 @@ export interface AgentApi {
   skip: () => Promise<void>;
   refreshCart: () => Promise<void>;
   refreshCards: () => Promise<void>;
+  /** Ask "Are you at <store>?" (position used once, on the device, never stored). `simulateStoreId` skips GPS for the demo. */
+  startCheckin: (simulateStoreId?: string) => Promise<void>;
   /** Tap an item in the cart: the agent reads it back and asks whether to remove it. */
   reviewItem: (itemId: string) => Promise<void>;
   removeLast: () => Promise<void>;
@@ -327,6 +337,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         promptTimer.current = setTimeout(() => {
           // An ignored cart review closes the cart and says how to come back.
           const open = stateRef.current.livePrompt;
+          if (open?.id === id && open.scope === 'confirm_checkin') dispatch({ type: 'checkin', checkin: null });
           const ignoredReview =
             open?.id === id && (open.scope === 'confirm_remove_item' || open.scope === 'confirm_review_rest');
           dispatch({ type: 'prompt_expired', id });
@@ -474,10 +485,27 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           void refreshCards();
           break;
         case 'skip':
+          if (stateRef.current.checkin?.status === 'asking') dispatch({ type: 'checkin', checkin: null });
+        // falls through
         case 'strength_confirmed':
           // Prescription confirmed: the copay line is spoken; the card closes.
           dispatch({ type: 'clear_scan' });
           dispatch({ type: 'clear_prompt' });
+          break;
+        case 'checked_in':
+          {
+            const store = res.result as Store;
+            dispatch({ type: 'checkin', checkin: { store, status: 'in', toast: true } });
+            haptic.done(); // the check-in buzz
+            // The confirmation card closes by itself after a few seconds; the check-in stays.
+            setTimeout(() => dispatch({ type: 'checkin', checkin: { store, status: 'in', toast: false } }), 7000);
+          }
+          break;
+        case 'open_history':
+          dispatch({ type: 'view', view: 'history' });
+          break;
+        case 'close_history':
+          dispatch({ type: 'view', view: 'camera' });
           break;
         case 'open_settings':
           dispatch({ type: 'view', view: 'profile' });
@@ -744,6 +772,29 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, [say, handleError]);
 
+  const startCheckin = useCallback(
+    async (simulateStoreId?: string) => {
+      try {
+        let coords: { lat: number; lng: number } | null = null;
+        if (!simulateStoreId) {
+          const perm = await Location.requestForegroundPermissionsAsync();
+          if (perm.status !== 'granted') return; // never nag; the app works without it
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        }
+        const found = await api.nearbyStore(coords, simulateStoreId);
+        coords = null; // not kept
+        if (!found) return;
+        dispatch({ type: 'view', view: 'camera' });
+        dispatch({ type: 'checkin', checkin: { store: found.store, status: 'asking', toast: false } });
+        say(found.voice);
+      } catch {
+        /* no location, no check-in */
+      }
+    },
+    [say],
+  );
+
   const reviewItem = useCallback(
     async (itemId: string) => {
       dispatch({ type: 'submit' });
@@ -858,6 +909,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       skip,
       refreshCart,
       refreshCards,
+      startCheckin,
       reviewItem,
       removeLast,
       askClearCart,
@@ -869,7 +921,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
-      refreshCart, refreshCards, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
+      refreshCart, refreshCards, startCheckin, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
       confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
     ],
   );

@@ -33,6 +33,9 @@ import { useAgent } from '@/state/agent';
 export function HomePanels() {
   const { state } = useAgent();
   if (state.declined) return <DeclinedPanel message={state.declined} />;
+  if (state.checkin && (state.checkin.status === 'asking' || state.checkin.toast) && !state.lastScan && state.view === 'camera') {
+    return <CheckInPanel />;
+  }
   if (state.receipt) return <ReceiptPanel />;
   if (state.view === 'checkout') return <CheckoutPanel />;
   if (state.view === 'cart') return <CartPanel />;
@@ -70,6 +73,45 @@ function AddCardSuggestion() {
       <AppText kind="body">Add another Visa card, like your everyday credit or debit card, so Rewind can split the payment.</AppText>
       <BigButton label="Add a card" icon="add" variant="primary" onPress={() => showView('add_card')} />
     </AlertBlock>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Store check-in (prototype)
+// ---------------------------------------------------------------------------
+
+/**
+ * "Are you at Walmart Pharmacy?" with the address; Yes checks in (with a buzz and a spoken
+ * confirmation), then the card stays for a few seconds and closes by itself.
+ */
+function CheckInPanel() {
+  const { state, answer } = useAgent();
+  const checkin = state.checkin!;
+  const asking = checkin.status === 'asking';
+  return (
+    <InfoPanel title={asking ? 'Are you here?' : "You're checked in"}>
+      <View style={styles.paysWith} accessible accessibilityLabel={`${checkin.store.name}. ${checkin.store.address}.`}>
+        <Icon name="pin" size={28} color="primary" />
+        <View style={styles.cardInfo}>
+          <PanelText kind="heading">{checkin.store.name}</PanelText>
+          <PanelText kind="small" muted>
+            {checkin.store.address}
+          </PanelText>
+        </View>
+      </View>
+      {asking ? (
+        <PanelActions>
+          <ButtonPair
+            yesA11y={`Yes, check in at ${checkin.store.name}`}
+            noA11y="No, I am not here"
+            onYes={() => answer('yes')}
+            onNo={() => answer('no')}
+          />
+        </PanelActions>
+      ) : (
+        <PanelText>Point your camera at an item to start shopping.</PanelText>
+      )}
+    </InfoPanel>
   );
 }
 

@@ -31,7 +31,7 @@ const TYPE_LABEL: Record<Card['type'], string> = {
 export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
   const { profile, reset } = useProfile();
-  const { state, resetDemo, sayLocal, showView } = useAgent();
+  const { state, resetDemo, sayLocal, showView, startCheckin } = useAgent();
   const { area } = useStage();
   const cue = useScrollCue();
 
@@ -181,6 +181,14 @@ export function ProfileSheet() {
         </Section>
 
         <Section title="Demo (presenter)">
+          <BigButton
+            label="Pretend I'm at Walmart Pharmacy"
+            icon="pin"
+            onPress={() => {
+              showView('camera');
+              void startCheckin('store_walmart');
+            }}
+          />
           <BigButton label="Reset · run 1 (HSA $340.00)" onPress={() => resetDemo(1)} />
           <BigButton label="Reset · run 2 (HSA $15.00)" onPress={() => resetDemo(2)} />
           <BigButton

@@ -1,4 +1,4 @@
-import { Share, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
@@ -6,7 +6,8 @@ import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Invoice } from '@/lib/api';
-import { invoiceToText, isReimbursable } from '@/lib/invoice-text';
+import { isReimbursable } from '@/lib/invoice-text';
+import { shareInvoicePdf } from '@/lib/invoice-pdf';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 
 /**
@@ -70,10 +71,11 @@ export function InvoiceDetail({ invoice: inv, bordered = true, share = true }: {
 
           {share ? (
           <BigButton
-            label="Share invoice"
-            icon="share"
+            label="Download invoice (PDF)"
+            accessibilityLabel="Download invoice as a PDF"
+            icon="download"
             variant="secondary"
-            onPress={() => void Share.share({ title: `Invoice ${inv.invoice_id}`, message: invoiceToText(inv) })}
+            onPress={() => void shareInvoicePdf(inv)}
           />
           ) : null}
         </View>

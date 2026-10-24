@@ -48,7 +48,14 @@
           "microphonePermission": "Rewind uses the microphone so you can talk to it. Push to talk only."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Rewind uses your location once, when you open the app, to check whether you are at a store. It is never saved."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 
@@ -12,7 +12,8 @@ import { useDomeHeight } from '@/components/voice-orb';
 import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
-import { longDate, packetToText } from '@/lib/invoice-text';
+import { shareReimbursementPacketPdf } from '@/lib/invoice-pdf';
+import { longDate } from '@/lib/invoice-text';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 import { useAgent } from '@/state/agent';
 
@@ -37,6 +38,18 @@ export function HistorySheet() {
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const width = Math.min(screenW - Layout.margin * 2, MaxContentWidth);
+
+  // Swipe down on the header closes the page (the ✕ and the History button do too).
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+        onPanResponderRelease: (_, g) => {
+          if (g.dy > 40) showView('camera');
+        },
+      }),
+    [showView],
+  );
 
   // Closes itself after a while without use (never while the agent is busy). Any touch or
   // scroll restarts the clock. The wait is twice the "Time to answer" setting, at least 60 s
@@ -84,7 +97,7 @@ export function HistorySheet() {
           borderWidth: palette.controlBorderWidth,
         },
       ]}>
-      <View style={[styles.header, { borderBottomColor: palette.surfaceAlt }]}>
+      <View style={[styles.header, { borderBottomColor: palette.surfaceAlt }]} {...pan.panHandlers}>
         <View style={styles.flex}>
           <AppText kind="heading" accessibilityRole="header">
             Purchase history
@@ -130,11 +143,11 @@ export function HistorySheet() {
                 {`HSA/FSA-eligible items on ${reimbursable.length} ${reimbursable.length === 1 ? 'invoice' : 'invoices'} were paid with an everyday card. Send the invoices to your HSA/FSA administrator; they make the final decision. Rewind does not file claims.`}
               </AppText>
               <BigButton
-                label="Share packet"
-                accessibilityLabel="Share reimbursement packet"
-                icon="share"
+                label="Download packet (PDF)"
+                accessibilityLabel="Download reimbursement packet as a PDF"
+                icon="download"
                 variant="secondary"
-                onPress={() => void Share.share({ title: 'Rewind reimbursement packet', message: packetToText(invoices!) })}
+                onPress={() => void shareReimbursementPacketPdf(invoices!)}
               />
             </View>
           ) : null}

@@ -728,3 +728,39 @@ describe('checkout invoice and mixed cards', () => {
     expect(paid.invoice!.total_cents).toBe(paid.invoice!.subtotal_cents + paid.invoice!.tax_cents);
   });
 });
+
+// Prototype only (not in the specs, which say "no tracked locations"; see HISTORY_DESIGN.md).
+describe('store check-in', () => {
+  const WALMART = { lat: 37.8044, lng: -122.2712 };
+
+  it('asks only when the phone is within 150 m of a seeded store', async () => {
+    expect(await m.nearbyStore({ lat: 37.0, lng: -122.0 })).toBeNull();
+    const near = await m.nearbyStore({ lat: WALMART.lat + 0.0005, lng: WALMART.lng }); // about 55 m
+    expect(near!.store.name).toBe('Walmart Pharmacy');
+    expect(near!.voice.response_scope).toBe('confirm_checkin');
+    expect(near!.voice.text).toContain(near!.store.address);
+  });
+
+  it('yes checks in, speaks the address and the next step; invoices then use that store', async () => {
+    const ask = (await m.nearbyStore(null, 'store_walmart'))!;
+    const res = await m.command('yes', ask.voice.prompt_id);
+    expect(res.action).toBe('checked_in');
+    expect(res.voice.text).toMatch(/officially checked in at Walmart Pharmacy, 2200 Sample Blvd/);
+    expect(res.voice.text).toMatch(/point your camera at an item/i);
+    await scanAndAdd();
+    const prev = await m.checkoutPreview();
+    const paid = await m.checkoutConfirm('checkin-1', prev.voice.prompt_id!);
+    expect(paid.invoice!.store.name).toBe('Walmart Pharmacy');
+    expect(await m.nearbyStore(null, 'store_walmart')).toBeNull(); // already checked in
+  });
+
+  it('no does not check in', async () => {
+    const ask = (await m.nearbyStore(null, 'store_walmart'))!;
+    const res = await m.command('no', ask.voice.prompt_id);
+    expect(res.action).toBe('skip');
+  });
+
+  it('the invoice never carries coordinates', async () => {
+    for (const inv of await m.getPaymentHistory()) expect(Object.keys(inv.store).sort()).toEqual(['address', 'name', 'phone']);
+  });
+});

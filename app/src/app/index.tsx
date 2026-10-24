@@ -8,6 +8,7 @@ import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { CartChip } from '@/components/cart-chip';
 import { FocusFrame, type FrameTone } from '@/components/focus-frame';
 import { HealthBanner } from '@/components/health-banner';
+import { HistoryButton } from '@/components/history-button';
 import { HistorySheet } from '@/components/history-sheet';
 import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
@@ -46,7 +47,7 @@ const CARD_RATIO = 1.586;
 export default function Home() {
   const { palette } = useA11y();
   const { profile, loaded } = useProfile();
-  const { state, beginCapture, scanFrame, sayLocal } = useAgent();
+  const { state, beginCapture, scanFrame, sayLocal, startCheckin } = useAgent();
   const [camera, requestCamera] = useCameraPermissions();
   const focused = useIsFocused();
   const { width, height } = useWindowDimensions();
@@ -68,6 +69,15 @@ export default function Home() {
     () => ({ x: 0, y: rowBottom + Layout.stack, w: width, h: Math.max(0, domeTop - rowBottom - Layout.stack * 2) }),
     [rowBottom, domeTop, width],
   );
+
+  // --- store check-in: once per launch, after onboarding (position used once, never stored) ----
+  const checkedIn = useRef(false);
+  useEffect(() => {
+    if (!loaded || onboarding || !focused || checkedIn.current) return;
+    checkedIn.current = true;
+    // No cleanup: the flag is already set, so a re-render must not cancel the one check-in.
+    setTimeout(() => void startCheckin(), 1200);
+  }, [loaded, onboarding, focused, startCheckin]);
 
   // --- onboarding card capture hooks into tap-anywhere ------------------------
   const onboardingCapture = useRef<(() => void) | null>(null);
@@ -234,8 +244,6 @@ export default function Home() {
             />
           ) : state.view === 'profile' ? (
             <ProfileSheet />
-          ) : state.view === 'history' ? (
-            <HistorySheet />
           ) : (
             <HomePanels />
           )}
@@ -249,13 +257,19 @@ export default function Home() {
         onLayout={(e) => setRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
         <View style={[styles.topRow, { width: r.contentWidth }]} pointerEvents="box-none">
           {onboarding ? <View /> : <CartChip />}
-          <ProfileButton />
+          <View style={styles.rightGroup} pointerEvents="box-none">
+            {onboarding ? null : <HistoryButton />}
+            <ProfileButton />
+          </View>
         </View>
         <View style={[styles.pillRow, { width: r.contentWidth }]} pointerEvents="box-none">
           <TranscriptPill />
         </View>
         <HealthBanner />
       </SafeAreaView>
+
+      {/* Purchase history is a full page: it sits above the cart chip and profile button. */}
+      {state.view === 'history' && !onboarding && !addingCard ? <HistorySheet /> : null}
 
       <View style={styles.bottom} pointerEvents="box-none">
         <VoiceOrb hint={hint} historyEnabled={!onboarding && !addingCard} />
@@ -281,6 +295,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     gap: Layout.stack,
   },
+  rightGroup: { flexDirection: 'row', alignItems: 'center', gap: Layout.stack },
   pillRow: { alignSelf: 'center', flexDirection: 'row', paddingTop: Layout.stack },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });

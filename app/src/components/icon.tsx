@@ -1,6 +1,8 @@
 import {
   ArrowRight,
   Camera,
+  Download,
+  MapPin,
   Check,
   ChevronDown,
   ChevronUp,
@@ -49,6 +51,8 @@ const ICONS = {
   history: History,
   receipt: Receipt,
   share: Share2,
+  download: Download,
+  pin: MapPin,
   close: X,
   retry: RotateCcw,
   camera: Camera,

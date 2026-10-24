@@ -12,6 +12,8 @@
 import { randomUUID } from 'expo-crypto';
 
 import type {
+  NearbyStore,
+  Store,
   Invoice,
   InvoiceLine,
   EligibilityLabel,
@@ -80,10 +82,11 @@ const TAX_NOTE = 'Estimated sales tax at 7.25% (one fixed rate). Estimate only: 
 
 /** Fake stores and contact details: 555-01xx numbers are reserved for fiction. */
 const STORES = [
-  { name: 'CVS Pharmacy', address: '100 Example Ave, Berkeley, CA 94704', phone: '(555) 010-0142' },
-  { name: 'Walmart Pharmacy', address: '2200 Sample Blvd, Oakland, CA 94607', phone: '(555) 010-0178' },
-  { name: 'Walgreens', address: '55 Mockingbird Ln, Emeryville, CA 94608', phone: '(555) 010-0119' },
+  { id: 'store_cvs', name: 'CVS Pharmacy', address: '100 Example Ave, Berkeley, CA 94704', phone: '(555) 010-0142', lat: 37.8716, lng: -122.2727 },
+  { id: 'store_walmart', name: 'Walmart Pharmacy', address: '2200 Sample Blvd, Oakland, CA 94607', phone: '(555) 010-0178', lat: 37.8044, lng: -122.2712 },
+  { id: 'store_walgreens', name: 'Walgreens', address: '55 Mockingbird Ln, Emeryville, CA 94608', phone: '(555) 010-0119', lat: 37.8313, lng: -122.2852 },
 ];
+const publicStore = (s: (typeof STORES)[number]): Store => ({ id: s.id, name: s.name, address: s.address, phone: s.phone });
 
 const CARD_LAST4: Record<string, string> = { card_fsa_1: '9999', card_hsa_1: '4242', card_visa_1: '1111' };
 
@@ -105,7 +108,7 @@ function buildInvoice(id: string, date: string, store: (typeof STORES)[number], 
     };
   });
   return {
-    invoice_id: id, date, store, lines, subtotal_cents: subtotal, tax_cents: tax, tax_note: TAX_NOTE,
+    invoice_id: id, date, store: { name: store.name, address: store.address, phone: store.phone }, lines, subtotal_cents: subtotal, tax_cents: tax, tax_note: TAX_NOTE,
     total_cents: subtotal + tax, payments,
     reimbursable_cents: lines
       .filter((l) => l.eligibility_label === 'eligible' && l.card_type === 'general')
@@ -137,7 +140,8 @@ function seedInvoices(): Invoice[] {
 
 /** An invoice for a payment the user just completed in the app (store cycles through the mock list). */
 function invoiceFromGroups(id: string, date: string, groups: CartGroup[]): Invoice {
-  const store = STORES[(state.invoices.length + 1) % STORES.length];
+  // The store the user checked in at; otherwise one from the mock list.
+  const store = STORES.find((s) => s.id === state.checkedInStoreId) ?? STORES[(state.invoices.length + 1) % STORES.length];
   const seed: SeedLine[] = groups.flatMap((g) =>
     g.items.map((it): SeedLine => [it.display_name, it.amount_cents, it.eligibility_label, g.card_id]),
   );
@@ -197,7 +201,7 @@ const RX = { name: 'Omeprazole', strength: '20 mg', spoken: 'Omeprazole, 20 mill
 // ---------------------------------------------------------------------------
 
 type StoredItem = CartItem & { card_id: string; seq: number };
-type Prompt = { scope: ResponseScope; scan_id: string | null; item_id?: string; expiresAt: number; consumed: boolean };
+type Prompt = { scope: ResponseScope; scan_id: string | null; item_id?: string; store_id?: string; expiresAt: number; consumed: boolean };
 type ProposedSplit = { item_id: string; card_id: string }[];
 
 const state = {
@@ -212,6 +216,8 @@ const state = {
   proposedSplit: null as ProposedSplit | null,
   /** Items already looked at in the current cart review (tap an item, or answer "look at the rest"). */
   reviewed: new Set<string>(),
+  /** The store the user confirmed they are at (check-in). */
+  checkedInStoreId: null as string | null,
   lastVoice: null as VoiceRequest | null,
 };
 
@@ -231,7 +237,7 @@ const short = (c: Card) => c.nickname.replace(/ card$/, '');
 
 function voice(
   text: string,
-  opts: { prompt?: { scope: ResponseScope; scan_id?: string | null; item_id?: string }; priority?: 'alert' | 'normal' } = {},
+  opts: { prompt?: { scope: ResponseScope; scan_id?: string | null; item_id?: string; store_id?: string }; priority?: 'alert' | 'normal' } = {},
 ): VoiceRequest {
   let prompt_id: string | null = null;
   if (opts.prompt) {
@@ -240,6 +246,7 @@ function voice(
       scope: opts.prompt.scope,
       scan_id: opts.prompt.scan_id ?? null,
       item_id: opts.prompt.item_id,
+      store_id: opts.prompt.store_id,
       expiresAt: Date.now() + promptTtlMs,
       consumed: false,
     });
@@ -615,6 +622,39 @@ export async function clearCart(promptId: string): Promise<CartResponse> {
   return { cart: buildCart(), voice: voice('Your cart is cleared.') };
 }
 
+const metersBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const R = 6371000;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const h =
+    Math.sin(rad(b.lat - a.lat) / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+/** Within this distance of a seeded store counts as "at the store". */
+const AT_STORE_METERS = 150;
+
+export async function nearbyStore(
+  coords: { lat: number; lng: number } | null,
+  simulateStoreId?: string,
+): Promise<NearbyStore | null> {
+  await wait(300);
+  const found = simulateStoreId
+    ? STORES.find((s) => s.id === simulateStoreId)
+    : coords
+      ? STORES.map((s) => ({ s, d: metersBetween(coords, s) }))
+          .filter((x) => x.d <= AT_STORE_METERS)
+          .sort((a, b) => a.d - b.d)[0]?.s
+      : undefined;
+  if (!found || state.checkedInStoreId === found.id) return null;
+  return {
+    store: publicStore(found),
+    voice: voice(`Are you at ${found.name}, ${found.address}? Say yes to check in.`, {
+      prompt: { scope: 'confirm_checkin', store_id: found.id },
+    }),
+  };
+}
+
 export async function getPaymentHistory(): Promise<Invoice[]> {
   return state.invoices.map((i) => ({ ...i }));
 }
@@ -737,6 +777,7 @@ export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart
   state.lastVoice = null; // a reset is a fresh start: "repeat that" must not replay the last session
   state.items = [];
   state.reviewed.clear();
+  state.checkedInStoreId = null;
   state.scanIndex = 0;
   state.scans.clear();
   state.prompts.clear();
@@ -799,6 +840,24 @@ export async function command(transcript: string, promptId: string | null): Prom
     state.reviewed.clear();
     return { action: 'review_done', result: buildCart(), voice: voice("Okay. Let me know when you're ready to checkout.") };
   }
+  if (live?.scope === 'confirm_checkin' && has(t, 'yes', 'no')) {
+    const p = consumePrompt(liveId!, 'confirm_checkin');
+    const found = STORES.find((s) => s.id === p.store_id);
+    if (has(t, 'yes') && found) {
+      state.checkedInStoreId = found.id;
+      return {
+        action: 'checked_in',
+        result: publicStore(found),
+        voice: voice(
+          `You're officially checked in at ${found.name}, ${found.address}. Please point your camera at an item to start shopping.`,
+        ),
+      };
+    }
+    return { action: 'skip', result: null, voice: voice('Okay. You can still scan items.') };
+  }
+  if (has(t, 'close history', 'hide history', 'go back')) {
+    return { action: 'close_history', result: null, voice: voice('Closing your purchase history.') };
+  }
   if (has(t, 'yes', 'add that', 'add it')) {
     if (live?.scope === 'confirm_add' && live.scan_id) {
       const rec = state.scans.get(live.scan_id)?.rec;
@@ -840,6 +899,9 @@ export async function command(transcript: string, promptId: string | null): Prom
       result: null,
       voice: voice('Clear every item from your cart?', { prompt: { scope: 'confirm_clear_cart' } }),
     };
+  }
+  if (has(t, 'history', 'invoice', 'invoices', 'past purchases', 'receipts', 'past transactions')) {
+    return { action: 'open_history', result: null, voice: voice('Here is your purchase history. Swipe or scroll to see every invoice.') };
   }
   if (has(t, 'cart')) {
     const cart = buildCart();

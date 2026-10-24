@@ -117,3 +117,14 @@ Rewind prepares the paperwork. It never files a claim. Administrator decides.
 - History closes itself after inactivity: twice the "Time to answer" setting, at least 60 s. Touch or scroll restarts the clock; it never closes while the agent is speaking or listening (WCAG 2.2.1: adjustable in Settings).
 - Checkout: the agent says "Payment complete. You paid for your items, so please take them with you. ... Your invoice is saved in History." The invoice widget flies down to the History label on **Save to history**, the close button, or 10 s after the agent stops speaking.
 - Mixed cards: eligible items go to the FSA/HSA, an ineligible item (Kettle corn) goes to the everyday Visa automatically; one payment, one invoice, one "Paid with" line per card.
+
+## 8. Added 2026-10-24
+- History is above the cart chip and profile button, with a ✕, swipe-down on its header, a **History** button in the top row (beside Profile), the bottom handle, and the voice command "find invoice history" (also "close history").
+- Every invoice has **Download invoice (PDF)**; the summary has **Download packet (PDF)** (all invoices with a possible reimbursement). Uses the phone's share sheet (save to Files, email, upload to the HSA/FSA portal). Rewind never files claims.
+- **Store check-in (prototype, SPEC CONFLICT):** tech spec decision 8 and business spec 6.6 / 12 say "never derived from location, no tracked locations". Built because Nak asked, with these limits:
+  - asks permission "while using the app"; if denied, nothing happens and the app works as before;
+  - position is read **once** at launch, matched on the device to **seeded mock stores** within 150 m, then thrown away. Never stored, never in an invoice (a test checks this);
+  - agent: "Are you at Walmart Pharmacy, 2200 Sample Blvd, Oakland, CA 94607? Say yes to check in." Yes: success buzz, "You're officially checked in at Walmart Pharmacy, <address>. Please point your camera at an item to start shopping."; No: "Okay. You can still scan items.";
+  - invoices created after a check-in use that store;
+  - Profile → Demo → "Pretend I'm at Walmart Pharmacy" runs the same flow without GPS (the simulator has no real position).
+  - **Needs a team decision** before it ships, because it contradicts the written spec.

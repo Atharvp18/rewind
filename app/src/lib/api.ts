@@ -113,6 +113,7 @@ export type ResponseScope =
   | 'confirm_remove_item'
   | 'confirm_review_rest'
   | 'confirm_strength'
+  | 'confirm_checkin'
   | 'none';
 
 export interface VoiceRequest {
@@ -259,6 +260,9 @@ export type CommandAction =
   | 'review_done'
   | 'confirm_clear_cart'
   | 'cart_cleared'
+  | 'checked_in'
+  | 'open_history'
+  | 'close_history'
   | 'open_settings'
   | 'strength_confirmed'
   | 'unknown'
@@ -523,6 +527,34 @@ export function checkoutConfirm(
  * answer is never a dead end (WCAG 2.2.1). The new prompt is bound to the
  * same scan and scope; the user's tap or "yes" is still the confirmation.
  */
+/**
+ * PROPOSED (not in the tech spec; the specs say "no tracked locations", see HISTORY_DESIGN.md):
+ * when the app opens in a store, the agent asks "Are you at <store>?". The phone's position is
+ * used once, on the device, to pick the nearest SEEDED mock store. It is never stored or sent
+ * anywhere but this call, and in the prototype it does not leave the mock.
+ */
+export interface Store {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+}
+
+export interface NearbyStore {
+  store: Store;
+  /** The question to speak (scope confirm_checkin). */
+  voice: VoiceRequest;
+}
+
+/** `simulateStoreId` is the presenter's "arrive at <store>" demo button (no GPS needed). */
+export function nearbyStore(
+  coords: { lat: number; lng: number } | null,
+  simulateStoreId?: string,
+): Promise<NearbyStore | null> {
+  if (isMock()) return mock.nearbyStore(coords, simulateStoreId);
+  return request<NearbyStore | null>('/v1/checkin/nearby', json({ ...coords }));
+}
+
 export function reissuePrompt(
   scanId: string,
   scope: ResponseScope,
