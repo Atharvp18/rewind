@@ -129,48 +129,209 @@ def test_rule_rows_fit_the_eligibility_table_and_skip_unknowns():
         assert r["source_url"].startswith("https://www.irs.gov/") and r["product_key"].startswith("rule:")
 
 
-# --- retailer cross-check (Apify catalog) --------------------------------------------------
+# --- retailer cross-check (Apify catalog, searched with Moss) -----------------------------
 
-def retailer(eligible, basis="retailer_badge"):
-    return {"eligible": eligible, "basis": basis, "name": "Advil Ibuprofen 200mg", "collected_at": "2026-10-24"}
-
-
-def with_row(monkeypatch, row):
-    from eligibility import classify
-    monkeypatch.setattr(classify, "_retailer_row", lambda p: row)
-    return classify
+def listing(eligible, price_cents=None):
+    return {"eligible": eligible, "name": "Advil Ibuprofen 200mg", "collected_at": "2026-10-24",
+            "score": 0.9, "price_cents": price_cents}
 
 
-def test_matching_retailer_listing_confirms_and_names_the_source(monkeypatch):
-    c = with_row(monkeypatch, retailer(True))
-    r = c.classify_eligibility(product("pain_relief"), None)
-    assert r.label == "eligible" and r.basis == "retailer_match" and r.source == "retailer_index"
+def classify(category, retailer):
+    from eligibility.classify import classify_eligibility
+    return classify_eligibility(product(category), None, retailer)
 
 
-def test_retailer_disagreement_downgrades_to_could_not_confirm(monkeypatch):
-    c = with_row(monkeypatch, retailer(False))
-    r = c.classify_eligibility(product("pain_relief"), None)
+def test_matching_listing_confirms_and_names_the_source():
+    r = classify("pain_relief", listing(True))
+    assert r.label == "eligible" and r.basis == "semantic_match" and r.source == "retailer_index"
+    assert r.confidence == 0.9 and r.matched_name == "Advil Ibuprofen 200mg"
+
+
+def test_disagreeing_listing_downgrades_to_could_not_confirm():
+    r = classify("pain_relief", listing(False))
     assert r.label == "could_not_confirm" and r.basis == "package_disagreement"
 
 
-def test_retailer_never_upgrades_a_could_not_confirm(monkeypatch):
-    c = with_row(monkeypatch, retailer(True))
-    assert c.classify_eligibility(product("vitamins_supplements"), None).label == "could_not_confirm"
+def test_listing_never_upgrades_a_could_not_confirm():
+    assert classify("vitamins_supplements", listing(True)).label == "could_not_confirm"
 
 
-def test_no_listing_or_database_down_leaves_the_rule_answer(monkeypatch):
-    c = with_row(monkeypatch, None)
-    r = c.classify_eligibility(product("pain_relief"), None)
+def test_no_listing_but_index_not_consulted_leaves_the_rule_answer():
+    r = classify("pain_relief", None)
     assert r.label == "eligible" and r.basis == "irs_category_rule"
-    monkeypatch.undo()
-    assert c.classify_eligibility(product("pain_relief"), None).label == "eligible"   # offline: db raises, caught
 
 
-def test_scrape_rows_use_actor_fields_and_the_vision_key():
+def test_index_answered_but_product_not_listed_is_could_not_confirm():
+    from eligibility.classify import classify_eligibility
+    r = classify_eligibility(product("pain_relief"), None, None, index_checked=True)
+    assert r.label == "could_not_confirm" and r.basis == "no_match"
+
+
+def test_not_listed_does_not_change_a_not_eligible_answer():
+    from eligibility.classify import classify_eligibility
+    r = classify_eligibility(product("grocery", medication=False), None, None, index_checked=True)
+    assert r.label == "not_eligible"
+
+
+# --- the Moss module, with a fake index -----------------------------------------------------
+
+class FakeMoss:
+    def __init__(self, docs): self.docs, self.queries = docs, []
+    async def load_index(self, name): pass
+    async def query(self, name, text, options):
+        import types
+        self.queries.append((text, options.min_score, options.top_k))
+        return types.SimpleNamespace(docs=self.docs)
+
+
+def doc(text, eligible="true", score=0.9, brand=""):
+    import types
+    return types.SimpleNamespace(text=text, score=score, metadata={
+        "eligible": eligible, "name": text, "collected_at": "2026-10-24", "brand": brand})
+
+
+async def match(monkeypatch, docs, name="Advil Ibuprofen Tablets", size="200mg", brand="Advil"):
+    from lookup import moss_index
+    from models.schemas import ProductResolution
+    monkeypatch.setenv("MOSS_PROJECT_ID", "p")
+    fake = FakeMoss(docs)
+    monkeypatch.setattr(moss_index, "_client", fake)
+    monkeypatch.setattr(moss_index, "_loaded", False)
+    p = ProductResolution(product_key="k", name=name, brand=brand, size=size, category="pain_relief")
+    return await moss_index.find_match(p), fake
+
+
+async def test_find_match_returns_the_best_listing_and_asks_with_the_spec_threshold(monkeypatch):
+    got, fake = await match(monkeypatch, [doc("Advil Ibuprofen 200mg", score=0.8), doc("Motrin 200mg", score=0.95)])
+    assert got["name"] == "Motrin 200mg" and got["score"] == 0.95 and got["eligible"] is True
+    import pytest
+    assert fake.queries[0][1] == pytest.approx(0.4) and fake.queries[0][2] == 3 and "Advil" in fake.queries[0][0]
+
+
+async def test_strength_and_pack_size_do_not_affect_the_match(monkeypatch):
+    got, fake = await match(monkeypatch, [doc("Allegra 24 Hour Allergy Relief 90 ct")], name="Allegra", size="180mg", brand="Allegra")
+    assert got["eligible"] is True and "180" not in fake.queries[0][0]     # the query leaves size out
+
+
+async def test_brand_alone_is_enough_at_the_lower_floor_but_a_different_brand_is_not(monkeypatch):
+    allegra = doc("Allegra 24-Hour Indoor & Outdoor Allergy Relief", score=0.50, brand="Allegra")
+    got, _ = await match(monkeypatch, [allegra], name="Allegra", size=None, brand=None)
+    assert got is not None and got["score"] == 0.50                 # same brand, 0.50 >= 0.40
+    tylenol = doc("Tylenol Extra Strength Caplets", score=0.67, brand="Tylenol")
+    got, _ = await match(monkeypatch, [tylenol], name="Advil Ibuprofen", size=None, brand="Advil")
+    assert got is None                                              # 0.67 < 0.75 and another brand
+    weak = doc("Allegra Hives", score=0.35, brand="Allegra")
+    got, _ = await match(monkeypatch, [weak], name="Allegra", size=None, brand="Allegra")
+    assert got is None                                              # below even the brand floor
+
+
+async def test_the_listed_price_comes_back_in_cents(monkeypatch):
+    d = doc("Allegra 24 Hour"); d.metadata["price_cents"] = "4299"
+    got, _ = await match(monkeypatch, [d], name="Allegra", size=None, brand="Allegra")
+    assert got["price_cents"] == 4299
+
+
+async def test_not_listed_is_none_but_moss_down_raises(monkeypatch):
+    import pytest
+    from lookup import moss_index
+    from models.schemas import ProductResolution
+    got, _ = await match(monkeypatch, [])
+    assert got is None                                   # answered: not in the index
+    p = ProductResolution(product_key="k", name="x", category="other")
+    monkeypatch.delenv("MOSS_PROJECT_ID")
+    with pytest.raises(moss_index.MossUnavailable):      # could not answer: not the same thing
+        await moss_index.find_match(p)
+
+
+async def test_not_eligible_listing_reads_as_false(monkeypatch):
+    got, _ = await match(monkeypatch, [doc("Kettle Corn", eligible="false")], name="Kettle Corn", size=None, brand=None)
+    assert got["eligible"] is False
+
+
+def test_scrape_rows_use_the_ecommerce_tool_shape_and_the_vision_key():
     from lookup.normalize import normalize_key
     from prefetch.apify_run import normalize_scraped_data
-    raw = [{"name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg", "price": 12.99,
-            "url": "https://fsastore.com/p/advil", "collection": "pain-relief"}] * 2
-    rows = normalize_scraped_data(raw)
-    assert len(rows) == 1 and rows[0]["product_key"] == normalize_key("Advil", "Advil Ibuprofen 200mg", "200mg")
-    assert rows[0]["category_path"] == "pain_relief" and rows[0]["basis"] == "retailer_badge" and rows[0]["upc"] is None
+    raw = [
+        {"name": "Excedrin Tension Headache Caplets, Aspirin-Free, 100 ct.", "brand": {"slogan": "Excedrin"},
+         "offers": {"price": "15.99", "priceCurrency": "USD"},
+         "url": "https://fsastore.com/excedrin/42810.html", "collection": "pain-relief"},
+        {"name": "Preparation H Hemorrhoidal Cream Original, 0.9 oz.", "brand": {"slogan": "FSA Store"},
+         "url": "https://fsastore.com/prep-h/42814.html", "collection": "first-aid"},
+    ]
+    rows = normalize_scraped_data(raw + raw[:1])             # a duplicate is dropped
+    assert len(rows) == 2
+    assert rows[0]["product_key"] == normalize_key("Excedrin", raw[0]["name"], None)
+    assert rows[0]["category_path"] == "pain_relief" and rows[0]["basis"] == "retailer_badge"
+    assert rows[0]["upc"] is None and rows[0]["source_url"].startswith("https://fsastore.com/")
+    assert rows[1]["brand"] is None                           # the store's own label is not a brand
+
+
+# --- price: shelf tag first, the store's listed price as the fallback -----------------------
+
+async def pipeline(monkeypatch, retailer, price_cents=None):
+    from agents import product_agent
+    from lookup import moss_index
+    from models.schemas import VisionExtract
+
+    async def fake_find(product):
+        return retailer
+    monkeypatch.setattr(moss_index, "find_match", fake_find)
+    extract = VisionExtract(name="Allegra 24 Hour Allergy Relief", brand="Allegra", category="cold_flu_allergy",
+                            is_medication=True, shelf_price_cents=price_cents)
+    return await product_agent._pipeline(extract)
+
+
+async def test_missing_shelf_price_falls_back_to_the_stores_listed_price(monkeypatch):
+    product_, elig = await pipeline(monkeypatch, listing(True, price_cents=4299))
+    assert product_.amount_cents == 4299 and product_.price_source == "seeded" and product_.state == "resolved"
+    assert "E_NO_PRICE" not in product_.warnings and elig.label == "eligible"
+
+
+async def test_a_shelf_tag_price_always_beats_the_listing(monkeypatch):
+    product_, _ = await pipeline(monkeypatch, listing(True, price_cents=4299), price_cents=3999)
+    assert product_.amount_cents == 3999 and product_.price_source == "shelf_tag"
+
+
+async def test_no_listing_means_no_price_is_invented(monkeypatch):
+    product_, _ = await pipeline(monkeypatch, None)
+    assert product_.amount_cents is None and product_.state == "partial"
+
+
+def test_a_fallback_price_is_spoken_as_listed_online():
+    from agents.intent import Intent
+    s = new_session()
+    sc = scan("Allegra", 4299)
+    sc["product"]["price_source"] = "seeded"
+    f, _ = payment_agent.recommend(s, sc)
+    assert "listed online at $42.99" in f.template
+    sc["product"]["price_source"] = "shelf_tag"
+    f, _ = payment_agent.recommend(s, sc)
+    assert "listed online" not in f.template and "$42.99" in f.template
+
+
+def test_catalog_is_fixed_and_rows_do_not_pile_up(tmp_path):
+    from prefetch import apify_run as job
+    url = next(iter(job.CATALOG))
+    raw = [{"name": "Tylenol Extra Strength", "brand": {"slogan": "Tylenol"}, "inputUrl": url,
+            "offers": {"price": "15.99"}, "url": url}]
+    first = job.normalize_scraped_data(raw)
+    assert first[0]["category_path"] == job.CATEGORY_MAP[job.CATALOG[url]] and first[0]["price_cents"] == 1599
+    # saved rows outside the catalog are dropped; rows for catalog pages are kept
+    import json
+    saved = tmp_path / "rows.json"
+    saved.write_text(json.dumps(first + [{**first[0], "product_key": "n:old", "source_url": "https://fsastore.com/random.html"}]))
+    kept = job.load_saved_rows(saved)
+    assert [r["product_key"] for r in kept] == [first[0]["product_key"]]
+    assert len(job.CATALOG) == len(set(job.CATALOG))
+
+
+def test_a_page_read_with_a_different_brand_replaces_its_old_row(tmp_path):
+    import json
+    from prefetch import apify_run as job
+    url = next(iter(job.CATALOG))
+    old = job.normalize_scraped_data([{"name": "Preparation H", "brand": {"slogan": "FSA Store"}, "inputUrl": url}])
+    new = job.normalize_scraped_data([{"name": "Preparation H", "brand": {"slogan": "Preparation H"}, "inputUrl": url}])
+    assert old[0]["product_key"] != new[0]["product_key"] and old[0]["source_url"] == new[0]["source_url"] == url
+    merged = {r["source_url"]: r for r in old}
+    merged.update({r["source_url"]: r for r in new})
+    assert list(merged.values()) == new

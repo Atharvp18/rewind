@@ -49,7 +49,6 @@ class EligibilityResult(BaseModel):
         "semantic_match",
         "irs_category_rule",
         "package_disagreement",
-        "retailer_match",
         "no_match",
         "index_unavailable",
     ]

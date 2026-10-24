@@ -4,7 +4,7 @@ Classification chain (no barcodes: Claude Vision reads the product):
 1. IRS category rules (shelf medicines must be in an IRS-backed category)
 2. "could_not_confirm" fallback
 3. Cross-check against package marking
-4. Cross-check against the scraped retailer listing (Apify), if the exact product is in it
+4. Cross-check against the closest scraped store listing (Apify rows, searched with Moss)
 """
 from __future__ import annotations
 
@@ -15,45 +15,50 @@ from eligibility.irs_rules import lookup_category
 
 logger = logging.getLogger(__name__)
 
-def _retailer_row(product: ProductResolution) -> dict | None:
-    """The scraped retailer listing for this exact product, if the database has one."""
-    try:
-        from data.db import eligibility_lookup_key
-        return eligibility_lookup_key(product.product_key)
-    except Exception:   # database down or not configured: the rules alone decide
-        return None
+def _cross_check_retailer(result: EligibilityResult, retailer: dict | None,
+                          index_checked: bool) -> EligibilityResult:
+    """Second source: the closest scraped store listing, found by Moss (lookup/moss_index.py).
 
-
-def _cross_check_retailer(result: EligibilityResult, product: ProductResolution) -> EligibilityResult:
-    """Second source. It can confirm the rule's answer or downgrade it when the two disagree.
-
-    It never upgrades an answer by itself: only the IRS rules can say eligible.
+    "Eligible" needs two sources: the IRS rules say yes AND the store index lists the product.
+    - index answered, product not listed: could_not_confirm (never guess eligible)
+    - a listing that disagrees with the rule: could_not_confirm
+    Strength and pack size are not compared: they do not change whether an OTC medicine is eligible.
+    - index could not answer (index_checked False): the rules decide alone
+    Only the IRS rules can say eligible; a listing never upgrades could_not_confirm.
+    A "not eligible" rule answer already sends the item to the Visa, so it needs no second source.
     """
     if result.label == "could_not_confirm":
         return result
-    row = _retailer_row(product)
-    if row is None or row.get("basis") not in ("retailer_badge", "hand_entered"):
+    if retailer is None:
+        if index_checked and result.label == "eligible":
+            return EligibilityResult(label="could_not_confirm", basis="no_match")
         return result
-    retailer_label = "eligible" if row["eligible"] else "not_eligible"
+    retailer_label = "eligible" if retailer["eligible"] else "not_eligible"
     if retailer_label != result.label:
         return EligibilityResult(label="could_not_confirm", basis="package_disagreement",
-                                 source="retailer_index", collected_at=row.get("collected_at"),
-                                 matched_name=row.get("name"))
-    return EligibilityResult(label=result.label, basis="retailer_match", source="retailer_index",
-                             collected_at=row.get("collected_at"), matched_name=row.get("name"))
+                                 source="retailer_index", collected_at=retailer["collected_at"],
+                                 matched_name=retailer["name"])
+    return EligibilityResult(label=result.label, confidence=retailer["score"], basis="semantic_match",
+                             source="retailer_index", collected_at=retailer["collected_at"],
+                             matched_name=retailer["name"])
 
 
 def classify_eligibility(
     product: ProductResolution,
     package_marking: str | None,
+    retailer: dict | None = None,
+    index_checked: bool = False,
 ) -> EligibilityResult:
     """Classify a product's HSA/FSA eligibility, then cross-check the retailer listing.
 
     Args:
         product: The resolved product (name and category read by Claude Vision).
         package_marking: "eligible" or "none_seen" from vision, or None.
+        retailer: the closest store listing from moss_index.find_match, or None.
+        index_checked: True when Moss answered (so "no listing" is meaningful); False when it
+            was not consulted or was unavailable.
     """
-    return _cross_check_retailer(_classify_by_rules(product, package_marking), product)
+    return _cross_check_retailer(_classify_by_rules(product, package_marking), retailer, index_checked)
 
 
 def _classify_by_rules(

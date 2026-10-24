@@ -588,28 +588,30 @@ Per business spec section 19.2, simplified by decision 7 (no retailer API in v1)
 Order matters.
 
 ```
-1. If product.upc and eligibility_lookup_upc(upc) returns a row:
-       label      = "eligible" if row.eligible else "not_eligible"
-       basis      = "upc_match"
-       confidence = None
-       → go to step 5
+(Revised 2026-10-24, Tiea. No barcodes; Claude Vision names the product and its category.)
 
-2. Moss query on "brand name size category":
-       if top score >= THRESHOLD and size/strength agrees:
-           label = from matched row; basis = "semantic_match"; confidence = score
-           → go to step 5
-       if strength mismatch (200 mg vs 400 mg):
-           label = "could_not_confirm"; basis = "semantic_match"; → return
-       if Moss unavailable or times out:
-           basis = "index_unavailable"; → step 3
-
-3. IRS category rule table (2.8):
+1. IRS category rule on Vision's category (2.8):
        eligible / not_eligible / needs_review
-       needs_review → label = "could_not_confirm"
+       a medication outside an IRS-backed "eligible" category -> "could_not_confirm"
+       needs_review -> "could_not_confirm"
        basis = "irs_category_rule"; confidence = None
 
-4. Otherwise:
-       label = "could_not_confirm"; basis = "no_match"
+2. Moss query on "brand name category" (lookup/moss_index.py). Size, strength and pack count are
+   left out on purpose: they do not change whether an OTC medicine is eligible.
+       accept the closest listing if score >= 0.75,
+              OR score >= 0.40 and the listing's brand appears in the product's brand/name
+       Moss answered, no accepted listing  -> index_checked = True, no match
+       Moss unavailable or timed out       -> index_checked = False (step 1 decides alone)
+
+3. Combine ("eligible" needs two sources):
+       rule eligible + listing eligible            -> eligible, basis "semantic_match", confidence = score
+       rule eligible + no listing (index answered) -> could_not_confirm, basis "no_match"
+       rule eligible + listing not eligible        -> could_not_confirm, basis "package_disagreement"
+       rule not_eligible                           -> not_eligible (already routes to the Visa)
+       a listing never upgrades could_not_confirm; only the IRS rules can say eligible
+
+4. Price fallback: if the shelf tag price is missing and a listing was accepted, use the listing's
+   price (price_source "seeded") and speak it as "listed online at $X". A shelf tag always wins.
 
 5. Cross-check against the package marking:
        if package_marking == "eligible" and label == "not_eligible":
@@ -619,7 +621,7 @@ Order matters.
 
 **Medication rule (decision 3, revised 2026-10-24).** Barcodes are removed. A medication is `eligible` only when Claude Vision's category is IRS-backed `eligible` (pain_relief, cold_flu_allergy, digestive_health, menstrual_care, otc_medicine); any other category returns `could_not_confirm`. Products are keyed by `normalize_key(brand, name, size)`.
 
-**THRESHOLD** cannot be known in advance. Start at 0.75, tune it on the real demo shelf, then hardcode it with a comment recording the test.
+**THRESHOLD** is 0.75, with a 0.40 floor when the brand agrees. Live check on 2026-10-24 (`scripts/check_moss.py`, 26 rows): correct products scored 0.50 to 1.00 (brand-only "Allegra" 0.50, "Tums" 0.61), a wrong-brand near match scored 0.67 and was rejected, unrelated items scored 0.22 to 0.40. Re-tune on the real demo shelf.
 
 **The index must hold both eligible and non-eligible rows.** An index of eligible items only returns a near match for everything, including kettle corn (section 24.6). Build the negative examples in from the start.
 
@@ -674,7 +676,7 @@ Moss index (`create_index`): `id` is the UPC or the normalized key, `text` is "b
 - Stubs committed in hour 1.
 - 10 photos of the demo shelf return valid `VisionExtract` objects. An unclear photo returns low confidence and `E_VISION_UNCLEAR`, never a guessed price.
 - The three demo items get the right labels. Kettle corn returns `not_eligible` or `could_not_confirm`, **never** `eligible`.
-- A match below threshold, a strength mismatch, and a package disagreement each return `could_not_confirm`.
+- An eligible rule with no store listing, a listing that disagrees, and a package disagreement each return `could_not_confirm`. Strength and pack size are not compared.
 - On 20 to 30 extra test items, **no non-eligible item is labeled eligible.** Record how many return `could_not_confirm`; that number goes in the pitch.
 - The medical-advice refusal fires reliably.
 
@@ -1159,7 +1161,7 @@ Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 321
 
 **Speech (Atharv):** every line in 4.4 matches exactly.
 
-**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; below threshold, strength mismatch, and package disagreement each return `could_not_confirm`; a medication outside the IRS-backed categories returns `could_not_confirm`; Moss down falls back to category rules.
+**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; an eligible rule with no store listing, a disagreeing listing, and package disagreement each return `could_not_confirm`; a medication outside the IRS-backed categories returns `could_not_confirm`; Moss down falls back to category rules.
 
 **App (Nak), manual:** permission-denied paths; silent switch; Bluetooth; incoming call mid-sentence; 3-minute idle reconnect; barge-in; largest text size on every screen; VoiceOver and TalkBack.
 

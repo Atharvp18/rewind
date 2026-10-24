@@ -155,13 +155,6 @@ def eligibility_lookup_upc(upc: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def eligibility_lookup_key(product_key: str) -> dict | None:
-    """Row for one product_key in eligibility_items (a scraped retailer listing), or None."""
-    rows = _call(lambda: _sb().table("eligibility_items").select("*")
-                 .eq("product_key", product_key).limit(1).execute()).data
-    return rows[0] if rows else None
-
-
 def eligibility_bulk_insert(rows: list[dict]) -> int:
     """Upsert rows by product_key; returns how many distinct rows were written."""
     by_key: dict[str, dict] = {}

@@ -36,7 +36,7 @@ def _stub_extract(image_bytes: bytes = b"") -> VisionExtract:
     Picked by a marker in the image bytes (b"stub:card"), else REWIND_STUB_IMAGE.
     """
     kind = os.environ.get("REWIND_STUB_IMAGE", "advil")
-    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close"):
+    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close", "allegra"):
         if f"stub:{marker}".encode() in image_bytes:
             kind = marker
     if kind in ("tissues_far", "tissues_close"):   # same box; only the close photo shows the tag
@@ -44,6 +44,12 @@ def _stub_extract(image_bytes: bytes = b"") -> VisionExtract:
             name="Kleenex Facial Tissues", brand="Kleenex", size="160 count", category="personal_care",
             shelf_price_cents=349 if kind == "tissues_close" else None,
             field_confidence={"name": 0.9, "price": 0.9 if kind == "tissues_close" else 0.0},
+        )
+    if kind == "allegra":   # a bottle with no shelf tag in view: price must come from the store listing
+        return VisionExtract(
+            name="Allegra 24 Hour Allergy Relief", brand="Allegra", category="cold_flu_allergy",
+            is_medication=True, is_prescription_only=False,
+            field_confidence={"name": 0.95, "price": 0.0},
         )
     if kind == "card":
         return VisionExtract(image_kind="insurance_card")

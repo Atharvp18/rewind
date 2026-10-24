@@ -2,3 +2,4 @@
 .env
 __pycache__/
 agent1*_data.json
+backend/data/eligibility_data/

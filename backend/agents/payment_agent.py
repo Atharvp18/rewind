@@ -252,35 +252,37 @@ def _checkout_confirm(session: dict) -> Facts:
 def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
     name = scan["product"]["name"]
     price = dollars(scan["product"]["amount_cents"])
+    # A price from the cache or the store listing is not a shelf tag: say so.
+    shown = f"listed online at {price}" if scan["product"].get("price_source") in ("cache", "seeded") else price
     d, code = rec["decision"], rec["reason_code"]
     if d == "route_to_hsa":
         card = _card(session, rec["card_id"])
         session["pending"] = {"scope": "confirm_add", "card_id": card["id"]}
         if code == "fsa_first":
-            return say(f"{name}, {price}. HSA eligible. {FSA_FIRST} Want to use your {card['nickname']}?",
+            return say(f"{name}, {shown}. HSA eligible. {FSA_FIRST} Want to use your {card['nickname']}?",
                        name, price, "HSA eligible", "expires", card["nickname"])
-        return say(f"{name}, {price}. HSA eligible. Want to use your {card['nickname']}?",
+        return say(f"{name}, {shown}. HSA eligible. Want to use your {card['nickname']}?",
                    name, price, "HSA eligible", card["nickname"])
     if d == "route_to_general":
         card = _card(session, rec["card_id"])
         session["pending"] = {"scope": "confirm_add", "card_id": card["id"]}
         why = "Not HSA eligible." if code == "not_eligible" else "No HSA card is linked."
-        return say(f"{name}, {price}. {why} I'll put this on your {card['nickname']}. Okay?",
+        return say(f"{name}, {shown}. {why} I'll put this on your {card['nickname']}. Okay?",
                    name, price, why.rstrip("."), card["nickname"])
     if d == "ask_user" and code == "eligible_insufficient_balance":
         hsa, visa = _health_card(session), _card(session, rec["card_id"])
         session["pending"] = {"scope": "choose_card", "card_options": [visa["id"]], "overrode": True}
-        return _with_alert(say(f"{name}, {price}. HSA eligible, but your {hsa['nickname']} can't cover it. "
+        return _with_alert(say(f"{name}, {shown}. HSA eligible, but your {hsa['nickname']} can't cover it. "
                                f"Please use another card. Want to put it on your {visa['nickname']}?",
                                name, price, "HSA eligible", hsa["nickname"], "another card", visa["nickname"]), hsa)
     if d == "ask_user":
         session["pending"] = {"scope": "choose_card", "card_options": rec["card_options"], "overrode": False}
         nicks = [_card(session, c)["nickname"] for c in rec["card_options"]]
-        return say(f"{name}, {price}. I could not confirm eligibility. Which card would you like to use: {' or '.join(nicks)}?",
+        return say(f"{name}, {shown}. I could not confirm eligibility. Which card would you like to use: {' or '.join(nicks)}?",
                    name, price, "could not confirm eligibility", *nicks)
     if code == "no_card_linked":
         return say("No card is linked. Add a card in settings before adding items.")
-    return say(f"{name}, {price}. None of your linked cards can cover this. Please use another card for this item.",
+    return say(f"{name}, {shown}. None of your linked cards can cover this. Please use another card for this item.",
                name, price, "another card")
 
 

@@ -17,3 +17,5 @@ def _offline_db(request, monkeypatch):
     def unavailable():
         raise db.DBUnavailable("tests run offline")
     monkeypatch.setattr(db, "_sb", unavailable)
+    monkeypatch.delenv("MOSS_PROJECT_ID", raising=False)   # everyday tests never query the real index; see scripts/check_moss.py
+    monkeypatch.delenv("MOSS_PROJECT_ID", raising=False)   # never query the real Moss index
