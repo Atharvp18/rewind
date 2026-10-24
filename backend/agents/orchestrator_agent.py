@@ -185,7 +185,6 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
         await ctx.send(PRODUCT_AGENT_ADDRESS, ProductRequest(
             request_id=request_id,
             image_url=inc.image_url,
-            barcode=inc.metadata.get("barcode"),
             product_hint=intent.entities.product,
             is_prescription=intent.entities.is_prescription,
         ))

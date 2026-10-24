@@ -6,7 +6,7 @@ import pytest
 from postgrest.exceptions import APIError
 
 from data import db, seed
-from lookup.normalize import product_key_from_upc
+from lookup.normalize import normalize_key
 
 
 # --- a recording stand-in for the supabase client -------------------------------------------
@@ -57,8 +57,8 @@ def sb(monkeypatch):
 def test_run_balances_and_money_are_integer_cents():
     run1 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(1)}
     run2 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(2)}
-    assert run1 == {"card_hsa_1": 34000, "card_visa_1": 500000}
-    assert run2["card_hsa_1"] == 1500 and run2["card_visa_1"] == 500000
+    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 25000, "card_visa_1": 500000}
+    assert run2["card_hsa_1"] == 1500 and run2["card_fsa_1"] == 1000 and run2["card_visa_1"] == 500000
     for card in seed.CARDS:
         assert type(card["balance_cents"]) is int
     for product in seed.DEMO_PRODUCTS:
@@ -70,7 +70,7 @@ def test_demo_arithmetic_matches_the_script():
     hsa_total = prices["Advil Ibuprofen 200mg"] + prices["Bandages"]
     assert hsa_total == 1848                       # "Two items totaling $18.48"
     assert 34000 - hsa_total == 32152              # "Your HSA balance is now $321.52"
-    assert 1500 < hsa_total                        # run 2: the HSA cannot cover the group
+    assert 1500 < hsa_total and 1000 < hsa_total   # run 2: neither HSA nor FSA can cover the group
     assert prices["Kettle Corn"] == 499
 
 
@@ -85,9 +85,9 @@ def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
 def test_demo_products_and_eligibility_rows_line_up_with_tiea_key_function():
     product_keys = [p["product_key"] for p in seed.DEMO_PRODUCTS]
     assert product_keys == [e["product_key"] for e in seed.DEMO_ELIGIBILITY]
-    for p in seed.DEMO_PRODUCTS:
-        assert p["product_key"] == product_key_from_upc(p["upc"])
-        assert p["product_key"] != "upc:", "placeholder UPC lost its digits"
+    for p in seed.DEMO_PRODUCTS:   # no barcodes: keyed by brand|name|size
+        assert p["upc"] is None
+        assert p["product_key"] == normalize_key(p["brand"], p["normalized_name"], p["size"])
     labels = {e["name"]: e["eligible"] for e in seed.DEMO_ELIGIBILITY}
     assert labels == {"Advil Ibuprofen 200mg": True, "Bandages": True, "Kettle Corn": False}
 

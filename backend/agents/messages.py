@@ -31,7 +31,6 @@ class FactsMsg(Model):
 class ProductRequest(Model):
     request_id: str
     image_url: str | None = None
-    barcode: str | None = None
     product_hint: str | None = None
     is_prescription: bool | None = None    # user said it's a prescription from the counter
 

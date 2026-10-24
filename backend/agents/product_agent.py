@@ -89,18 +89,18 @@ async def handle_card(image: bytes) -> tuple[Facts, dict | None, str | None]:
     return card_facts(card, profile), profile, name
 
 
-async def handle(image_url: str | None = None, barcode: str | None = None,
+async def handle(image_url: str | None = None,
                  product_hint: str | None = None, is_prescription: bool | None = None,
                  ) -> tuple[Facts, dict | None]:
     """Pure handler for products and pharmacy labels: (facts, scan dict or None).
 
     Insurance cards are handled by handle_full(); this keeps the old two-value shape.
     """
-    facts, scan, _, _ = await handle_full(image_url, barcode, product_hint, is_prescription)
+    facts, scan, _, _ = await handle_full(image_url, product_hint, is_prescription)
     return facts, scan
 
 
-async def handle_full(image_url: str | None = None, barcode: str | None = None,
+async def handle_full(image_url: str | None = None,
                       product_hint: str | None = None, is_prescription: bool | None = None,
                       ) -> tuple[Facts, dict | None, dict | None, str | None]:
     """(facts, scan, card profile, person name)."""
@@ -116,7 +116,7 @@ async def handle_full(image_url: str | None = None, barcode: str | None = None,
             logger.warning("image download failed: %s", exc)
             return say("I couldn't open that photo. Please send it again, or tell me the product's name."), None, None, None
         try:
-            extract = extract_product(image, barcode_hint=barcode)
+            extract = extract_product(image)
         except Exception:
             logger.exception("vision failed")
             return say("I couldn't read that photo. Try again with the label facing the camera."), None, None, None
@@ -156,7 +156,7 @@ async def on_request(ctx: Context, sender: str, msg: ProductRequest):
     if sender != ORCHESTRATOR_AGENT_ADDRESS:
         ctx.logger.warning("ignoring ProductRequest from unknown sender %s", sender)
         return
-    facts, scan, profile, name = await handle_full(msg.image_url, msg.barcode, msg.product_hint, msg.is_prescription)
+    facts, scan, profile, name = await handle_full(msg.image_url, msg.product_hint, msg.is_prescription)
     await ctx.send(sender, ProductResponse(request_id=msg.request_id, facts=FactsMsg.of(facts), scan=scan,
                                            card_profile=profile, person_name=name))
 

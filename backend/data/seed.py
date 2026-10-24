@@ -5,34 +5,38 @@ to the Postgres function in functions.sql, so the numbers live only here.
 """
 from __future__ import annotations
 
-from lookup.normalize import product_key_from_upc
+from lookup.normalize import normalize_key
 
-# TODO(demo prep): replace these with the real UPCs read off the demo packages.
-# They must be digits only: product_key_from_upc strips everything else.
-UPC_ADVIL = "000000000001"
-UPC_BANDAGES = "000000000002"
-UPC_KETTLE_CORN = "000000000003"
+# No barcodes: Claude Vision reads the product, so items are keyed by brand|name|size.
+KEY_ADVIL = normalize_key("Advil", "Advil Ibuprofen 200mg", "200mg")
+KEY_BANDAGES = normalize_key(None, "Bandages", None)
+KEY_KETTLE_CORN = normalize_key(None, "Kettle Corn", None)
 
 HSA_BALANCE_CENTS = {1: 34000, 2: 1500}   # run 1: $340.00, run 2: $15.00 (declined-card run)
+# FSA is spent first (it expires at plan-year end), so in run 2 it must be low too,
+# or it would cover the items and the declined-card moment would never happen.
+FSA_BALANCE_CENTS = {1: 25000, 2: 1000}   # run 1: $250.00, run 2: $10.00
 
 CARDS = [
     {"id": "card_hsa_1", "type": "hsa", "nickname": "HSA card",
      "balance_cents": 34000, "nessie_account_id": None, "status": "active", "is_default": True},
+    {"id": "card_fsa_1", "type": "fsa", "nickname": "FSA card",
+     "balance_cents": 25000, "nessie_account_id": None, "status": "active", "is_default": False},
     {"id": "card_visa_1", "type": "general", "nickname": "Visa credit",
      "balance_cents": 500000, "nessie_account_id": None, "status": "active", "is_default": False},
 ]
 
 # Pre-cached so the demo cannot fail on a lookup (business spec 19.3).
 DEMO_PRODUCTS = [
-    {"product_key": product_key_from_upc(UPC_ADVIL), "upc": UPC_ADVIL,
+    {"product_key": KEY_ADVIL, "upc": None,
      "normalized_name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg",
      "category": "pain_relief", "shelf_price_cents": 1299,
-     "eligibility_label": "eligible", "eligibility_basis": "upc_match", "source": "seeded"},
-    {"product_key": product_key_from_upc(UPC_BANDAGES), "upc": UPC_BANDAGES,
+     "eligibility_label": "eligible", "eligibility_basis": "irs_category_rule", "source": "seeded"},
+    {"product_key": KEY_BANDAGES, "upc": None,
      "normalized_name": "Bandages", "brand": None, "size": None,
      "category": "first_aid", "shelf_price_cents": 549,   # placeholder: set to the real shelf price
-     "eligibility_label": "eligible", "eligibility_basis": "upc_match", "source": "seeded"},
-    {"product_key": product_key_from_upc(UPC_KETTLE_CORN), "upc": UPC_KETTLE_CORN,
+     "eligibility_label": "eligible", "eligibility_basis": "irs_category_rule", "source": "seeded"},
+    {"product_key": KEY_KETTLE_CORN, "upc": None,
      "normalized_name": "Kettle Corn", "brand": None, "size": None,
      "category": "grocery", "shelf_price_cents": 499,
      "eligibility_label": "not_eligible", "eligibility_basis": "irs_category_rule",
@@ -45,15 +49,15 @@ _DEMO_SOURCE = "hand_entered:demo-shelf"
 _DEMO_COLLECTED_AT = "2026-10-24T00:00:00+00:00"
 
 DEMO_ELIGIBILITY = [
-    {"product_key": DEMO_PRODUCTS[0]["product_key"], "upc": UPC_ADVIL,
+    {"product_key": DEMO_PRODUCTS[0]["product_key"], "upc": None,
      "name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg",
      "category_path": "pain_relief", "eligible": True,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},
-    {"product_key": DEMO_PRODUCTS[1]["product_key"], "upc": UPC_BANDAGES,
+    {"product_key": DEMO_PRODUCTS[1]["product_key"], "upc": None,
      "name": "Bandages", "brand": None, "size": None,
      "category_path": "first_aid", "eligible": True,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},
-    {"product_key": DEMO_PRODUCTS[2]["product_key"], "upc": UPC_KETTLE_CORN,
+    {"product_key": DEMO_PRODUCTS[2]["product_key"], "upc": None,
      "name": "Kettle Corn", "brand": None, "size": None,
      "category_path": "grocery", "eligible": False,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},
@@ -68,13 +72,15 @@ INSURERS = [
 
 
 def cards_for_run(run: int) -> list[dict]:
-    """Seed cards with the HSA balance for the given demo run."""
+    """Seed cards with the HSA and FSA balances for the given demo run."""
     if run not in HSA_BALANCE_CENTS:
         raise ValueError(f"run must be 1 or 2, got {run!r}")
     cards = [dict(c) for c in CARDS]
     for card in cards:
         if card["id"] == "card_hsa_1":
             card["balance_cents"] = HSA_BALANCE_CENTS[run]
+        if card["id"] == "card_fsa_1":
+            card["balance_cents"] = FSA_BALANCE_CENTS[run]
     return cards
 
 

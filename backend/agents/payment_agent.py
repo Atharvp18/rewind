@@ -38,6 +38,10 @@ HELP = say("I can add the item you're looking at, read your cart, "
 
 # Privacy rule: balances are never spoken. The agent only says whether a card
 # can cover something, and raises a beep + spoken alert when a card runs low.
+FSA_FIRST = "Your FSA money expires at the end of the plan year, so I'll use it first."
+# Real HSA/FSA administrators, named only as examples of where a claim is filed.
+CLAIM_EXAMPLES = "Optum Financial or HealthEquity"
+
 BALANCE_PRIVATE = say("For your privacy, I don't say card balances out loud. "
                       "I'll tell you if a card can't cover an item, and I'll alert you when a card is running low.",
                       fixed=True)
@@ -62,12 +66,23 @@ def _card(session: dict, card_id: str) -> dict:
     return next(c for c in session["cards"] if c["id"] == card_id)
 
 
-def _health_card(session: dict) -> dict | None:
+def _health_cards(session: dict) -> list[dict]:
+    """Active HSA/FSA cards, FSA first: FSA money expires at the end of the plan year
+    and HSA money never does, so an eligible item spends the FSA before the HSA."""
     cards = [c for c in session["cards"] if c["type"] in ("hsa", "fsa") and c["status"] == "active"]
-    if not cards:
-        return None
-    defaults = [c for c in cards if c["is_default"]]
-    return defaults[0] if defaults else cards[0] if len(cards) == 1 else None
+    return sorted(cards, key=lambda c: (c["type"] != "fsa", not c["is_default"]))
+
+
+def _health_card(session: dict, amount: int | None = None) -> dict | None:
+    """First health card in FSA-first order; with an amount, the first one that can cover it."""
+    cards = _health_cards(session)
+    if amount is not None:
+        cards = [c for c in cards if c["balance_cents"] >= amount] or cards[:0]
+    return cards[0] if cards else None
+
+
+def _health_card_of_type(session: dict, kind: str) -> dict | None:
+    return next((c for c in _health_cards(session) if c["type"] == kind), None)
 
 
 def _general_card(session: dict) -> dict | None:
@@ -76,8 +91,8 @@ def _general_card(session: dict) -> dict | None:
 
 
 def _card_by_type(session: dict, kind: str | None) -> dict | None:
-    if kind == "hsa":
-        return _health_card(session)
+    if kind in ("hsa", "fsa"):
+        return _health_card_of_type(session, kind) or _health_card(session)
     if kind == "visa":
         return _general_card(session)
     return None
@@ -88,6 +103,7 @@ def _route(session: dict, scan: dict) -> dict:
     elig = scan["eligibility"]["label"]
     amount = scan["product"]["amount_cents"]
     hsa, visa = _health_card(session), _general_card(session)
+    covering = _health_card(session, amount) if amount is not None else None
     if not session["cards"]:
         return {"decision": "blocked", "card_id": None, "reason_code": "no_card_linked", "card_options": []}
     if elig == "could_not_confirm":
@@ -101,8 +117,9 @@ def _route(session: dict, scan: dict) -> dict:
         if visa is None:
             return {"decision": "blocked", "card_id": None, "reason_code": "no_card_covers", "card_options": []}
         return {"decision": "route_to_general", "card_id": visa["id"], "reason_code": "no_health_card_linked", "card_options": []}
-    if hsa["balance_cents"] >= amount:
-        return {"decision": "route_to_hsa", "card_id": hsa["id"], "reason_code": "eligible_sufficient_balance", "card_options": []}
+    if covering:
+        code = "fsa_first" if covering["type"] == "fsa" else "eligible_sufficient_balance"
+        return {"decision": "route_to_hsa", "card_id": covering["id"], "reason_code": code, "card_options": []}
     if visa and visa["balance_cents"] >= amount:
         return {"decision": "ask_user", "card_id": visa["id"], "reason_code": "eligible_insufficient_balance",
                 "card_options": [visa["id"]]}
@@ -193,6 +210,23 @@ def _checkout_preview(session: dict) -> Facts:
     return say(summary.template + " Ready to check out?", *summary.must_say)
 
 
+def claim_tip(session: dict) -> Facts | None:
+    """Eligible items paid on a general card can be paid back from the HSA/FSA by a claim.
+    The agent only points the way; it never files (tech spec decision 4)."""
+    general = {c["id"] for c in session["cards"] if c["type"] == "general"}
+    items = [i for i in session["cart"] if i["assigned_card_id"] in general and i["eligibility_label"] == "eligible"]
+    if not items:
+        return None
+    names = " and ".join(i["display_name"] for i in items)
+    paid = dollars(sum(i["amount_cents"] for i in items))
+    kinds = sorted({c["type"].upper() for c in _health_cards(session)}) or ["HSA", "FSA"]
+    account = " or ".join(kinds)
+    return say(f"You paid {paid} for {names} with your Visa credit, and it's HSA eligible. "
+               f"You can file a claim with your {account} provider to pay yourself back, "
+               f"for example through {CLAIM_EXAMPLES}. Keep your receipt.",
+               paid, names, "file a claim", CLAIM_EXAMPLES, "receipt")
+
+
 def _checkout_confirm(session: dict) -> Facts:
     lines, must = ["Payment complete. This was a simulated payment."], ["simulated"]
     # Supabase debits the cards atomically (confirm_checkout); the local math only shapes the reply.
@@ -204,11 +238,15 @@ def _checkout_confirm(session: dict) -> Facts:
         lines.append(f"{dollars(g['subtotal_cents'])} went on your {card['nickname']}.")
         must += [dollars(g["subtotal_cents"]), card["nickname"]]
     alerts = [a for a in (low_balance_alert(c) for c in session["cards"]) if a]
+    tip = claim_tip(session)   # claim guidance is spoken word for word, never rephrased
+    if tip:
+        lines.append(tip.template)
+        must += tip.must_say
     session["cart"], session["pending"] = [], None
     for a in alerts:
         lines.append(a.template)
         must += a.must_say
-    return say(" ".join(lines), *must, alert="low_balance" if alerts else None)
+    return say(" ".join(lines), *must, fixed=tip is not None, alert="low_balance" if alerts else None)
 
 
 def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
@@ -218,6 +256,9 @@ def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
     if d == "route_to_hsa":
         card = _card(session, rec["card_id"])
         session["pending"] = {"scope": "confirm_add", "card_id": card["id"]}
+        if code == "fsa_first":
+            return say(f"{name}, {price}. HSA eligible. {FSA_FIRST} Want to use your {card['nickname']}?",
+                       name, price, "HSA eligible", "expires", card["nickname"])
         return say(f"{name}, {price}. HSA eligible. Want to use your {card['nickname']}?",
                    name, price, "HSA eligible", card["nickname"])
     if d == "route_to_general":
@@ -282,10 +323,10 @@ def _rx_coverage(session: dict) -> Facts:
 
     # Offer only the estimated copay, never the full price; keep no drug name.
     p["name"], p["size"], p["brand"] = "your prescription", None, None
-    p["product_key"], p["upc"] = "prescription", None
+    p["product_key"] = "prescription"
     p["amount_cents"] = copay
     scan["amount_basis"] = "remaining_after_copay"
-    hsa, visa = _health_card(session), _general_card(session)
+    hsa, visa = _health_card(session, copay) or _health_card(session), _general_card(session)   # FSA first
     options = [c["id"] for c in (hsa, visa) if c]
     if hsa and hsa["balance_cents"] >= copay:
         session["pending"] = {"scope": "choose_card", "card_options": options, "overrode": False, "suggested": hsa["id"]}

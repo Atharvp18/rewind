@@ -1,10 +1,10 @@
 """Eligibility classifier: determines whether a product is HSA/FSA eligible.
 
-Classification chain:
-1. Exact UPC match in eligibility_items
-2. IRS category rules
-3. "could_not_confirm" fallback
-4. Cross-check against package marking
+Classification chain (no barcodes: Claude Vision reads the product):
+1. IRS category rules (shelf medicines must be in an IRS-backed category)
+2. "could_not_confirm" fallback
+3. Cross-check against package marking
+4. Cross-check against the scraped retailer listing (Apify), if the exact product is in it
 """
 from __future__ import annotations
 
@@ -15,49 +15,63 @@ from eligibility.irs_rules import lookup_category
 
 logger = logging.getLogger(__name__)
 
-_eligibility_lookup_upc = None
+def _retailer_row(product: ProductResolution) -> dict | None:
+    """The scraped retailer listing for this exact product, if the database has one."""
+    try:
+        from data.db import eligibility_lookup_key
+        return eligibility_lookup_key(product.product_key)
+    except Exception:   # database down or not configured: the rules alone decide
+        return None
 
 
-def _get_db_lookup():
-    """Lazy import to avoid circular dependency with data.db."""
-    global _eligibility_lookup_upc
-    if _eligibility_lookup_upc is None:
-        from data.db import eligibility_lookup_upc
-        _eligibility_lookup_upc = eligibility_lookup_upc
-    return _eligibility_lookup_upc
+def _cross_check_retailer(result: EligibilityResult, product: ProductResolution) -> EligibilityResult:
+    """Second source. It can confirm the rule's answer or downgrade it when the two disagree.
+
+    It never upgrades an answer by itself: only the IRS rules can say eligible.
+    """
+    if result.label == "could_not_confirm":
+        return result
+    row = _retailer_row(product)
+    if row is None or row.get("basis") not in ("retailer_badge", "hand_entered"):
+        return result
+    retailer_label = "eligible" if row["eligible"] else "not_eligible"
+    if retailer_label != result.label:
+        return EligibilityResult(label="could_not_confirm", basis="package_disagreement",
+                                 source="retailer_index", collected_at=row.get("collected_at"),
+                                 matched_name=row.get("name"))
+    return EligibilityResult(label=result.label, basis="retailer_match", source="retailer_index",
+                             collected_at=row.get("collected_at"), matched_name=row.get("name"))
 
 
 def classify_eligibility(
     product: ProductResolution,
     package_marking: str | None,
 ) -> EligibilityResult:
-    """Classify a product's HSA/FSA eligibility.
+    """Classify a product's HSA/FSA eligibility, then cross-check the retailer listing.
 
     Args:
-        product: The resolved product from the lookup chain.
+        product: The resolved product (name and category read by Claude Vision).
         package_marking: "eligible" or "none_seen" from vision, or None.
     """
-    # Step 1: Exact UPC match
-    if product.upc:
-        try:
-            db_lookup = _get_db_lookup()
-            row = db_lookup(product.upc)
-            if row is not None:
-                label = "eligible" if row["eligible"] else "not_eligible"
-                result = EligibilityResult(
-                    label=label,
-                    confidence=None,
-                    basis="upc_match",
-                    source=row.get("basis", "retailer_index"),
-                    collected_at=row.get("collected_at"),
-                    matched_name=row.get("name"),
-                )
-                return _cross_check_package(result, package_marking)
-        except Exception:
-            logger.exception("DB eligibility lookup failed for UPC %s", product.upc)
+    return _cross_check_retailer(_classify_by_rules(product, package_marking), product)
 
-    # Medication rule: without an exact UPC match, medications get could_not_confirm
-    if product.is_medication:
+
+def _classify_by_rules(
+    product: ProductResolution,
+    package_marking: str | None,
+) -> EligibilityResult:
+    """Classify a product's HSA/FSA eligibility from the IRS category rules.
+
+    Args:
+        product: The resolved product (name and category read by Claude Vision).
+        package_marking: "eligible" or "none_seen" from vision, or None.
+    """
+    rule = lookup_category(product.category)
+
+    # Medicines: Claude Vision names the product and its category. Shelf (OTC) medicine
+    # in an IRS-backed category is eligible (CARES Act). A medicine in any other
+    # category is never guessed: could_not_confirm.
+    if product.is_medication and rule != "eligible":
         return EligibilityResult(
             label="could_not_confirm",
             confidence=None,
@@ -67,8 +81,7 @@ def classify_eligibility(
             matched_name=None,
         )
 
-    # Step 2: IRS category rules
-    rule = lookup_category(product.category)
+    # IRS category rules
     if rule == "eligible":
         result = EligibilityResult(
             label="eligible",
