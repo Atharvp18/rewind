@@ -6,7 +6,7 @@ import pytest
 from postgrest.exceptions import APIError
 
 from data import db, seed
-from lookup.normalize import product_key_from_upc
+from lookup.normalize import normalize_key
 
 
 # --- a recording stand-in for the supabase client -------------------------------------------
@@ -85,9 +85,9 @@ def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
 def test_demo_products_and_eligibility_rows_line_up_with_tiea_key_function():
     product_keys = [p["product_key"] for p in seed.DEMO_PRODUCTS]
     assert product_keys == [e["product_key"] for e in seed.DEMO_ELIGIBILITY]
-    for p in seed.DEMO_PRODUCTS:
-        assert p["product_key"] == product_key_from_upc(p["upc"])
-        assert p["product_key"] != "upc:", "placeholder UPC lost its digits"
+    for p in seed.DEMO_PRODUCTS:   # no barcodes: keyed by brand|name|size
+        assert p["upc"] is None
+        assert p["product_key"] == normalize_key(p["brand"], p["normalized_name"], p["size"])
     labels = {e["name"]: e["eligible"] for e in seed.DEMO_ELIGIBILITY}
     assert labels == {"Advil Ibuprofen 200mg": True, "Bandages": True, "Kettle Corn": False}
 
@@ -265,6 +265,31 @@ def test_get_cart_groups_by_card_with_subtotals(sb):
     assert [(g["card_id"], g["subtotal_cents"]) for g in cart["groups"]] == [
         ("card_hsa_1", 1848), ("card_visa_1", 499)]
     assert cart["total_cents"] == 2347
+
+
+# --- additions for the Fetch.ai payment agent (agents/store.py) ----------------------------
+
+def test_add_cart_item_keeps_a_caller_supplied_id(sb):
+    sb.data = []                                    # the cart read after the insert
+    db.add_cart_item("scan1", "upc:1", "Advil", 1299, "shelf_price", "card_hsa_1", "eligible",
+                     item_id="item-abc")
+    insert = next(c for c in sb.calls if c[0] == "insert")
+    assert insert[1][0]["id"] == "item-abc"
+
+
+def test_reassign_cart_item_moves_one_row_and_marks_override(sb):
+    db.reassign_cart_item("item-abc", "card_visa_1")
+    update = next(c for c in sb.calls if c[0] == "update")
+    assert update[1][0] == {"assigned_card_id": "card_visa_1", "user_overrode_card": True}
+    assert ("eq", ("id", "item-abc"), {}) in sb.calls
+
+
+def test_reset_clears_scan_saved_prices_but_keeps_seeded_products():
+    from pathlib import Path
+    sql = (Path(db.__file__).parent / "functions.sql").read_text()
+    reset = sql[sql.index("CREATE OR REPLACE FUNCTION reset_demo"):]
+    assert "DELETE FROM product_cache WHERE source <> 'seeded';" in reset
+    assert all(p["source"] == "seeded" for p in seed.DEMO_PRODUCTS)
 
 
 # --- additions for the Fetch.ai payment agent (agents/store.py) ----------------------------

@@ -1,6 +1,6 @@
 # Rewind: Technical Specification
 
-**Derived from:** `doc/2026-10-23-rewind-final-review.md` (business spec, sections 1–24)
+**Derived from:** `specs/business_specs.md` (business spec, sections 1–24; formerly `doc/2026-10-23-rewind-final-review.md`)
 **Based on:** Atharv's technical spec draft, adapted for a Supabase-only database and trimmed to what a three-person team can build in one weekend.
 **Status:** Implementation-ready. Each owner can build their part in parallel without blocking the others.
 **Audience:** Nak, Tiea, Atharv.
@@ -31,7 +31,7 @@ The business spec still lists open items (section 17). This spec applies the def
 |---|---|---|---|
 | 1 | Data policy conflict | **All data is mock.** No real prescriptions, receipts, or insurer plan data. Insurer profiles are two synthetic plans, visibly labeled mock in the UI and the pitch | Sections 6.1, 10, 14 |
 | 2 | Eligibility data source | **Retailer-listed data collected with Apify before the demo** (fsastore.com, per business spec section 19.5), loaded into a Moss index. The IRS category rule table is the fallback and must stand alone | Sections 19.5, 24 |
-| 3 | Medication eligibility stated plainly | **Only on an exact UPC match.** Anything else falls back to `could_not_confirm` | Section 6.2 |
+| 3 | Medication eligibility stated plainly | **Revised 2026-10-24 (Tiea): no barcodes.** Claude Vision reads the product and its category; a shelf (OTC) medicine in an IRS-backed category (CARES Act) is `eligible`. A medicine in any other category falls back to `could_not_confirm`. Scope: shelf medicines only, nothing that needs a doctor's letter | Section 6.2 |
 | 4 | Copay and insurance (revised 2026-10-24) | **Insurance applies only to counter prescriptions; shelf items never mention it.** Prescriptions are read back (drug + strength) first. Copay amounts are an **estimate** from the plan's published tier table, labelled as one, only for flat-copay plans with the exact drug and strength listed; coinsurance, deductible-first, prior-auth, off-formulary, and unknown-plan cases give no number and send the user to the pharmacist, whose amount always wins. Only the estimated copay enters the cart (`remaining_after_copay`), never the full price. Copays are generally HSA/FSA-qualified (IRS Pub 502), so the agent **suggests** the HSA ("Copays are usually HSA eligible") but never routes it automatically. Five mock plans; one modeled on UnitedHealthcare Student Resources + OptumRx. A card scan keeps only the plan profile in storage; the cardholder's name is held in memory for the conversation; member ID, group, RxBIN/PCN, and DOB have no field in the extraction schema. Drug names are dropped from the session after each answer. Rewind never files a claim | Sections 20.5, 23; `backend/agents/insurance.py` |
 | 5 | Third eligibility label | **Approved.** The label is `could_not_confirm` everywhere: API, database, tests, and app | Sections 20, 24 |
 | 7 | Retailer lookup scope | **The shelf tag is the only price source in v1.** No retailer API is built | Sections 19.3, 23.3 |
@@ -68,16 +68,22 @@ rewind/
   doc/
     2026-10-23-rewind-final-review.md     business spec
     2026-10-23-rewind-technical-spec.md   this file
-  app/                                     NAK owns everything here
-    App.tsx
+  app/                                     NAK owns everything here (Expo Router, SDK 57)
     src/
-      screens/          Home, Scan, Cart, Checkout, Settings
-      components/       shared UI
+      app/              routes: index (the one camera screen), profile, _layout (see 1.10)
+      components/       shared UI (Screen, VoiceDock, CaptionBar, AccessibilityButton, ...)
+      constants/
+        theme.ts        color tokens per theme, type scale, spacing, target sizes (1.9)
       lib/
-        api.ts          the only file that talks to the backend
+        api.ts          the only file that talks to the backend (0.5 types, 0.6 endpoints)
+        api-error.ts    the 0.6 error envelope
+        mock-backend.ts offline stand-in used by api.ts when USE_MOCK is true
         audio.ts        mic capture, playback queue
-        a11y.ts         screen reader detection, settings context
-      state/            app state machine
+        a11y.tsx        screen reader detection, settings context
+        money.ts        integer-cents formatting
+        phrases.ts      the only lines the app speaks itself (Looking., welcome back, offline)
+      state/
+        agent.tsx       the 1.2 state machine (reducer) and its provider
   backend/
     main.py                               ATHARV  FastAPI app + router registration
     models/
@@ -470,6 +476,257 @@ Also required:
 - Captions match every spoken line.
 - The largest text size clips nothing on any screen.
 
+## 1.8 Interface plan
+
+> **Superseded by 1.10 (camera-first redesign, 2026-10-24).** The layout below was the first plan. The colors, type scale, and target sizes in 1.9 still apply.
+
+### Layout principles
+
+1. **Voice first, screen second.** Every screen works with the eyes closed. The screen exists for partial sight, captions, and tap fallbacks.
+2. **Same place, every screen.** Low-vision users navigate by position. Three things never move:
+   - **Top right:** the accessibility button (decision 12).
+   - **Top, below the header:** the caption bar (what the agent last said).
+   - **Bottom:** the half-moon dock with the round **Talk** button in the center.
+3. **One primary action per screen**, full width, directly above the dock, within thumb reach.
+4. **No tabs, no small icons.** Navigation is a stack. Every screen has a large labeled Back button top left, and "go to cart", "checkout" and similar spoken commands navigate too.
+5. **Nothing scrolls horizontally, nothing has a fixed height.** Text wraps at 200%; long screens scroll vertically.
+
+### Persistent frame (every screen)
+
+```
+┌────────────────────────────────────┐
+│ [‹ Back]      Screen title    [⚙ A]│  header: Back 56pt, accessibility button 56pt
+├────────────────────────────────────┤
+│ 🔊 "I see Advil, ibuprofen 200mg,   │  caption bar: last spoken line, live region
+│    $12.99. HSA eligible..."         │
+├────────────────────────────────────┤
+│                                    │
+│          screen content            │
+│                                    │
+│ [      PRIMARY ACTION (72pt)     ] │
+│    ╭──────────────────────────╮    │
+│   ╱   [Cart]   ( TALK )  [Scan] ╲  │  half-moon dock, navy; Talk is a 104pt amber circle
+└────────────────────────────────────┘
+```
+
+**Talk button behavior:** tap = agent asks "How may I help you today?" and listens (push-to-talk window); hold = push-to-talk while held. While the agent speaks, a tap interrupts it (barge-in). State is shown with text under the button ("Tap to talk", "Listening…", "Speaking…", "Looking…"), never by color alone.
+
+**Accessibility button:** short tap repeats the last prompt with a haptic pulse; long press opens Settings. VoiceOver label: "Accessibility. Tap to repeat the last message. Double tap and hold for settings."
+
+### Screens
+
+**Home (`/`)**
+```
+│ Rewind                         [A] │
+│ caption: "How may I help you today?"│
+│ ┌───────────────┐┌───────────────┐ │
+│ │  📷 Scan item  ││ 🛒 Cart · 2   │ │  two 120pt tiles
+│ └───────────────┘└───────────────┘ │
+│ HSA card   $340.00                  │  balances, large type
+│ Visa credit $5,000.00               │
+│ "Simulated payments · mock data"    │  always visible, required by 0.1 #1
+│            dock                     │
+```
+
+**Scan (`/scan`)**: the camera fills the content area. Tapping anywhere on the preview captures (tap-anywhere for tremor). The barcode reader runs continuously and attaches the digits to the next capture. After a scan, a result card slides over the lower half of the preview:
+
+```
+│ ┌────────────────────────────────┐ │
+│ │ Advil Ibuprofen 200mg          │ │  name, 28pt bold
+│ │ $12.99                         │ │  price, 44pt
+│ │ [✓ HSA eligible · high conf.]  │ │  badge: icon + text + color
+│ │ Pays with: HSA card ($340.00)  │ │
+│ │ [ ✓ Add to cart ] [ ✕ Skip ]   │ │  72pt, tap equivalents of "add that"/"skip it"
+│ └────────────────────────────────┘ │
+```
+
+A badge is always icon + words: ✓ "HSA eligible", ✕ "Not HSA eligible", ? "Could not confirm eligibility". When `decision == ask_user`, the card shows one large button per card in `card_options`. A `partial` result says "Price not found" in place of a price, never a guessed number. Permission denied shows a full-screen explanation, an "Open settings" button, and a "Say the product name" fallback.
+
+**Cart (`/cart`)**: one block per card group: card nickname and balance, items (name and price, one per row), subtotal. Footer line "Total $23.47 before tax". Primary action: **Checkout**. Secondary: "Remove last item" and "Clear cart" (the second asks again, by voice and a second tap).
+
+**Checkout (`/checkout`)**: the preview split read aloud and shown as the same groups, plus any `issues` (reroute proposals) in a bordered warning block with a ⚠ icon and the amounts written out. Primary action: **Confirm payment**. After success: a large ✓ "Payment complete", new balances, "This was a simulated payment". A low-balance alert renders as a bordered alert block and is announced with priority.
+
+**Settings (`/settings`)**: grouped, each option a full-width row with a 56pt control: Display (Standard / Dark / High contrast; Text size 100–200% in 25% steps with live preview), Captions (on/off), Voice (speech rate slow/normal/fast; volume), Input (push-to-talk vs. continuous), Motion (reduce motion), Cards (read-only list from `/v1/cards`, labeled mock). Changes apply instantly and persist in AsyncStorage.
+
+**Health banner**: if `/v1/health` reports any upstream `down`, a bordered banner under the caption bar names it in words ("Voice service is down. Using phone voice.").
+
+## 1.9 Design system and color (WCAG 2.2 AA)
+
+### Brand direction: "Mint Teal"
+
+Mint for calm (health), deep teal for trust (money). Light mint where the eye rests; one deep teal control to find, the Talk button. The background is a mint-tinted off-white, not pure white, to cut glare under store lights. The brand teal is deliberately **not** the "HSA eligible" green, so brand color never reads as an eligibility claim.
+
+**Icons:** Lucide (`lucide-react-native` + `react-native-svg`, both in Expo Go). No emoji. Icons are decorative; words carry the meaning.
+
+### Tokens (standard theme)
+
+All ratios measured by `app/scripts/contrast-audit.mjs`; full tables for all three themes are in `app/ACCESSIBILITY.md`.
+
+| Token | Hex | Measured |
+|---|---|---|
+| `bg` (mint mist) | `#F2FAF6` | ink text 15.26:1 |
+| `text` (ink teal) / `textMuted` | `#0B2427` / `#3E5A5E` | 16.21 / 7.42 on white |
+| `border` | `#5C7A7E` | 4.63 (UI 3:1) |
+| `primary` (deep teal), white label | `#0E5A63` | 7.89 |
+| `accent` (mint button), ink label | `#5EDDB4` | 9.63 |
+| Dock gradient, light mint → mint | `#E4F8EF` → `#8FE3C2` | ink text 14.64 / 10.75 |
+| Dock edge line (required: light dock is 1.11:1 on a white scene) | `#0E5A63` | 7.89 vs white |
+| Talk button gradient, white icon, white ring | `#137A84` → `#0A434A` | vs dock 4.58 / 7.28; icon 5.07 / 10.97 |
+| Caption pill, ink text, ink border | `#E4F8EF` | 14.64 |
+| See-through window: two strokes, light outer + teal inner | `#FFFFFF` + `#0E5A63` | 7.89 / 21 vs white / black scenes |
+| Info card (solid), ink edge | `#FFFFFF` | text 16.21 |
+| HSA eligible | `#0A6B4F` on `#E2F5EC` | 5.73 |
+| Not HSA eligible (slate, informational) | `#4F5B66` on `#EEF1F4` | 6.13 |
+| Could not confirm | `#4C4F9A` on `#ECECF8` | 6.20 |
+
+### Alert levels
+
+| Level | Use | Colors | Icon + title |
+|---|---|---|---|
+| Red: danger | Declined payment, errors, card frozen or closed, service down | `#B3261E` on `#FDECEA` (5.72), edge `#B3261E` | Octagon, "Declined" / "Error" / "Service down" |
+| Orange: warning / suggestion | Balance too low, reroute (6.4 rule 2), low balance after payment, add another card (6.4, 20.6), price not found, question timed out | `#8A4B00` on `#FFF3E2` (6.21), edge `#C46A00` (3.88) | Triangle, "Warning" / "Suggestion" |
+
+- Red and orange are close in lightness, so the icon and title word always differ.
+- Alerts are solid blocks, so they read the same over any camera image.
+- Haptics also differ: error buzz for red, warning buzz for orange.
+
+**Dark and high contrast** follow the same roles:
+- Dark: dock `#12302B` → `#1E5A4C` with a mint Talk button.
+- High contrast: black and white with bright mint `#6BFFC4` and 2px white edges.
+
+### Type scale
+
+System font (San Francisco / Roboto). Sizes are at 100%; the in-app text size setting multiplies them (100–200%), on top of the OS Dynamic Type setting.
+
+| Role | Size / weight | Use |
+|---|---|---|
+| `display` | 44 / 800 | Price on the result card |
+| `title` | 30 / 700 | Screen titles, product name |
+| `heading` | 24 / 700 | Group headings |
+| `body` | 20 / 400 | Default text (larger than platform default, for older eyes) |
+| `label` | 20 / 700 | Button labels |
+| `caption` | 22 / 500 | Caption bar |
+| `small` | 17 / 500 | Footnotes ("simulated", "before tax"); never smaller |
+
+Line height 1.35×. Never all-caps for meaning; never italic for meaning.
+
+### Size and spacing
+
+| Element | Size | WCAG minimum |
+|---|---|---|
+| Any tappable control | ≥ 56 × 56 pt | 24 × 24 (2.5.8 AA) |
+| Primary action button | 72 pt tall, full width | |
+| Talk button | 104 pt circle | |
+| Spacing between targets | ≥ 12 pt | |
+| Focus indicator | 3 pt ring in `focus` color | 2.4.7 (AA), 2.4.13 (AAA) guidance |
+
+Spacing scale 4 / 8 / 12 / 16 / 24 / 32 / 48. Corner radius 16 for cards, full round for the Talk button.
+
+### Motion
+
+Result card slides in over 200 ms; with Reduce Motion (OS or in-app) it appears instantly. Nothing flashes (2.3.1). The listening indicator is a static ring plus text, not a pulse, when Reduce Motion is on.
+
+### Implementation notes (deviations to agree)
+
+- **Camera frames:** `expo-camera` `takePictureAsync` writes the capture to the app cache, and the resize step writes another. The app deletes both files immediately after upload, so frames are not kept, but strictly they touch disk for under a second. Decision 14 should read "never retained" unless the team wants to research an in-memory path.
+- **Contract gaps in 0.6 (need Atharv's agreement, not changed here):**
+  1. The shape of a cart item inside `groups[].items` is not defined. The app assumes `{id, scan_id, display_name, amount_cents, eligibility_label}`, taken from the `cart_items` table.
+  2. `/v1/command` returns `action` but the values are not listed. The app handles `add_item`, `skip`, `repeat`, `read_cart`, `checkout_preview`, `checkout_confirmed`, `remove_last`, `confirm_clear_cart`, `cart_cleared`, `open_settings`, `unknown`, and treats anything else as "just speak the voice".
+  3. Saying "yes" at checkout: 3.8 lists "yes" only for a live `confirm_add` prompt. The app sends "yes" with a live `confirm_checkout` or `confirm_clear_cart` prompt to `/v1/command` too, and expects `checkout_confirmed` / `cart_cleared` back.
+  4. Checkout `issues[]` items are not defined. The app assumes `{rule, message}` and shows `message` verbatim.
+- **Mock backend:** `lib/api.ts` has a `USE_MOCK` switch that serves the run 1 / run 2 demo script from `lib/mock-backend.ts` so the app can be built and tested before the backend is up. All wording in the mock is copied from 4.4; the real backend's `compose.py` remains the only source of spoken wording in production.
+
+## 1.10 Camera-first redesign (2026-10-24, Nak)
+
+Follows the team's 3-frame wireframe. One camera screen replaces the Home / Scan / Cart / Checkout stack.
+
+| Wireframe | Built as |
+|---|---|
+| Full-screen camera, all frames | Live `CameraView` behind everything. Tap anywhere, or the dock's Scan, to capture |
+| Top-right dark circle | **Profile**: name, linked HSA/FSA and Visa cards (last 4 only), insurance, the current accessibility mode, and all 1.5 settings |
+| Half-circle dock, round button | Light-mint-to-mint gradient dock with a teal edge line; deep teal Talk button with a white mic icon and ring. Tap to talk, hold to speak, tap to interrupt. Cart and Scan buttons beside it |
+| Frame 2: gray pill | Captions. Grows leftward out of the profile button when Rewind speaks; shows the user's last words too. Tap to repeat with a buzz. Instant with Reduce Motion |
+| Frame 3: brown panel | **Transparent window** with a two-tone frame, so the product stays visible (like Google Lens / Live Text). Information sits on a solid card at the window's bottom edge, so text contrast never depends on the camera. The clear area is reserved for the 2D overlay stretch item (business spec §5). Shows onboarding steps, scan result, pill-bottle drug name and strength read-back (`confirm_strength`), cart, checkout split, declined payment, receipt |
+
+**Onboarding (frame 1):**
+1. Plain-language reason, then the phone's camera and microphone permission prompts.
+2. Demo phone verification with one preset mock number (`DEMO_MODE`, `+1 (415) 555-0100`; 555-01xx numbers reach no one).
+3. Insurance card by camera (card-shaped focus corners).
+4. **Name clarification.** Rewind never asks for the name. A pop-up pointing at the card shows the member name read from it. Rewind says "Your name is Alex Rivera. Is that right?"
+   - **Yes:** saves it and thanks the user by first name.
+   - **No:** type the name, or scan again.
+   - **No readable name on the card:** the user can type it.
+5. Insurance and prescription-benefit read-back.
+6. HSA/FSA and Visa cards by camera.
+
+The name and insurance are stored on the phone only.
+
+**Haptics:**
+- Talk tap: medium impact.
+- Answer finished: success.
+- Decline, alert, or error: error.
+- Every buzz comes with speech and text, and the user can turn vibration off.
+
+Measured contrast for every new element: `app/ACCESSIBILITY.md`.
+
+### Decisions that need team sign-off
+
+1. **Decision 12 changed.** The persistent top-right button now opens Profile. "Tap to repeat" moved to tapping the caption pill. Long press is no longer used.
+2. **Real insurance and payment cards are scanned** to test text extraction. This conflicts with business spec 6.1 ("no real insurance card is scanned") and the mock-only rule in 0.1 #1. Mitigations: only the last 4 digits ever reach the app, images are deleted after upload, and nothing is logged. The image still reaches the backend and its vision model.
+3. **Name and phone at onboarding.** Not in the specs. The name comes only from the insurance card and is clarified, never asked for; the phone number is a fixed mock number; both stay on the phone.
+4. **Onboarding wording is app-side** (`lib/phrases.ts`). No endpoint or `compose.py` wording exists for it.
+
+### What is extracted from cards (team decision 2026-10-24)
+
+| Card | Extracted | Kept |
+|---|---|---|
+| Insurance | `insurer_name`, `plan_name`, `member_first_name`, `member_last_name`, `member_id_last4`, and prescription benefits `rx: {bin, pcn, group, copays: [{label, amount_cents}]}` as printed | On the phone, for suggestions. Member ID last 4 only |
+| Credit, debit, HSA, FSA | `network`, `card_type` (`hsa`/`fsa`/`general`), `funding` (`credit`/`debit`, if printed), `last4` | Only what adding the payment method needs. Never the full number, expiry, or security code |
+
+All payment cards are **Visa**: HSA and FSA cards are Visa cards from the health plan, and the everyday card is a Visa credit or debit card. The type (`hsa`, `fsa`, or `general` + `credit`/`debit`) is what Rewind tells apart; the UI says "Visa HSA card", "Visa FSA card", "Visa credit", "Visa debit".
+
+Nothing else on either card is read or stored. TypeScript shapes: `InsuranceCard` and `PaymentCardRead` in `app/src/lib/api.ts`.
+
+### Spending order for HSA/FSA-eligible items (team decision 2026-10-24, needs Atharv)
+
+**FSA first, then HSA, then the everyday Visa.** FSA money is the employer's and can be lost when the person leaves that job; HSA money stays with the person.
+
+Changes this makes elsewhere:
+- **Business spec 20.6** said: with both HSA and FSA linked, ask which to use. Now Rewind *suggests* the FSA (or the next card in order) and still needs a yes. It never charges silently, and every choice still requires confirmation (3.5).
+- **Routing (3.5) STEP 4:**
+  - Try the health cards in the order FSA, then HSA.
+  - If the first can't cover the item, suggest the next one that can, using `ask_user` + `reroute` (`insufficient_balance`). If neither can, suggest the everyday Visa.
+  - If nothing covers it, `blocked`.
+- **Group rule 2 at checkout:**
+  - For each FSA/HSA group over its balance, keep items (largest first) while they fit.
+  - Move the rest to the next card in order that has room (HSA, then Visa).
+  - Spoken example: "Your FSA balance is only $15.00, which doesn't cover $18.48. Want me to keep the Advil on your FSA and move the bandages to your Visa credit?"
+- **Seed data (3.3), proposed:**
+
+  | Card | id | Run 1 | Run 2 |
+  |---|---|---|---|
+  | FSA card (Visa) | `card_fsa_1` | $25.00 | $15.00 |
+  | HSA card (Visa) | `card_hsa_1` | $340.00 | $5.00 |
+  | Visa credit | `card_visa_1` | $5,000.00 | $5,000.00 |
+
+  - **Run 1:** Advil and bandages go to the FSA; kettle corn to the Visa; the FSA ends at **$6.52**.
+  - **Run 2:** the FSA can't cover $18.48. Keep the Advil on the FSA; the bandages ($5.49) don't fit the HSA ($5.00), so they move to the Visa. "No, keep my cards" shows the decline.
+- **Demo script (4.4) lines change.** "Your HSA balance is $340" becomes "Your FSA balance is $25", and the run 1 result line becomes "Payment complete. Your FSA balance is now $6.52." The 3.12 test numbers ($321.52) need the same update.
+
+Implemented in the app's mock backend (`app/src/lib/mock-backend.ts`); the real backend is unchanged until Atharv agrees.
+
+### Proposed contract additions (Atharv and Tiea)
+
+| Proposed | Shape | Owner |
+|---|---|---|
+| `POST /v1/onboarding/card-scan` | multipart `image`, `kind` (`insurance` or `payment`) → `{state: read\|unclear, framing_hint, insurance: InsuranceCard \| null, payment: PaymentCardRead \| null}` (shapes below). Never return or log a full card or member number | Tiea (vision prompt), Atharv (endpoint) |
+| `item_bbox` on `ScanResult` (and `VisionExtract`) | `{x, y, w, h}` as fractions of the photo: where the item is, so the focus corners and pop-up sit on it | Tiea (vision prompt), Atharv (pass-through) |
+| `POST /v1/cards` | `{type, nickname, last4, network}` → `Card` | Atharv |
+| `Card.last4`, `Card.network` | optional fields on `/v1/cards` | Atharv |
+| `use_proposed_split` on `/v1/checkout/confirm` | `false` charges the original cards. A group over its card's balance fails all-or-nothing with `E_CARD_DECLINED` and charges nothing | Atharv |
+| `E_CARD_DECLINED` | new error code; `speech` says which card, its balance, the total, and that nothing was charged | Atharv |
+| `/v1/command` "no" with a live `confirm_checkout` reroute | means "keep my cards": confirm with `use_proposed_split: false` | Atharv |
+
 ---
 
 # PART 2 — VISION, LOOKUP, ELIGIBILITY (TIEA)
@@ -588,28 +845,30 @@ Per business spec section 19.2, simplified by decision 7 (no retailer API in v1)
 Order matters.
 
 ```
-1. If product.upc and eligibility_lookup_upc(upc) returns a row:
-       label      = "eligible" if row.eligible else "not_eligible"
-       basis      = "upc_match"
-       confidence = None
-       → go to step 5
+(Revised 2026-10-24, Tiea. No barcodes; Claude Vision names the product and its category.)
 
-2. Moss query on "brand name size category":
-       if top score >= THRESHOLD and size/strength agrees:
-           label = from matched row; basis = "semantic_match"; confidence = score
-           → go to step 5
-       if strength mismatch (200 mg vs 400 mg):
-           label = "could_not_confirm"; basis = "semantic_match"; → return
-       if Moss unavailable or times out:
-           basis = "index_unavailable"; → step 3
-
-3. IRS category rule table (2.8):
+1. IRS category rule on Vision's category (2.8):
        eligible / not_eligible / needs_review
-       needs_review → label = "could_not_confirm"
+       a medication outside an IRS-backed "eligible" category -> "could_not_confirm"
+       needs_review -> "could_not_confirm"
        basis = "irs_category_rule"; confidence = None
 
-4. Otherwise:
-       label = "could_not_confirm"; basis = "no_match"
+2. Moss query on "brand name category" (lookup/moss_index.py). Size, strength and pack count are
+   left out on purpose: they do not change whether an OTC medicine is eligible.
+       accept the closest listing if score >= 0.75,
+              OR score >= 0.40 and the listing's brand appears in the product's brand/name
+       Moss answered, no accepted listing  -> index_checked = True, no match
+       Moss unavailable or timed out       -> index_checked = False (step 1 decides alone)
+
+3. Combine ("eligible" needs two sources):
+       rule eligible + listing eligible            -> eligible, basis "semantic_match", confidence = score
+       rule eligible + no listing (index answered) -> could_not_confirm, basis "no_match"
+       rule eligible + listing not eligible        -> could_not_confirm, basis "package_disagreement"
+       rule not_eligible                           -> not_eligible (already routes to the Visa)
+       a listing never upgrades could_not_confirm; only the IRS rules can say eligible
+
+4. Price fallback: if the shelf tag price is missing and a listing was accepted, use the listing's
+   price (price_source "seeded") and speak it as "listed online at $X". A shelf tag always wins.
 
 5. Cross-check against the package marking:
        if package_marking == "eligible" and label == "not_eligible":
@@ -617,9 +876,9 @@ Order matters.
        (marking "none_seen" never overrides an index result)
 ```
 
-**Medication rule (decision 3).** For a medication, only `basis == "upc_match"` may produce `eligible` or `not_eligible`. A medication that reaches step 2 or 3 returns `could_not_confirm`.
+**Medication rule (decision 3, revised 2026-10-24).** Barcodes are removed. A medication is `eligible` only when Claude Vision's category is IRS-backed `eligible` (pain_relief, cold_flu_allergy, digestive_health, menstrual_care, otc_medicine); any other category returns `could_not_confirm`. Products are keyed by `normalize_key(brand, name, size)`.
 
-**THRESHOLD** cannot be known in advance. Start at 0.75, tune it on the real demo shelf, then hardcode it with a comment recording the test.
+**THRESHOLD** is 0.75, with a 0.40 floor when the brand agrees. Live check on 2026-10-24 (`scripts/check_moss.py`, 26 rows): correct products scored 0.50 to 1.00 (brand-only "Allegra" 0.50, "Tums" 0.61), a wrong-brand near match scored 0.67 and was rejected, unrelated items scored 0.22 to 0.40. Re-tune on the real demo shelf.
 
 **The index must hold both eligible and non-eligible rows.** An index of eligible items only returns a near match for everything, including kettle corn (section 24.6). Build the negative examples in from the start.
 
@@ -674,7 +933,7 @@ Moss index (`create_index`): `id` is the UPC or the normalized key, `text` is "b
 - Stubs committed in hour 1.
 - 10 photos of the demo shelf return valid `VisionExtract` objects. An unclear photo returns low confidence and `E_VISION_UNCLEAR`, never a guessed price.
 - The three demo items get the right labels. Kettle corn returns `not_eligible` or `could_not_confirm`, **never** `eligible`.
-- A match below threshold, a strength mismatch, and a package disagreement each return `could_not_confirm`.
+- An eligible rule with no store listing, a listing that disagrees, and a package disagreement each return `could_not_confirm`. Strength and pack size are not compared.
 - On 20 to 30 extra test items, **no non-eligible item is labeled eligible.** Record how many return `could_not_confirm`; that number goes in the pitch.
 - The medical-advice refusal fires reliably.
 
@@ -868,6 +1127,13 @@ Build it in **hour 1**, before routing. After it runs, clear the in-memory cart 
 
 ## 3.5 Routing algorithm
 
+> **Claim tip at checkout (added 2026-10-24, Tiea).** If an *eligible* item was paid
+> on a general card (Visa), the checkout confirmation adds: "You paid $X for {items}
+> with your Visa credit, and it's HSA eligible. You can file a claim with your
+> {HSA|FSA} provider to pay yourself back, for example through Optum Financial or
+> HealthEquity. Keep your receipt." The agent points the way only; it never files.
+> Not said for not-eligible or could-not-confirm items.
+
 `payments/routing.py`. Pure function: no I/O, no network.
 
 ```python
@@ -909,10 +1175,16 @@ STEP 3 — not_eligible
 STEP 4 — eligible
   health_cards = active cards with type in ('hsa','fsa')
   if none:                         route_to_general, reason "no_health_card_linked"
-  if more than one and no default: ask_user, reason "multiple_health_cards"
-  card = the single health card, or the default
-  if card.balance_cents >= amount (equality is sufficient):
-      decision = "route_to_hsa", reason "eligible_sufficient_balance"
+  FSA FIRST (revised 2026-10-24, Tiea): order health_cards FSA before HSA, because
+      FSA money expires at the end of the plan year and HSA money never does.
+      Scope: shelf (OTC) medicines; nothing that needs a doctor's letter.
+  card = the first card in that order whose balance covers the amount
+  if card exists (equality is sufficient):
+      decision = "route_to_hsa", reason "fsa_first" if card is an FSA
+                 else "eligible_sufficient_balance"
+      An FSA pick is spoken with: "Your FSA money expires at the end of the
+      plan year, so I'll use it first."
+      The user can still name the other card ("put it on my HSA").
   else (including balance <= 0):
       if a general card covers it:
           decision = "ask_user", reason "eligible_insufficient_balance",
@@ -1038,7 +1310,7 @@ async def scan(image: UploadFile, barcode: str | None = None, hint_price_cents: 
 
 | Situation | Spoken |
 |---|---|
-| Medication, exact UPC match | No confidence phrase: "HSA eligible." |
+| Medication in an IRS-backed category | No confidence phrase: "HSA eligible." |
 | Non-medication, `upc_match` or `irs_category_rule` | "high confidence" |
 | Non-medication, `semantic_match` | "high confidence" if score ≥ the high mark set in testing, else "moderate confidence" |
 | `could_not_confirm` | "I could not confirm eligibility" |
@@ -1146,7 +1418,7 @@ Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 321
 
 **Speech (Atharv):** every line in 4.4 matches exactly.
 
-**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; below threshold, strength mismatch, and package disagreement each return `could_not_confirm`; a medication without an exact UPC match returns `could_not_confirm`; Moss down falls back to category rules.
+**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; an eligible rule with no store listing, a disagreeing listing, and package disagreement each return `could_not_confirm`; a medication outside the IRS-backed categories returns `could_not_confirm`; Moss down falls back to category rules.
 
 **App (Nak), manual:** permission-denied paths; silent switch; Bluetooth; incoming call mid-sentence; 3-minute idle reconnect; barge-in; largest text size on every screen; VoiceOver and TalkBack.
 

@@ -30,12 +30,22 @@ HELP = say("Send me a shelf photo, or tell me the product's name, and I'll say w
            "what it costs, and whether it's HSA eligible.")
 
 
-def _pipeline(extract: VisionExtract) -> tuple[ProductResolution, EligibilityResult]:
+async def _pipeline(extract: VisionExtract) -> tuple[ProductResolution, EligibilityResult]:
     from lookup.chain import resolve_product
+    from lookup.moss_index import MossUnavailable, find_match
     from eligibility.classify import classify_eligibility
 
     product = resolve_product(extract)
-    return product, classify_eligibility(product, extract.package_eligibility_marking)
+    try:
+        retailer, checked = await find_match(product), True   # closest store listing, or None
+    except MossUnavailable:
+        retailer, checked = None, False                        # the IRS rules decide alone
+    if product.amount_cents is None and retailer and retailer.get("price_cents") and product.name != "Unknown product":
+        # No readable shelf tag (or no live demo): fall back to the price the store lists.
+        product.amount_cents, product.price_source = retailer["price_cents"], "seeded"
+        product.state = "resolved"
+        product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
+    return product, classify_eligibility(product, extract.package_eligibility_marking, retailer, checked)
 
 
 def facts_for(product: ProductResolution, elig: EligibilityResult) -> Facts:
@@ -55,7 +65,8 @@ def facts_for(product: ProductResolution, elig: EligibilityResult) -> Facts:
     else:
         label = "I could not confirm eligibility"
 
-    parts = [f"I see {name}" + (f", {price}." if price else ". I could not read a price.")]
+    listed = product.price_source in ("cache", "seeded")   # not a shelf tag: say where the price is from
+    parts = [f"I see {name}" + ((f", listed online at {price}." if listed else f", {price}.") if price else ". I could not read a price.")]
     parts.append(label + ".")
     if product.state == "resolved":
         parts.append("Would you like to add it?")
@@ -89,18 +100,18 @@ async def handle_card(image: bytes) -> tuple[Facts, dict | None, str | None]:
     return card_facts(card, profile), profile, name
 
 
-async def handle(image_url: str | None = None, barcode: str | None = None,
+async def handle(image_url: str | None = None,
                  product_hint: str | None = None, is_prescription: bool | None = None,
                  ) -> tuple[Facts, dict | None]:
     """Pure handler for products and pharmacy labels: (facts, scan dict or None).
 
     Insurance cards are handled by handle_full(); this keeps the old two-value shape.
     """
-    facts, scan, _, _ = await handle_full(image_url, barcode, product_hint, is_prescription)
+    facts, scan, _, _ = await handle_full(image_url, product_hint, is_prescription)
     return facts, scan
 
 
-async def handle_full(image_url: str | None = None, barcode: str | None = None,
+async def handle_full(image_url: str | None = None,
                       product_hint: str | None = None, is_prescription: bool | None = None,
                       ) -> tuple[Facts, dict | None, dict | None, str | None]:
     """(facts, scan, card profile, person name)."""
@@ -116,14 +127,14 @@ async def handle_full(image_url: str | None = None, barcode: str | None = None,
             logger.warning("image download failed: %s", exc)
             return say("I couldn't open that photo. Please send it again, or tell me the product's name."), None, None, None
         try:
-            extract = extract_product(image, barcode_hint=barcode)
+            extract = extract_product(image)
         except Exception:
             logger.exception("vision failed")
             return say("I couldn't read that photo. Try again with the label facing the camera."), None, None, None
         if extract.image_kind == "insurance_card":
             facts, profile, name = await handle_card(image)
             return facts, None, profile, name
-        product, elig = _pipeline(extract)
+        product, elig = await _pipeline(extract)
     elif product_hint:
         strength = strength_of(product_hint)
         name = re.sub(r"\s*\d+(?:\.\d+)?\s*(mg|mcg|g|ml)\b", "", product_hint, flags=re.I).strip() or product_hint
@@ -156,7 +167,7 @@ async def on_request(ctx: Context, sender: str, msg: ProductRequest):
     if sender != ORCHESTRATOR_AGENT_ADDRESS:
         ctx.logger.warning("ignoring ProductRequest from unknown sender %s", sender)
         return
-    facts, scan, profile, name = await handle_full(msg.image_url, msg.barcode, msg.product_hint, msg.is_prescription)
+    facts, scan, profile, name = await handle_full(msg.image_url, msg.product_hint, msg.is_prescription)
     await ctx.send(sender, ProductResponse(request_id=msg.request_id, facts=FactsMsg.of(facts), scan=scan,
                                            card_profile=profile, person_name=name))
 

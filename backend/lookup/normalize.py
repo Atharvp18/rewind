@@ -17,12 +17,6 @@ def normalize_key(brand: str | None, name: str | None, size: str | None) -> str:
     return "n:" + hashlib.sha1(combined.encode()).hexdigest()[:16]
 
 
-def product_key_from_upc(upc: str) -> str:
-    return "upc:" + re.sub(r"\D", "", upc)
-
-
-def build_product_key(upc: str | None, brand: str | None, name: str | None, size: str | None) -> str:
-    """UPC key if a barcode is known, else the normalized hash."""
-    if upc:
-        return product_key_from_upc(upc)
+def build_product_key(brand: str | None, name: str | None, size: str | None) -> str:
+    """Products are keyed by what Claude Vision reads; there are no barcodes."""
     return normalize_key(brand, name, size)

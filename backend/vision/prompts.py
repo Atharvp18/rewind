@@ -33,7 +33,6 @@ Return ONLY valid JSON matching this schema, no other text:
   "name": "string | null",
   "brand": "string | null",
   "size": "string | null",
-  "upc_digits": "string | null",
   "shelf_price_cents": "integer | null",
   "category": "one of: otc_medicine, first_aid, menstrual_care, pain_relief, cold_flu_allergy, digestive_health, eye_care, foot_care, diagnostic_device, sunscreen, vitamins_supplements, personal_care, cosmetics, grocery, household, baby_care, other",
   "is_medication": false,
@@ -48,5 +47,5 @@ Return ONLY valid JSON matching this schema, no other text:
 
 VISION_USER_PROMPT = """\
 Analyze this product image. Extract the product name, brand, size, price, \
-and category. If a barcode is visible, read the digits. \
+and category. \
 Report any HSA/FSA eligibility markings on the package or shelf tag."""
