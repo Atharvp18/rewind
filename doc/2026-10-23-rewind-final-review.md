@@ -96,6 +96,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Figma | Plausible | Wireframes and design system |
 | Fetch.ai | Integrated | Necessary |
 | Meta | Stretch | Community feature only |
+Apify, Best Use of Apify	Strong	$5,000 total across 5 places. Scrapes fsastore.com to build the HSA/FSA eligibility database that Moss uses for product classification
 
 **Anthropic judging criteria**
 
@@ -587,6 +588,29 @@ The team decided that products are not pre-loaded into a catalog. Every product 
 | Resolved | Name, price, and eligibility known | Normal flow (section 6.2) |
 | Partial | Name known, price or eligibility missing | Speak what is known, ask for the rest |
 | Unresolved | Product not identified | "I could not confirm this item. Try another angle, or tell me what it is" |
+
+19.5 HSA/FSA Eligibility Data Pipeline (added 2026-10-24)
+
+Source: fsastore.com product catalog. This site carries verified HSA/FSA eligible products organized by category, with product names, brands, and eligibility status confirmed against IRS Section 213(d).
+
+Pipeline:
+
+Apify scrapes fsastore.com product listings across all categories (OTC medicines, first aid, health devices, personal care, eye care, foot care, digestive health, allergy and sinus, pain relief, cold and flu)
+The scrape outputs a JSON file of product entries, each with: product name, brand, category, and eligibility status
+On backend startup, this JSON is loaded into Moss as the eligibility knowledge base
+When ProductAgent identifies a product through the vision model, it queries Moss with the product name and category
+Moss performs a semantic match against the scraped data in under 10ms (vendor claim, section 23.2) and returns the eligibility result with a confidence score
+If Moss finds a strong match, the agent states eligibility plainly. If no match or a weak match, the agent says “I could not confirm eligibility” and asks which card to use
+
+Why Apify plus Moss instead of a hardcoded list:
+
+A hardcoded category list (for example “pain relievers are eligible”) handles simple cases but fails on ambiguous products like medicated lip balm, therapeutic heating pads, or dual purpose items like sunscreen. Apify provides real product level data from a verified source. Moss provides semantic matching so “Advil PM Extra Strength” matches to “ibuprofen diphenhydramine sleep aid” even when the exact product name is not in the database. Together they give product level verification, not category guessing.
+
+Apify track fit: Apify powers the data pipeline that keeps the eligibility database current and comprehensive. Without it, the agent classifies from a small hand built list. With it, the agent classifies against thousands of verified products.
+
+Moss track fit: Moss performs the semantic retrieval that makes the eligibility lookup work across product name variations, store brands, and generic versus brand name differences, all in under 10ms so the voice response has no added delay.
+
+Status: source chosen (resolves section 17 item 2 for HSA/FSA eligible items).
 
 ---
 
