@@ -163,7 +163,7 @@ def test_with_the_real_seed_an_eligible_item_goes_to_the_fsa_default_without_ask
 
     r = route(cards=cards_for_run(1))
     assert (r.decision, r.card_id, r.reason_code) == ("route_to_hsa", "card_fsa_1", "eligible_sufficient_balance")
-    assert r.balance_before_cents == 34000 and r.balance_after_cents == 32701
+    assert r.balance_before_cents == 2500 and r.balance_after_cents == 1201
 
 
 def test_with_the_real_seed_run2_asks_to_use_the_visa_because_both_health_cards_are_short():
@@ -174,19 +174,15 @@ def test_with_the_real_seed_run2_asks_to_use_the_visa_because_both_health_cards_
     assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
 
 
-def test_with_the_real_seed_run2_checkout_keeps_advil_on_the_fsa_and_moves_the_bandages_to_the_hsa():
-    """The seed's run 2 has the HSA at $15.00 too, so the HSA (next in order) has room for the bandages.
-
-    For the declined-card story (bandages end up on the Visa) the HSA must be under $5.49; see the
-    next test and the proposed seed in the spec (HSA $5.00 in run 2).
-    """
+def test_with_the_real_seed_run2_checkout_keeps_advil_on_the_fsa_and_moves_the_bandages_to_the_visa():
+    """Run 2 seed: FSA $15.00, HSA $5.00. The HSA is under $5.49, so the bandages fall through to the Visa."""
     from data.seed import cards_for_run
 
     plan = plan_checkout([item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")],
                          cards_for_run(2))
     issue = plan.issues[0]
     assert (issue.rule, issue.card_id, issue.keep_item_ids) == (2, "card_fsa_1", ["a"])
-    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_hsa_1")]
+    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_visa_1")]
 
 
 def test_run2_with_a_nearly_empty_hsa_sends_the_bandages_to_the_visa():

@@ -21,10 +21,11 @@ STORE = {"name": "Rewind Demo Store", "address": "123 Main Street, Berkeley, CA 
 NESSIE_ACCOUNT_ENV = {"card_hsa_1": "NESSIE_HSA_ACCOUNT_ID", "card_fsa_1": "NESSIE_FSA_ACCOUNT_ID",
                       "card_visa_1": "NESSIE_VISA_ACCOUNT_ID"}
 
-# Starting balance of each health card (HSA and FSA) per demo run:
-# run 1: $340.00, run 2: $15.00 (declined-card run). Both cards start the same.
-HEALTH_BALANCE_CENTS = {1: 34000, 2: 1500}
-HSA_BALANCE_CENTS = HEALTH_BALANCE_CENTS      # old name, kept so existing imports keep working
+# Starting balance of each health card per demo run (tech spec seed numbers):
+# run 1: FSA $25.00, HSA $340.00. Run 2 (declined-card run): FSA $15.00, HSA $5.00, so a $5.49 item
+# is too much for both health cards and the suggestion falls through to the Visa credit.
+HEALTH_BALANCE_CENTS = {1: {"fsa": 2500, "hsa": 34000}, 2: {"fsa": 1500, "hsa": 500}}
+HSA_BALANCE_CENTS = {run: b["hsa"] for run, b in HEALTH_BALANCE_CENTS.items()}   # old name, kept for imports
 
 # The FSA is the default health card (team decision, 2026-10-24; the tech spec still shows the HSA
 # as default). With two health cards, an eligible item goes to the default without asking.
@@ -32,7 +33,7 @@ CARDS = [
     {"id": "card_hsa_1", "type": "hsa", "nickname": "HSA card",
      "balance_cents": 34000, "nessie_account_id": None, "status": "active", "is_default": False},
     {"id": "card_fsa_1", "type": "fsa", "nickname": "FSA card",
-     "balance_cents": 34000, "nessie_account_id": None, "status": "active", "is_default": True},
+     "balance_cents": 2500, "nessie_account_id": None, "status": "active", "is_default": True},
     {"id": "card_visa_1", "type": "general", "nickname": "Visa credit",
      "balance_cents": 500000, "nessie_account_id": None, "status": "active", "is_default": False},
 ]
@@ -89,7 +90,7 @@ def cards_for_run(run: int) -> list[dict]:
     cards = [dict(c) for c in CARDS]
     for card in cards:
         if card["type"] in ("hsa", "fsa"):
-            card["balance_cents"] = HEALTH_BALANCE_CENTS[run]
+            card["balance_cents"] = HEALTH_BALANCE_CENTS[run][card["type"]]
         # Nessie account ids belong to whoever's sandbox is in use, so they come from the
         # environment (NESSIE_HSA_ACCOUNT_ID, NESSIE_VISA_ACCOUNT_ID); unset means not linked.
         card["nessie_account_id"] = os.environ.get(NESSIE_ACCOUNT_ENV[card["id"]]) or None

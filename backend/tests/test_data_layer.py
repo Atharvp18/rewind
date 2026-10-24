@@ -57,8 +57,8 @@ def sb(monkeypatch):
 def test_run_balances_and_money_are_integer_cents():
     run1 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(1)}
     run2 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(2)}
-    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 34000, "card_visa_1": 500000}
-    assert run2 == {"card_hsa_1": 1500, "card_fsa_1": 1500, "card_visa_1": 500000}
+    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 2500, "card_visa_1": 500000}
+    assert run2 == {"card_hsa_1": 500, "card_fsa_1": 1500, "card_visa_1": 500000}
     for card in seed.CARDS:
         assert type(card["balance_cents"]) is int
     for product in seed.DEMO_PRODUCTS:
@@ -76,7 +76,7 @@ def test_demo_arithmetic_matches_the_script():
 
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
-    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 34000, 500000]
+    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 2500, 500000]
     for bad in (0, 3, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
@@ -244,13 +244,13 @@ def test_checkout_rejects_a_float_amount_before_calling_the_database(sb):
 
 
 def test_reset_demo_sends_the_seed_and_returns_cards_and_empty_cart(sb):
-    sb.outcomes = [{"cards": [{"id": "card_hsa_1", "balance_cents": 1500}]},   # rpc
+    sb.outcomes = [{"cards": [{"id": "card_hsa_1", "balance_cents": 500}]},   # rpc
                    [],                                                           # cart_items
                    [{"id": "card_hsa_1", "nickname": "HSA card"}]]               # cards
     result = db.reset_demo(2)
     rpc = next(c for c in sb.calls if c[0] == "rpc")
     assert rpc[1][0] == "reset_demo" and rpc[1][1]["p_run"] == 2
-    assert next(c for c in rpc[1][1]["p_cards"] if c["id"] == "card_hsa_1")["balance_cents"] == 1500
+    assert next(c for c in rpc[1][1]["p_cards"] if c["id"] == "card_hsa_1")["balance_cents"] == 500
     assert result["cart"] == {"groups": [], "total_cents": 0}
 
 

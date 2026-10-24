@@ -241,8 +241,8 @@ def test_sentences_always_match_the_splitter_and_carry_no_dollar_fragments():
     assert compose._request("x").request_id != compose._request("x").request_id
 
 
-def test_run_2_preview_offers_the_hsa_before_the_visa_when_the_hsa_has_room():
-    cards = cards_for_run(2)                                   # FSA $15.00, HSA $15.00
+def test_run_2_preview_falls_through_to_the_visa_when_both_health_cards_are_short():
+    cards = cards_for_run(2)                                   # FSA $15.00, HSA $5.00
     items = cart(("Advil Ibuprofen 200mg", 1299, "card_fsa_1", "eligible"), ("Bandages", 549, "card_fsa_1", "eligible"))
     preview = compose.checkout_preview(plan_checkout(items, cards), cards, items, prompt_id="p")
-    assert "keep the Advil Ibuprofen 200mg on your FSA card and move the Bandages to your HSA card" in preview.text
+    assert "keep the Advil Ibuprofen 200mg on your FSA card and move the Bandages to your Visa credit" in preview.text
