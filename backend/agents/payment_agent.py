@@ -118,7 +118,13 @@ def _route(session: dict, scan: dict) -> dict:
             return {"decision": "blocked", "card_id": None, "reason_code": "no_card_covers", "card_options": []}
         return {"decision": "route_to_general", "card_id": visa["id"], "reason_code": "no_health_card_linked", "card_options": []}
     if covering:
-        code = "fsa_first" if covering["type"] == "fsa" else "eligible_sufficient_balance"
+        first = _health_card(session)               # FSA first, then HSA (the spending order)
+        if covering["type"] == "fsa":
+            code = "fsa_first"
+        elif first["type"] == "fsa" and first["id"] != covering["id"]:
+            code = "fsa_short_use_hsa"              # the FSA cannot cover it, so the HSA does
+        else:
+            code = "eligible_sufficient_balance"
         return {"decision": "route_to_hsa", "card_id": covering["id"], "reason_code": code, "card_options": []}
     if visa and visa["balance_cents"] >= amount:
         return {"decision": "ask_user", "card_id": visa["id"], "reason_code": "eligible_insufficient_balance",
@@ -181,13 +187,26 @@ def _balances(session: dict) -> Facts:
                *[m for a in low for m in a.must_say], alert="low_balance")
 
 
+def _reroute_target(session: dict, card: dict, moved: list[dict]) -> dict | None:
+    """The next card in spending order that can take every moved item: FSA, then HSA, then the Visa.
+
+    An FSA's overflow tries the HSA first; an HSA's overflow goes to the Visa. All moved items go to
+    one card, so the question stays one question.
+    """
+    need = sum(i["amount_cents"] for i in moved)
+    order = [c for c in _health_cards(session) if c["type"] == "hsa"] if card["type"] == "fsa" else []
+    if _general_card(session):
+        order.append(_general_card(session))
+    committed = {g["card"]["id"]: g["subtotal_cents"] for g in _groups(session)}
+    return next((c for c in order if c["id"] != card["id"] and c["balance_cents"] - committed.get(c["id"], 0) >= need), None)
+
+
 def _checkout_preview(session: dict) -> Facts:
     if not session["cart"]:
         return say("Your cart is empty.", "empty")
     for g in _groups(session):
         card = g["card"]
         if g["subtotal_cents"] > card["balance_cents"]:
-            visa = _general_card(session)
             keep, move, remaining = [], [], card["balance_cents"]
             for item in sorted(g["items"], key=lambda i: -i["amount_cents"]):
                 if item["amount_cents"] <= remaining:
@@ -196,15 +215,16 @@ def _checkout_preview(session: dict) -> Facts:
                 else:
                     move.append(item)
             sub, nick = dollars(g["subtotal_cents"]), card["nickname"]
-            if visa is None or not move:
+            target = _reroute_target(session, card, move) if move else None
+            if target is None:
                 return _with_alert(say(f"Your {nick} can't cover {sub}. Please use another card for this item.",
                                        nick, sub, "another card"), card)
-            session["pending"] = {"scope": "confirm_reroute", "move_ids": [i["id"] for i in move], "to_card": visa["id"]}
+            session["pending"] = {"scope": "confirm_reroute", "move_ids": [i["id"] for i in move], "to_card": target["id"]}
             keep_names = " and ".join(i["display_name"] for i in keep) or "nothing"
             move_names = " and ".join(i["display_name"] for i in move)
             return say(f"Your {nick} can't cover all {sub}. "
-                       f"Want me to keep the {keep_names} on your {nick} and move the {move_names} to your {visa['nickname']}?",
-                       nick, sub, keep_names, move_names, visa["nickname"])
+                       f"Want me to keep the {keep_names} on your {nick} and move the {move_names} to your {target['nickname']}?",
+                       nick, sub, keep_names, move_names, target["nickname"])
     session["pending"] = {"scope": "confirm_checkout"}
     summary = _cart_summary(session)
     return say(summary.template + " Ready to check out?", *summary.must_say)
@@ -261,6 +281,11 @@ def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
         if code == "fsa_first":
             return say(f"{name}, {shown}. HSA eligible. {FSA_FIRST} Want to use your {card['nickname']}?",
                        name, price, "HSA eligible", "expires", card["nickname"])
+        if code == "fsa_short_use_hsa":      # never the balance: only that the FSA cannot cover it
+            fsa = _health_card(session)
+            return say(f"{name}, {shown}. HSA eligible. Your {fsa['nickname']} can't cover it, so I'd use your "
+                       f"{card['nickname']}. Want to use your {card['nickname']}?",
+                       name, price, "HSA eligible", fsa["nickname"], "can't cover", card["nickname"])
         return say(f"{name}, {shown}. HSA eligible. Want to use your {card['nickname']}?",
                    name, price, "HSA eligible", card["nickname"])
     if d == "route_to_general":
@@ -412,9 +437,11 @@ def _resolve_pending(session: dict, intent: Intent) -> Facts | None:
             return say("Okay, checkout cancelled.", "cancelled")
     elif scope == "confirm_reroute":
         if yes:
+            to_card = _card(session, pending["to_card"])
             for item in session["cart"]:
                 if item["id"] in pending["move_ids"]:
-                    item["assigned_card_id"], item["user_overrode_card"] = pending["to_card"], True
+                    # the flag marks an eligible item put on the Visa (a possible reimbursement), not FSA -> HSA
+                    item["assigned_card_id"], item["user_overrode_card"] = to_card["id"], to_card["type"] == "general"
             session["pending"] = None
             preview = _checkout_preview(session)
             return say("Done. " + preview.template, *preview.must_say)
@@ -444,7 +471,9 @@ def pending_reminder(session: dict) -> Facts | None:
     if scope == "confirm_checkout":
         return say("You were about to check out. Ready, or would you like to keep shopping?", "check out")
     if scope == "confirm_reroute":
-        return say("I asked about moving an item to your Visa credit. Shall I?", "Visa credit")
+        target = next((c for c in session.get("cards", []) if c["id"] == pending.get("to_card")), None)
+        where = target["nickname"] if target else "another card"
+        return say(f"I asked about moving an item to your {where}. Shall I?", where)
     if scope == "confirm_clear":
         return say("Do you still want to clear your cart?", "clear")
     if scope == "confirm_rx" and scan:

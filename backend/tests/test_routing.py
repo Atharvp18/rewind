@@ -95,10 +95,62 @@ def test_nothing_covers_it():
     assert (r.decision, r.card_id, r.reason_code) == ("blocked", None, "no_card_covers")
 
 
-def test_two_health_cards_with_no_default_asks_which():
-    r = route(cards=[hsa(), hsa(id="card_fsa_1", type="fsa"), visa()])
-    assert (r.decision, r.reason_code) == ("ask_user", "multiple_health_cards")
-    assert r.card_options == ["card_hsa_1", "card_fsa_1"] and r.card_id is None
+# --- spending order: FSA, then HSA, then the everyday card (team decision 2026-10-24) -------------
+
+def fsa(balance=34000, **kw):
+    return Card(id=kw.pop("id", "card_fsa_1"), type="fsa", nickname="FSA card", balance_cents=balance, **kw)
+
+
+def test_the_fsa_is_tried_first_whatever_the_order_or_the_default_flag():
+    for cards in ([hsa(), fsa(), visa()], [fsa(), hsa(), visa()], [hsa(is_default=True), fsa(), visa()]):
+        r = route(cards=cards)
+        assert (r.decision, r.card_id, r.reason_code) == ("route_to_hsa", "card_fsa_1", "eligible_sufficient_balance")
+
+
+def test_no_which_health_card_question_any_more():
+    assert route(cards=[hsa(), fsa(), visa()]).reason_code != "multiple_health_cards"
+
+
+def test_fsa_too_low_suggests_the_hsa_before_the_visa_and_still_asks():
+    r = route(amount=1299, cards=[fsa(1000), hsa(20000), visa()])
+    assert (r.decision, r.card_id, r.reason_code) == ("ask_user", None, "eligible_insufficient_balance")
+    assert r.card_options == ["card_hsa_1"]
+    assert (r.reroute.from_card_id, r.reroute.to_card_id, r.reroute.reason) == ("card_fsa_1", "card_hsa_1", "insufficient_balance")
+
+
+def test_fsa_and_hsa_both_too_low_suggests_the_visa():
+    r = route(amount=1848, cards=[fsa(1500), hsa(500), visa()])
+    assert (r.decision, r.card_options) == ("ask_user", ["card_visa_1"])
+    assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
+
+
+def test_an_hsa_that_covers_it_is_not_blocked_just_because_there_is_no_visa():
+    r = route(amount=1299, cards=[fsa(1000), hsa(20000)])
+    assert (r.decision, r.card_options, r.reroute.to_card_id) == ("ask_user", ["card_hsa_1"], "card_hsa_1")
+    assert route(amount=1848, cards=[fsa(1000), hsa(500)]).decision == "blocked"       # nothing covers it
+
+
+def test_with_only_an_hsa_a_low_balance_goes_to_the_visa_as_before():
+    r = route(amount=1299, cards=[hsa(1000), visa()])
+    assert r.reroute.to_card_id == "card_visa_1"
+
+
+def test_checkout_moves_an_fsa_overflow_to_the_hsa_before_the_visa():
+    cart = [item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")]
+    issue = plan_checkout(cart, [fsa(1500), hsa(1500), visa()]).issues[0]
+    assert issue.keep_item_ids == ["a"] and [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_hsa_1")]
+
+
+def test_checkout_uses_the_visa_when_the_hsa_has_no_room_either():
+    cart = [item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")]
+    issue = plan_checkout(cart, [fsa(1500), hsa(500), visa()]).issues[0]
+    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_visa_1")]
+
+
+def test_checkout_moves_an_hsa_overflow_to_the_visa_never_back_to_the_fsa():
+    cart = [item("a", "Advil", ADVIL, "card_hsa_1"), item("b", "Bandages", BANDAGES, "card_hsa_1")]
+    issue = plan_checkout(cart, [fsa(34000), hsa(1500), visa()]).issues[0]
+    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_visa_1")]
 
 
 def test_two_health_cards_with_a_default_uses_it():
@@ -122,13 +174,27 @@ def test_with_the_real_seed_run2_asks_to_use_the_visa_because_both_health_cards_
     assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
 
 
-def test_with_the_real_seed_run2_checkout_keeps_advil_on_the_fsa_and_moves_the_bandages():
+def test_with_the_real_seed_run2_checkout_keeps_advil_on_the_fsa_and_moves_the_bandages_to_the_hsa():
+    """The seed's run 2 has the HSA at $15.00 too, so the HSA (next in order) has room for the bandages.
+
+    For the declined-card story (bandages end up on the Visa) the HSA must be under $5.49; see the
+    next test and the proposed seed in the spec (HSA $5.00 in run 2).
+    """
     from data.seed import cards_for_run
 
     plan = plan_checkout([item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")],
                          cards_for_run(2))
     issue = plan.issues[0]
     assert (issue.rule, issue.card_id, issue.keep_item_ids) == (2, "card_fsa_1", ["a"])
+    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_hsa_1")]
+
+
+def test_run2_with_a_nearly_empty_hsa_sends_the_bandages_to_the_visa():
+    from data.seed import cards_for_run
+
+    cards = [dict(c, balance_cents=500) if c["id"] == "card_hsa_1" else c for c in cards_for_run(2)]
+    issue = plan_checkout([item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")],
+                          cards).issues[0]
     assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_visa_1")]
 
 

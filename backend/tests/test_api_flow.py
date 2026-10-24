@@ -306,6 +306,7 @@ def test_low_balance_after_checkout_plays_the_alert_without_the_amount(client, f
 
 def test_run_2_offers_the_reroute_and_a_yes_pays_the_split(client, fake):
     client.post("/v1/demo/reset", json={"run": 2})
+    fake.set_balance(HSA, 500)                   # the HSA ($5.00) cannot take the $5.49 bandages, so the Visa does
     add(client, advil(client))
     add(client, bandages(client))
     p = client.post("/v1/checkout/preview").json()
@@ -318,6 +319,21 @@ def test_run_2_offers_the_reroute_and_a_yes_pays_the_split(client, fake):
     assert r.status_code == 200 and r.json()["payment_id"]
     assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[VISA]["balance_cents"] == 499451
     assert "$15.00" not in r.json()["voice"]["text"] and r.json()["voice"]["priority"] == "alert"
+
+
+def test_run_2_with_room_on_the_hsa_moves_the_bandages_to_the_hsa_not_the_visa(client, fake):
+    """Spending order is FSA, then HSA, then the Visa: with the seed's HSA at $15.00 the HSA takes the overflow."""
+    client.post("/v1/demo/reset", json={"run": 2})
+    add(client, advil(client))
+    add(client, bandages(client))
+    p = client.post("/v1/checkout/preview").json()
+    assert "keep the Advil Ibuprofen 200mg on your FSA card" in p["voice"]["text"]
+    assert "move the Bandages to your HSA card" in p["voice"]["text"]
+    assert p["issues"][0]["moves"][0]["to_card_id"] == HSA
+    r = client.post("/v1/checkout/confirm", json={"idempotency_key": "run2hsa", "prompt_id": p["voice"]["prompt_id"]})
+    assert r.status_code == 200
+    assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[HSA]["balance_cents"] == 951
+    assert fake.cards[VISA]["balance_cents"] == 500000                      # the Visa was not touched
 
 
 def test_nothing_that_covers_an_item_means_no_question(client, fake):
@@ -518,6 +534,7 @@ def test_a_voice_checkout_is_recorded_too(client, nessie_log):
 
 def test_run_2_logs_the_split_that_was_actually_charged(client, nessie_log, fake):
     client.post("/v1/demo/reset", json={"run": 2})          # a reset reloads the cards, so link them after
+    fake.set_balance(HSA, 500)                              # the HSA cannot take the bandages, so the Visa does
     fake.cards[FSA]["nessie_account_id"], fake.cards[VISA]["nessie_account_id"] = "acc-fsa", "acc-visa"
     add(client, advil(client)); add(client, bandages(client))
     p = client.post("/v1/checkout/preview").json()
