@@ -162,11 +162,25 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation. For a medication with a plan copay, the agent also states the copay and the remaining charge after the copay, and suggests that the remaining charge go to the HSA/FSA. The team's basis is that an item covered through insurance is HSA/FSA eligible (unverified)
 6. The user confirms by voice, and the item joins a cart grouped by payment method
 
+**Eligibility confirmation (replaces "may be eligible" wording)**
+
+The agent does not say "this may be eligible." It researches the item first, then states a result and its confidence, or says it could not confirm.
+
+1. Claude vision reads the package and shelf tag for an HSA/FSA eligibility marking, and for the product name, brand, size, and category
+2. The backend checks the category and product against the eligibility rules in Moss (source not yet chosen, section 17 item 6)
+3. The two results are compared. If they agree, the app states "HSA eligible" or "is not HSA eligible" with a confidence level
+4. If they disagree, or either step is unclear, the app does not guess. It says "I could not confirm eligibility" and asks which card to use (third label, section 17 item 20)
+5. The user hears the result, and the item joins the cart only after the user confirms
+
+**Medication items (team decision):** eligibility confidence is 100 percent, because medication eligibility is published online. This applies only when the product is matched exactly (name, strength, and form) to a published listing. The claim that every medication is published online is unverified, and the product match itself can still fail, so an unmatched product falls back to "I could not confirm eligibility." The insurance-covered portion is still not eligible (section 23.2), and copays always end with a pharmacist check.
+
+What counts as confirmed for non-medication items (confidence thresholds) is not yet set. Set it by testing on the demo shelf.
+
 **Medication wording** (all estimates; always end with a pharmacist check)
 
 | Scenario | What the agent says |
 |---|---|
-| OTC item | "This may be HSA eligible. Some plans include an over-the-counter benefit, so check your plan" |
+| OTC item | "This is HSA eligible, 100 percent confidence. Your plan may also have an over-the-counter benefit." If the item could not be confirmed: "I could not confirm eligibility" |
 | Prescription item also sold OTC | Give the OTC price, say a prescription version may be covered, and say to check with the pharmacist for the copay |
 | Prescription-only item | Say it is a prescription medication and to check with the pharmacist for the copay |
 | Prescription with a copay under the selected plan | Say the plan has a copay for this prescription and suggest that the user walk to the pharmacist and confirm the copay |
@@ -193,7 +207,7 @@ Prescriptions are scanned from the pill bottle label, then the agent reads the d
 
 ### 6.5 Interface and Voice Interaction
 
-This section groups the interface details by screen element so design and build share one reference. Phases and owners are proposed and need confirmation (see section 17).
+This section groups the interface details by screen element so design and build share one reference. Phases are proposed and need confirmation (see section 17). Interface work is shared by the whole team.
 
 **A. Home screen**
 
@@ -222,17 +236,17 @@ This section groups the interface details by screen element so design and build 
 - If the user says "I want to buy Tylenol," a pop-up shows how many times the user has bought it in the previous week, month, and year, and where
 - When a payment is made, the invoice records the address of the store
 
-| Element | Group | Proposed phase | Proposed owner |
-|---|---|---|---|
-| Half-moon drawer and circular button | A | Should | Nak |
-| Greeting by voice | A | Should | Nak |
-| Backup button with vibration and repeated questions | A | Should | Nak |
-| Scan result labels with confidence | B | Must | Tiea (classification), Nak (screen) |
-| Copay and remaining charge speech | B | Should | Tiea (copay logic), Nak (voice) |
-| Voice commands | C | Must | Nak |
-| Pause prompt | D | Should | Nak |
-| Purchase history pop-up | E | Stretch | Atharv (data), Nak (screen) |
-| Invoice store address | E | Stretch | Atharv |
+| Element | Group | Proposed phase |
+|---|---|---|
+| Half-moon drawer and circular button | A | Should |
+| Greeting by voice | A | Should |
+| Backup button with vibration and repeated questions | A | Should |
+| Scan result labels with confidence | B | Must |
+| Copay and remaining charge speech | B | Should |
+| Voice commands | C | Must |
+| Pause prompt | D | Should |
+| Purchase history pop-up | E | Stretch |
+| Invoice store address | E | Stretch |
 
 ### 6.6 Payment History and Reimbursement Packet (stretch)
 
@@ -242,7 +256,7 @@ This section groups the interface details by screen element so design and build 
 - Claude can answer questions such as "what did I spend this week?"
 - No real names, phone numbers, or tracked locations, so receipts use fake values
 - Tax estimate: fixed rate for one state, labeled as an estimate. Tax treatment of groceries and medicine varies and is unverified
-- Reimbursement rules differ by plan and administrator (unverified), so every packet carries "may be eligible, check your plan"
+- Reimbursement rules differ by plan and administrator (unverified), so every packet lists each item's eligibility result and confidence, and states that final approval is up to the administrator
 
 ### 6.7 Universal Accessibility Button
 
@@ -359,9 +373,9 @@ The earlier 1-second claim is dropped because nothing supports it.
 
 | Step | Item | What the agent says |
 |---|---|---|
-| 1 | Advil | "I see Advil, ibuprofen 200mg, $12.99. This may be HSA eligible. Your HSA balance is $340. Want to use your HSA card?" User says yes |
+| 1 | Advil | "I see Advil, ibuprofen 200mg, $12.99. HSA eligible, 100 percent confidence. Your HSA balance is $340. Want to use your HSA card?" User says yes |
 | 2 | Bandages | Same flow, $5.49 (placeholder; set to the real shelf price) |
-| 3 | Kettle corn | "Kettle corn, $4.99. Not likely HSA eligible. I'll put this on your Visa credit card" |
+| 3 | Kettle corn | "Kettle corn, $4.99. Not HSA eligible, high confidence. I'll put this on your Visa credit card" |
 | 4 | Checkout | "Two items totaling $18.48 on your HSA card. One item totaling $4.99 on your Visa credit. Ready to check out?" User confirms |
 | 5 | Result | "Payment complete. Your HSA balance is now $321.52" |
 
@@ -409,7 +423,7 @@ The earlier 1-second claim is dropped because nothing supports it.
 | Failure | Mitigation |
 |---|---|
 | Misreading a price or product, so a blind user hears a wrong cost | Read the item back for confirmation |
-| Stating eligibility or a copay too confidently | Say "may be eligible, check your plan" |
+| Stating eligibility or a copay too confidently | Confirm eligibility by research first (section 6.2), state the confidence, and say "I could not confirm eligibility" when the research does not settle it. Copays always end with a pharmacist check |
 | Sounding certain when the image was unclear | Say "I could not confirm" and ask for another scan when unsure |
 | Incorrect prescription identification | Read drug name and strength back before any prescription estimate |
 
@@ -516,9 +530,9 @@ The earlier draft referenced this section but did not include it. The items belo
 8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
 9. **Settings storage.** On device or in the database (Atharv). Not decided
 10. **Product catalog.** Resolved by the team: there is no hand-built product catalog. Products are looked up live (section 19). Sections 5, 7, 11, 14, and 18 are updated to match
-11. **Interface phases and owners.** The table in section 6.5 assigns phases and owners that you did not state. Confirm or change them
+11. **Interface phases.** The table in section 6.5 assigns phases that the team did not state. Confirm or change them
 12. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address on the invoice and shows where past purchases were made. Section 6.6 says no tracked locations, and section 12 says no automatic store assignment from scan history. Decide how store address is entered (for example chosen by the user or taken from seeded mock data) so it does not conflict
-13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Section 6.2 medication wording, section 8 (demo script), and section 10 (failure modes) still use "may be eligible, check your plan." Decide whether to align them
+13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Resolved by the team: "may be eligible" wording is not used. Sections 6.2, 8, 10, 6.6, and 20 are aligned to the research-and-confirm flow in section 6.2
 14. **Two buttons.** Section 6.7 describes the accessibility button. Section 6.5 group A describes a backup button with vibration. Confirm whether they are the same button or separate
 15. **Insurance and HSA/FSA eligibility.** The team basis that an insured item is HSA/FSA eligible is unverified. It needs a source before it is stated to judges
 16. **Nothing covers it.** Section 6.4 no longer says "do not choose for the user." Confirm that the credit card suggestion still requires voice confirmation, as the section states for every change
@@ -531,6 +545,7 @@ The earlier draft referenced this section but did not include it. The items belo
 23. **Supabase plus SQLite versus SQLite only.** Section 21 proposes SQLite only. Confirm
 24. **Camera frame retention.** Section 20 proposes that frames are not stored after processing. Confirm
 25. **Weighted and produce items.** Section 20 proposes they are out of scope for v1. Confirm
+26. **100 percent confidence for medication.** Team decision in section 6.2. Needs a source showing that medication eligibility is published online (for example the eligible-item list chosen in item 6), and a rule for what happens when the exact product is not in that list
 
 ---
 
@@ -627,11 +642,11 @@ No list can cover every possible scenario. This is the known set. When the team 
 | Scenario | Expected behavior |
 |---|---|
 | Eligibility unknown | Do not route to the HSA/FSA automatically. Say "I could not confirm eligibility" and ask which card (needs a third label, open item 20) |
-| Ambiguous items (sunscreen, vitamins, protein bars) | "May be eligible; depends on your plan." Ask which card |
+| Ambiguous items (sunscreen, vitamins, protein bars) | Run the confirmation research (section 6.2). If it still cannot settle it, say "I could not confirm eligibility" and ask which card |
 | Bundle with eligible and non-eligible parts | Treat as not confirmed. Ask |
 | User has only an FSA, or both | Terminology rule: HSA means HSA and FSA. Use the account the user linked. Ask if two |
 | User on Medicare | Make no claim in either direction (section 3) |
-| Eligibility depends on a plan rule or a letter of medical necessity | Say "check your plan" |
+| Eligibility depends on a plan rule or a letter of medical necessity | State what the research found. If the item needs a plan rule or letter of medical necessity, say eligibility could not be confirmed and ask which card |
 
 ### 20.4 Medication and insurance
 
@@ -812,3 +827,58 @@ Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visib
 ### 22.3 What the spec file should contain
 
 Message schemas with example JSON for `ScanResult`, `PaymentRecommendation`, and `VoiceRequest`; the lookup chain and timeouts (section 19); the edge case table (section 20) with owners; the backend endpoint list; the acceptance criteria above; and the cut order from section 13.
+
+---
+
+## 23. Sources and Corrections for Unverified Claims (added 2026-10-24)
+
+Each row says what was checked, what the source says, and what the document should rely on. Primary means the publisher's own page. Pages marked "partial" were only read in part by the research tool, so read the full page before quoting it to judges.
+
+### 23.1 Confirmed by a primary source
+
+| Claim in this document | Source says | Source |
+|---|---|---|
+| HSA contributions are zero while enrolled in Medicare | "Beginning with the first month you are enrolled in Medicare, your contribution limit is zero" (Limit on Contributions) | [IRS Pub 969](https://www.irs.gov/publications/p969) (partial) |
+| Spending an existing HSA balance after Medicare (was unverified) | Pub 969 says "You are permitted to take a distribution from your HSA at any time" and tax-free for qualified medical expenses. It lists Medicare coverage as a permitted premium use for people 65 or older. The excerpt does not say Medicare enrollment blocks spending | [IRS Pub 969](https://www.irs.gov/publications/p969) (partial). Still avoid claims about Medicare users in the pitch |
+| OTC medicines are eligible without a prescription | The IRS says the CARES Act made OTC products and medications reimbursable without a prescription, for amounts paid after Dec. 31, 2019, and added menstrual care products | [IRS newsroom](https://www.irs.gov/newsroom/irs-outlines-changes-to-health-care-spending-available-under-cares-act) |
+| Bandages are a medical expense | "You can include in medical expenses the cost of medical supplies such as bandages" | [IRS Pub 502](https://www.irs.gov/publications/p502) (partial) |
+| WCAG levels and the criteria in section 6.7 | WCAG 2.2 is a W3C Recommendation, published 12 December 2024. Levels A, AA, AAA. Contrast minimum 4.5:1 (AA, 1.4.3); enhanced 7:1 (AAA, 1.4.6); use of color (A, 1.4.1); text spacing (AA, 1.4.12); resize text to 200 percent (AA, 1.4.4); pause, stop, hide (A, 2.2.2); three flashes (A, 2.3.1); captions (A, 1.2.2); target size minimum (AA, 2.5.8, new in 2.2) | [WCAG 2.2](https://www.w3.org/TR/WCAG22/) (partial). Open item 7 can now be closed by choosing a level; proposal: AA |
+| `expo-camera` barcode scanning in SDK 57 | `onBarcodeScanned` and `barcodeScannerSettings` exist. Types include `ean13`, `upc_a`, `upc_e` | [expo-camera docs](https://docs.expo.dev/versions/latest/sdk/camera/) |
+| Playing audio when the phone is in silent mode | `setAudioModeAsync` has `playsInSilentMode`, default `true`. Other options: `shouldPlayInBackground`, `interruptionMode`, `allowsRecording` (iOS only) | [expo-audio docs](https://docs.expo.dev/versions/latest/sdk/audio/) |
+| `EXPO_PUBLIC_` variables are visible | "These variables will be visible in plain-text in your compiled application"; do not store private keys in them | [Expo environment variables](https://docs.expo.dev/guides/environment-variables/) |
+| On-device speech fallback | `expo-speech` is included in Expo Go. Install `npx expo install expo-speech`; call `Speech.speak(text, options)` | [expo-speech docs](https://docs.expo.dev/versions/latest/sdk/speech/) |
+| Cartesia key for servers, token for clients | "Use an API key when you're calling from a trusted server." "Use a short-lived access token when calling from a browser or client app" | [Cartesia TTS WebSocket reference](https://docs.cartesia.ai/api-reference/tts/websocket) |
+
+### 23.2 Corrected by research (change the document's claim)
+
+| Claim in this document | Finding | Source |
+|---|---|---|
+| "The team basis that an insured item is HSA/FSA eligible" (section 6.2 step 5, open item 15) | The sources say the opposite for the insured part. Qualified expenses count "only to the extent the amounts are not compensated for by insurance or otherwise," and expenses paid by insurance cannot be included. The part the shopper pays out of pocket (such as a copay) can still be a qualified medical expense, but that must be checked per plan. Do not say that an insured item is eligible. Say the remaining out-of-pocket amount may be eligible | [IRS Pub 969](https://www.irs.gov/publications/p969), [IRS Pub 502](https://www.irs.gov/publications/p502) (both partial) |
+| Cartesia idle timeout is "3 minutes (secondary source)" | Three different figures from three sources. Cartesia's own agent (Line) WebSocket docs say 180 seconds, that any client message or ping resets it, and recommend pings every 60 to 90 seconds. Pipecat (third party) says 3 minutes for speech-to-text and 5 minutes for text-to-speech. The Cartesia TTS reference page does not state it. Plan: send a keepalive about every 60 seconds and reconnect on close | [Cartesia Line WebSocket API](https://docs.cartesia.ai/line/integrations/websocket-api.md), [Pipecat Cartesia TTS](https://docs.pipecat.ai/api-reference/server/services/tts/cartesia), [Pipecat Cartesia STT](https://docs.pipecat.ai/api-reference/server/services/stt/cartesia) |
+| Sonic first audio "about 90 ms (vendor), about 188 ms (third-party)" | Vendor figure of about 90 ms is model latency. A 50-trial Humanness Index test measured a median of 159 ms including network for Sonic 2. Another comparison page cites 199 ms at the 90th percentile; its method is unclear. Use 90 ms (vendor) and about 160 to 200 ms (measured over a network) | [Humanness Index, Sonic 2](https://humannessindex.vapi.ai/models/cartesia-sonic-2) |
+| Moss lookup "under 10 ms, to be confirmed" | Vendor-run only. The Moss repository README reports P50 3.1 ms, P95 4.3 ms, P99 5.4 ms for 100,000 documents on a MacBook Pro M4 Pro. The Moss quickstart makes no latency claim. No independent benchmark was found. Over the network from the backend, expect more | [Moss README mirror](https://awesome.ecosyste.ms/projects/github.com%2Fusemoss%2Fmoss), [Moss quickstart](https://docs.moss.dev/docs/start/quickstart.md) |
+| Where eligible items are marked publicly (section 6.2 step 3, open item 17) | Walmart has a "FSA/HSA Eligible" hub and badges, but no official page explains how items are chosen. Sources are guides and a promotional page. Treat the team assumption as plausible, not confirmed | [Walmart FSA/HSA hub](https://www.walmart.com/cp/6120851) |
+
+### 23.3 Backed by a secondary source only
+
+| Claim | What exists | Source | Next step |
+|---|---|---|---|
+| Nessie account types and key method | Checking, Savings, Credit Card; base URL `http://api.nessieisreal.com`; key as `?key=` query parameter. From a student project's docs. The official docs returned HTTP 403 to the research tool | [Drift project docs](https://deepwiki.com/aadit2805/drift/4.1-nessie-api-integration) | Open the official docs in a browser, or ask at the Capital One booth |
+| Visa sandbox | The Visa Acceptance merchant sandbox provides test keys, sample merchant IDs, test card numbers, and a transaction simulator, and needs a verified business email. Visa Direct sandbox uses only the project's Test Data tab. This supports "Visa offers a sandbox"; it does not mean the track expects it | [Visa Acceptance testing guide](https://developer.visaacceptance.com/hello-world/testing-guide.html), [Visa Developer forum](https://community.developer.visa.com:443/t5/Sandbox-Test-Data/Test-cards-for-web-services-testing/m-p/25503) | Keep checkout simulated. Ask the Visa track staff what they accept |
+| Plaid and HSA | Plaid's schema, as reproduced by Layer, puts `hsa` under the investment type. Plaid Exchange's definitions put health savings accounts under depository with a `health` subtype. The two disagree | [Layer, Plaid account](https://docs.layerfi.com/api-reference/plaid-account/plaid-account), [Plaid Exchange definitions](https://plaid.com/plaid-exchange/docs/reference/data-definitions/) | Read Plaid's current schema before any future-plan claim |
+| How the register blocks ineligible items | HSA/FSA debit cards use IIAS (Inventory Information Approval System), which compares the UPC or SKU of purchased items against an eligible list at certified merchants. Non-certified merchants rely on a merchant category code and manual receipts. Common decline causes: insufficient balance, ineligible item, or a non-IIAS merchant. Mostly employer benefit documents | [Visa, IIAS requirements](https://myanmar.visa.com/supporting-info/healthcare-card-iias-modal.html), [Vanderbilt FSA substantiation](https://hr.vanderbilt.edu/benefits/FSA_Substantiation_Requirements.pdf) | Add to the pitch honestly: at IIAS stores, ineligible items may already be blocked automatically. Rewind's value is telling the shopper before the register, and which card to use |
+| Walmart lookup | The Walmart Marketplace Item Search API (`GET /v3/items/walmart/search`, by UPC or GTIN) is documented but needs a seller token, so it is for sellers, not shoppers. The shopper-side Affiliate API is mentioned only by an unofficial wrapper | [Walmart Item Search](https://developer.walmart.com/us-marketplace/docs/item-search-for-the-walmart-catalog), [WIOpy](https://pypi.org/project/WIOpy/) | Treat Walmart lookup as likely unavailable for a hackathon. Do not plan on it |
+| Walgreens and CVS | No official public product API found. One third-party scraper listing describes an unofficial Walgreens route | [Apify Walgreens listing](https://apify.com/crawlerbros/walgreens-scraper.md) | Keep out of the build |
+
+### 23.4 Still unverified (no source found)
+
+| Item | Why | Suggested action |
+|---|---|---|
+| `CARTESIA_API_KEY` variable name | Not stated in any page read | Check the Cartesia quickstart, or choose your own name since the backend reads it |
+| Retailer terms of service for automated lookups | Not read | Read each retailer's terms before any automated lookup, or skip lookups |
+| Tax treatment of groceries and medicine by state | Not researched | Keep the tax estimate as stretch, or cut it |
+| How HSA and FSA administrators accept reimbursement claims | Not researched | Packets state each item's eligibility result and say final approval is up to the administrator |
+| Prize amounts and track rules (section 4) | Sponsor pages not read | Confirm at each booth |
+| Whether Claude credits reach every team | Not researched | Ask at the Anthropic booth |
+| Whether streamed raw audio plays in Expo Go | Docs describe file and URL playback; streamed playback not found | Use sentence files (section 21.5) and test |
+| Pharmacy benefit data providers | Not researched | Future-plan item only |
