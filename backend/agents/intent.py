@@ -25,6 +25,8 @@ IntentName = Literal[
     "choose_card", "remove_last", "clear_cart", "balance_query",
     # insurance
     "choose_plan", "insurance_question",
+    # history
+    "history_question",
     # session
     "repeat", "reset_demo", "greeting",
     # guardrails: refused in code, never answered
@@ -76,6 +78,7 @@ Intent guide:
 - balance_query: asks a card balance
 - choose_plan: names their insurance plan, or says they don't know it (plan = "unknown")
 - insurance_question: asks what insurance they have or what it covers
+- history_question: asks about past purchases or spending ("what did I spend this month", "what did I buy", "what could I claim back"), not the current cart
 - repeat: asks to hear the last thing again
 - reset_demo: "reset demo", optionally run 1 or 2
 - greeting: hello / what can you do
@@ -121,8 +124,11 @@ MEDICAL_TERMS = (
     "dose", "dosage", "how many should", "how much should i take", "overdose",
     "interact", "interaction", "side effect", "safe to take", "is it safe",
     "can i take", "should i take", "with alcohol", "while pregnant", "breastfeeding",
-    "blood pressure", "blood thinner", "allerg", "contraindicat",
+    "blood thinner", "contraindicat",
 )
+# "allerg" and "blood pressure" are not here: they also appear in shopping and history questions
+# ("is this allergy medicine covered", "what allergy pills did I buy"). A real medical question
+# about them also trips a phrase above ("can I take ... ") or the classifier's medical_advice rule.
 
 
 def medical_guard(text: str) -> bool:

@@ -36,7 +36,7 @@ def _stub_extract(image_bytes: bytes = b"") -> VisionExtract:
     Picked by a marker in the image bytes (b"stub:card"), else REWIND_STUB_IMAGE.
     """
     kind = os.environ.get("REWIND_STUB_IMAGE", "advil")
-    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close", "allegra"):
+    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close", "allegra", "excedrin"):
         if f"stub:{marker}".encode() in image_bytes:
             kind = marker
     if kind in ("tissues_far", "tissues_close"):   # same box; only the close photo shows the tag
@@ -45,6 +45,10 @@ def _stub_extract(image_bytes: bytes = b"") -> VisionExtract:
             shelf_price_cents=349 if kind == "tissues_close" else None,
             field_confidence={"name": 0.9, "price": 0.9 if kind == "tissues_close" else 0.0},
         )
+    if kind == "excedrin":  # an OTC medicine that is NOT in the Moss catalog: eligible by rule, unlisted
+        return VisionExtract(
+            name="Excedrin Migraine", brand="Excedrin", category="pain_relief", is_medication=True,
+            is_prescription_only=False, shelf_price_cents=1299, field_confidence={"name": 0.95, "price": 0.9})
     if kind == "allegra":   # a bottle with no shelf tag in view: price must come from the store listing
         return VisionExtract(
             name="Allegra 24 Hour Allergy Relief", brand="Allegra", category="cold_flu_allergy",

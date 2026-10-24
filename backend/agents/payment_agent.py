@@ -275,6 +275,15 @@ def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
         return _with_alert(say(f"{name}, {shown}. HSA eligible, but your {hsa['nickname']} can't cover it. "
                                f"Please use another card. Want to put it on your {visa['nickname']}?",
                                name, price, "HSA eligible", hsa["nickname"], "another card", visa["nickname"]), hsa)
+    if d == "ask_user" and code == "eligibility_unconfirmed" and _general_card(session):
+        # Not listed in the store catalog and no rule says yes: say so, and be proactive about the Visa.
+        visa = _general_card(session)
+        session["pending"] = {"scope": "choose_card", "card_options": rec["card_options"], "overrode": False,
+                              "suggested": visa["id"]}
+        return say(f"{name}, {shown}. I could not confirm eligibility, so I won't put it on your HSA or FSA by myself. "
+                   f"If you need it right away, your {visa['nickname']} will work. "
+                   f"Want me to add it to your {visa['nickname']}?",
+                   name, price, "could not confirm eligibility", visa["nickname"])
     if d == "ask_user":
         session["pending"] = {"scope": "choose_card", "card_options": rec["card_options"], "overrode": False}
         nicks = [_card(session, c)["nickname"] for c in rec["card_options"]]

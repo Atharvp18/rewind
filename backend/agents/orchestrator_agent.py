@@ -23,12 +23,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from uagents import Agent, Context, Protocol
 from uagents_core.contrib.protocols.chat import ChatAcknowledgement, ChatMessage, chat_protocol_spec
 
-from agents.addresses import ORCHESTRATOR_SEED, PAYMENT_AGENT_ADDRESS, PRODUCT_AGENT_ADDRESS
+from agents.addresses import HISTORY_AGENT_ADDRESS, ORCHESTRATOR_SEED, PAYMENT_AGENT_ADDRESS, PRODUCT_AGENT_ADDRESS
 from agents.common import Incoming, ack, dollars, reply
 from agents.intent import REFUSALS, Intent, classify_intent
 from agents.messages import (
-    PaymentRequest, PaymentResponse, ProductRequest, ProductResponse,
-    payment_protocol, product_protocol,
+    HistoryRequest, HistoryResponse, PaymentRequest, PaymentResponse, ProductRequest, ProductResponse,
+    history_protocol, payment_protocol, product_protocol,
 )
 from agents import store
 from agents.payment_agent import pending_reminder
@@ -51,6 +51,7 @@ TOO_SLOW = say("Sorry, that took too long. Please try again.", fixed=True)
 PRODUCT_INTENTS = {"scan_product", "eligibility_question"}
 LOCAL_REFUSALS = {"medical_advice", "other_person", "out_of_scope"}
 NUDGE_AFTER_S = 10.0
+NUDGE_UNTIL_S = 120.0   # a user idle longer than this has left: no reminder, even after an agent restart
 MAX_NUDGES = 1
 WORKER_TIMEOUT_S = 12.0
 
@@ -107,6 +108,14 @@ def greeting(session: dict, first_name: str | None = None) -> Facts:
         return WELCOME_BACK
     session["greeted"] = True
     return WELCOME
+
+
+def due_for_nudge(session: dict, now: float) -> bool:
+    """One reminder, 10 s to 2 min after the user went quiet on an open question."""
+    if session.get("nudges", 0) >= MAX_NUDGES or not session.get("pending"):
+        return False
+    idle = now - session.get("last_activity", now)
+    return NUDGE_AFTER_S <= idle <= NUDGE_UNTIL_S
 
 
 def nudge(session: dict) -> Facts | None:
@@ -173,6 +182,8 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
         run = intent.entities.run if intent.entities.run in (1, 2) else 1
         try:
             await asyncio.to_thread(db.reset_demo, run)   # Atharv's seed, one transaction
+            from lookup import purchase_memory
+            await asyncio.to_thread(purchase_memory.clear_sync)   # the Moss memory is not in Postgres
             await speak(ctx, user, say(f"Demo reset for run {run}.", str(run), fixed=True), new_session())
         except db.DBUnavailable:
             await speak(ctx, user, store.DB_DOWN, session)
@@ -188,6 +199,9 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
             product_hint=intent.entities.product,
             is_prescription=intent.entities.is_prescription,
         ))
+    elif name == "history_question":
+        request_id = track_request(ctx, user, "history")
+        await ctx.send(HISTORY_AGENT_ADDRESS, HistoryRequest(request_id=request_id, question=inc.text))
     else:
         request_id = track_request(ctx, user, "payment")
         await ctx.send(PAYMENT_AGENT_ADDRESS, PaymentRequest(
@@ -256,6 +270,23 @@ async def on_payment_response(ctx: Context, sender: str, msg: PaymentResponse):
     await speak(ctx, entry["user"], msg.facts.to_facts(), session)
 
 
+@history_protocol.on_message(HistoryResponse)
+async def on_history_response(ctx: Context, sender: str, msg: HistoryResponse):
+    if sender != HISTORY_AGENT_ADDRESS:
+        ctx.logger.warning("ignoring HistoryResponse from unknown sender %s", sender)
+        return
+    entry = take_request(ctx, msg.request_id)
+    if entry is None:
+        return
+    session = load_session(ctx, entry["user"])
+    facts = msg.facts.to_facts()
+    reminder = pending_reminder(session)    # a history answer never drops the open question
+    if reminder:
+        facts = say(f"{facts.template} {reminder.template}", *facts.must_say, *reminder.must_say,
+                    fixed=facts.fixed, alert=facts.alert)
+    await speak(ctx, entry["user"], facts, session)
+
+
 # --- agent ----------------------------------------------------------------------
 
 def build_agent(mailbox: bool = True, port: int = 8003) -> Agent:
@@ -271,6 +302,7 @@ def build_agent(mailbox: bool = True, port: int = 8003) -> Agent:
     agent.include(chat_protocol, publish_manifest=True)
     agent.include(product_protocol)
     agent.include(payment_protocol)
+    agent.include(history_protocol)
 
     @agent.on_event("startup")
     async def warm(ctx: Context):
@@ -278,6 +310,7 @@ def build_agent(mailbox: bool = True, port: int = 8003) -> Agent:
         ctx.storage.set("inflight", {})
         ctx.logger.info("product agent: %s", PRODUCT_AGENT_ADDRESS)
         ctx.logger.info("payment agent: %s", PAYMENT_AGENT_ADDRESS)
+        ctx.logger.info("history agent: %s", HISTORY_AGENT_ADDRESS)
         await warm_up()
 
     @agent.on_interval(period=2.0)
@@ -295,9 +328,7 @@ def build_agent(mailbox: bool = True, port: int = 8003) -> Agent:
         """After 10 s of silence on a pending question, remind the user once (spec 6.5-D)."""
         for user in ctx.storage.get("users") or []:
             session = load_session(ctx, user)
-            if session.get("nudges", 0) >= MAX_NUDGES or not session.get("pending"):
-                continue
-            if time.time() - session.get("last_activity", time.time()) < NUDGE_AFTER_S:
+            if not due_for_nudge(session, time.time()):
                 continue
             facts = nudge(session)
             if facts:

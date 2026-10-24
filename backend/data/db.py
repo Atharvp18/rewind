@@ -244,6 +244,25 @@ def clear_cart() -> None:
     _call(lambda: _sb().table("cart_items").delete().neq("id", "").execute())
 
 
+# --- purchase history (the History agent reads this) ---------------------------------------
+
+def get_purchases(since: str | None = None, until: str | None = None,
+                  card_type: str | None = None, payment_id: str | None = None) -> list[dict]:
+    """Purchased items, newest first. since/until are ISO timestamps; card_type is hsa, fsa or general."""
+    def run():
+        q = _sb().table("purchase_items").select("*")
+        if since:
+            q = q.gte("purchased_at", since)
+        if until:
+            q = q.lt("purchased_at", until)
+        if card_type:
+            q = q.eq("card_type", card_type)
+        if payment_id:
+            q = q.eq("payment_id", payment_id)
+        return q.order("purchased_at", desc=True).execute()
+    return _call(run).data
+
+
 # --- prompts (15 s, single use, scope-bound) ----------------------------------------------
 
 def create_prompt(scope: str, scan_id: str | None, payload: dict | None,

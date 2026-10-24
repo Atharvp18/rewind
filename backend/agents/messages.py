@@ -56,5 +56,16 @@ class PaymentResponse(Model):
     session: dict[str, Any]
 
 
+class HistoryRequest(Model):
+    request_id: str
+    question: str          # the user's words; the History agent turns them into a query
+
+
+class HistoryResponse(Model):
+    request_id: str
+    facts: FactsMsg
+
+
 product_protocol = Protocol(name="rewind-product", version="1.0.0")
 payment_protocol = Protocol(name="rewind-payment", version="1.0.0")
+history_protocol = Protocol(name="rewind-history", version="1.0.0")

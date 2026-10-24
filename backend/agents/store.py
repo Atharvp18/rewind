@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import threading
 
 from data import db
 from agents.speaker import say
@@ -35,6 +36,25 @@ def strip(session: dict) -> dict:
     return out
 
 
+def _remember_purchases(payment_id: str | None) -> None:
+    """Start copying this payment's purchase rows into the Moss memory, in the background.
+
+    The Moss write takes about 4 s, so the checkout reply must not wait for it.
+    """
+    if payment_id:
+        threading.Thread(target=_mirror, args=(payment_id,), daemon=True).start()
+
+
+def _mirror(payment_id: str) -> None:
+    """The copy itself. Best effort: it can never fail a checkout."""
+    try:
+        from lookup import purchase_memory
+        rows = db.get_purchases(payment_id=payment_id)   # empty until the purchase_items table exists
+        purchase_memory.remember_sync(rows)
+    except Exception as exc:
+        logger.warning("purchase history not mirrored to Moss: %s", exc)
+
+
 def save(before: dict, after: dict, request_id: str):
     """Write cart changes and checkout to Supabase. Returns failure Facts, or None."""
     try:
@@ -42,7 +62,8 @@ def save(before: dict, after: dict, request_id: str):
         if splits:
             # Atomic in Postgres: debits every card and empties the cart, or changes nothing.
             # The request id is the idempotency key, so a retried message never charges twice.
-            db.confirm_checkout(request_id, splits)
+            result = db.confirm_checkout(request_id, splits)
+            _remember_purchases((result or {}).get("payment_id"))
             return None
 
         old = {i["id"]: i for i in before["cart"]}

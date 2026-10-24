@@ -335,3 +335,38 @@ def test_a_page_read_with_a_different_brand_replaces_its_old_row(tmp_path):
     merged = {r["source_url"]: r for r in old}
     merged.update({r["source_url"]: r for r in new})
     assert list(merged.values()) == new
+
+
+# --- an item we cannot confirm: say so and suggest the Visa -----------------------------------
+
+def unconfirmed(session=None):
+    return payment_agent.recommend(session or new_session(), scan("Excedrin Migraine", 1299, "could_not_confirm"))
+
+
+def test_unconfirmed_item_is_said_plainly_and_the_visa_is_suggested():
+    f, s = unconfirmed()
+    assert "I could not confirm eligibility" in f.template and "won't put it on your HSA or FSA by myself" in f.template
+    assert "If you need it right away, your Visa credit will work" in f.template
+    assert f.template.endswith("Want me to add it to your Visa credit?")
+    assert s["pending"]["suggested"] == "card_visa_1" and s["pending"]["scope"] == "choose_card"
+
+
+def test_yes_puts_an_unconfirmed_item_on_the_visa_and_no_skips_it():
+    _, s = unconfirmed()
+    _, s2 = confirm(s)
+    assert s2["cart"][0]["assigned_card_id"] == "card_visa_1" and s2["cart"][0]["eligibility_label"] == "could_not_confirm"
+    _, s3 = payment_agent.handle_intent(Intent(intent="deny"), s)
+    assert s3["cart"] == [] and s3["pending"] is None
+
+
+def test_the_shopper_can_still_name_another_card_for_an_unconfirmed_item():
+    _, s = unconfirmed()
+    _, s2 = payment_agent.handle_intent(Intent(intent="choose_card", entities=Entities(card="hsa")), s)
+    assert s2["cart"][0]["assigned_card_id"] == "card_hsa_1"       # their choice; we never do it on our own
+
+
+def test_with_no_visa_it_still_asks_which_card():
+    s = new_session()
+    s["cards"] = [c for c in s["cards"] if c["type"] != "general"]
+    f, _ = unconfirmed(s)
+    assert "Which card would you like to use" in f.template
