@@ -82,7 +82,7 @@ export function HistorySheet() {
 
   return (
     <Animated.View
-      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(Motion.panel)}
+      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(Motion.panel * 1.6).springify().damping(22)}
       accessibilityViewIsModal
       style={[
         styles.sheet,

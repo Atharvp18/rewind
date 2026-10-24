@@ -119,7 +119,7 @@ Rewind prepares the paperwork. It never files a claim. Administrator decides.
 - Mixed cards: eligible items go to the FSA/HSA, an ineligible item (Kettle corn) goes to the everyday Visa automatically; one payment, one invoice, one "Paid with" line per card.
 
 ## 8. Added 2026-10-24
-- History is above the cart chip and profile button, with a ✕, swipe-down on its header, a **History** button in the top row (beside Profile), the bottom handle, and the voice command "find invoice history" (also "close history").
+- History is above the cart chip and profile button, with a ✕, swipe-down on its header, the bottom handle (raised above the home-indicator area, two chevrons rise to say "swipe up"), and the voice command "find invoice history" (also "close history").
 - Every invoice has **Download invoice (PDF)**; the summary has **Download packet (PDF)** (all invoices with a possible reimbursement). Uses the phone's share sheet (save to Files, email, upload to the HSA/FSA portal). Rewind never files claims.
 - **Store check-in (prototype, SPEC CONFLICT):** tech spec decision 8 and business spec 6.6 / 12 say "never derived from location, no tracked locations". Built because Nak asked, with these limits:
   - asks permission "while using the app"; if denied, nothing happens and the app works as before;

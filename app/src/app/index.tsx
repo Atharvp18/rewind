@@ -8,7 +8,6 @@ import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { CartChip } from '@/components/cart-chip';
 import { FocusFrame, type FrameTone } from '@/components/focus-frame';
 import { HealthBanner } from '@/components/health-banner';
-import { HistoryButton } from '@/components/history-button';
 import { HistorySheet } from '@/components/history-sheet';
 import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
@@ -257,10 +256,7 @@ export default function Home() {
         onLayout={(e) => setRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
         <View style={[styles.topRow, { width: r.contentWidth }]} pointerEvents="box-none">
           {onboarding ? <View /> : <CartChip />}
-          <View style={styles.rightGroup} pointerEvents="box-none">
-            {onboarding ? null : <HistoryButton />}
-            <ProfileButton />
-          </View>
+          <ProfileButton />
         </View>
         <View style={[styles.pillRow, { width: r.contentWidth }]} pointerEvents="box-none">
           <TranscriptPill />
@@ -295,7 +291,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     gap: Layout.stack,
   },
-  rightGroup: { flexDirection: 'row', alignItems: 'center', gap: Layout.stack },
   pillRow: { alignSelf: 'center', flexDirection: 'row', paddingTop: Layout.stack },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });

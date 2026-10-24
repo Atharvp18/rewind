@@ -161,16 +161,23 @@ export function OrbGlow() {
 function HistoryHandle() {
   const { reduceMotion } = useA11y();
   const { state, showView } = useAgent();
-  const bob = useSharedValue(0);
+  const insets = useSafeAreaInsets();
+  const wave = useSharedValue(0);
   const open = state.view === 'history';
   useEffect(() => {
-    cancelAnimation(bob);
-    bob.value = 0;
-    // The chevron lifts gently to say "swipe up". Still when the page is open or Reduce Motion is on.
+    cancelAnimation(wave);
+    wave.value = 0;
+    // Two chevrons rise one after the other, like a page being sent up. Still when open or Reduce Motion.
     if (open || reduceMotion) return;
-    bob.value = withRepeat(withSequence(withTiming(-5, { duration: 700, easing: Easing.inOut(Easing.sin) }), withTiming(0, { duration: 700, easing: Easing.inOut(Easing.sin) })), -1);
-  }, [open, reduceMotion, bob]);
-  const bobStyle = useAnimatedStyle(() => ({ transform: [{ translateY: bob.value }] }));
+    wave.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.out(Easing.quad) }), -1);
+  }, [open, reduceMotion, wave]);
+  const rise = (delay: number) => {
+    'worklet';
+    const t = Math.min(1, Math.max(0, wave.value - delay) / (1 - delay));
+    return { opacity: Math.sin(Math.PI * t), transform: [{ translateY: 7 - 14 * t }] };
+  };
+  const first = useAnimatedStyle(() => rise(0));
+  const second = useAnimatedStyle(() => rise(0.25));
   const toggle = () => showView(open ? 'camera' : 'history');
   const pan = useMemo(
     () =>
@@ -187,14 +194,29 @@ function HistoryHandle() {
     <Pressable
       {...pan.panHandlers}
       onPress={toggle}
-      hitSlop={{ top: 12, bottom: 4, left: 40, right: 40 }}
+      // Large reach above and to the sides, none below: a swipe here stays well clear of the
+      // home-indicator gesture at the very bottom edge.
+      hitSlop={{ top: 28, bottom: 0, left: 48, right: 48 }}
       accessibilityRole="button"
       accessibilityLabel={open ? 'Close purchase history' : 'Open purchase history'}
       accessibilityHint="Swipe up or double tap to see your past purchases and invoices"
-      style={styles.handle}>
-      <Animated.View style={bobStyle}>
-        <Icon name={open ? 'chevronDown' : 'chevronUp'} size={20} color="onDock" strokeWidth={3} />
-      </Animated.View>
+      style={[styles.handle, { bottom: insets.bottom + 6 }]}>
+      <View style={styles.chevrons}>
+        {open ? (
+          <Icon name="chevronDown" size={20} color="onDock" strokeWidth={3} />
+        ) : (
+          <>
+            <Animated.View style={[styles.chevron, reduceMotion ? styles.still : first]}>
+              <Icon name="chevronUp" size={20} color="onDock" strokeWidth={3} />
+            </Animated.View>
+            {reduceMotion ? null : (
+              <Animated.View style={[styles.chevron, second]}>
+                <Icon name="chevronUp" size={20} color="onDock" strokeWidth={3} />
+              </Animated.View>
+            )}
+          </>
+        )}
+      </View>
       <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
         {open ? 'Close history' : 'History'}
       </AppText>
@@ -348,6 +370,9 @@ const styles = StyleSheet.create({
   },
   center: { textAlign: 'center' },
   // Drawn over the dome's bottom edge, outside the layout flow: the dome keeps its old height.
-  handle: { position: 'absolute', bottom: 4, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 28, minWidth: 44 },
+  handle: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: 32, minWidth: 44 },
+  chevrons: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  chevron: { position: 'absolute' },
+  still: { opacity: 1 },
   handleText: { fontWeight: '700' },
 });
