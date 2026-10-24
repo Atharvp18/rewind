@@ -62,8 +62,8 @@ def resolve_product(extract: VisionExtract) -> ProductResolution:
     cache_get, cache_put = _get_db()
     try:
         cached = cache_get(product_key)
-    except Exception:
-        logger.exception("Cache read failed")
+    except Exception as exc:
+        logger.warning("Cache read skipped: %s", exc)
         cached = None
 
     name = extract.name or "Unknown product"
@@ -124,7 +124,7 @@ def resolve_product(extract: VisionExtract) -> ProductResolution:
                 "eligibility_basis": None,
                 "source": price_source or "shelf_tag",
             })
-        except Exception:
-            logger.exception("Cache write failed")
+        except Exception as exc:
+            logger.warning("Cache write skipped: %s", exc)
 
     return resolution

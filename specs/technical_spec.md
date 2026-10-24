@@ -32,11 +32,11 @@ The business spec still lists open items (section 17). This spec applies the def
 | 1 | Data policy conflict | **All data is mock.** No real prescriptions, receipts, or insurer plan data. Insurer profiles are two synthetic plans, visibly labeled mock in the UI and the pitch | Sections 6.1, 10, 14 |
 | 2 | Eligibility data source | **Retailer-listed data collected with Apify before the demo** (fsastore.com, per business spec section 19.5), loaded into a Moss index. The IRS category rule table is the fallback and must stand alone | Sections 19.5, 24 |
 | 3 | Medication eligibility stated plainly | **Only on an exact UPC match.** Anything else falls back to `could_not_confirm` | Section 6.2 |
-| 4 | Certified source for copay | **Not chosen, so the copay path is gated.** The agent never routes a post-copay remainder to the HSA/FSA. It says it could not confirm and asks which card | Section 20.5 |
+| 4 | Copay and insurance (revised 2026-10-24) | **Insurance applies only to counter prescriptions; shelf items never mention it.** Prescriptions are read back (drug + strength) first. Copay amounts are an **estimate** from the plan's published tier table, labelled as one, only for flat-copay plans with the exact drug and strength listed; coinsurance, deductible-first, prior-auth, off-formulary, and unknown-plan cases give no number and send the user to the pharmacist, whose amount always wins. Only the estimated copay enters the cart (`remaining_after_copay`), never the full price. Copays are generally HSA/FSA-qualified (IRS Pub 502), so the agent **suggests** the HSA ("Copays are usually HSA eligible") but never routes it automatically. Five mock plans; one modeled on UnitedHealthcare Student Resources + OptumRx. A card scan keeps only the plan profile in storage; the cardholder's name is held in memory for the conversation; member ID, group, RxBIN/PCN, and DOB have no field in the extraction schema. Drug names are dropped from the session after each answer. Rewind never files a claim | Sections 20.5, 23; `backend/agents/insurance.py` |
 | 5 | Third eligibility label | **Approved.** The label is `could_not_confirm` everywhere: API, database, tests, and app | Sections 20, 24 |
 | 7 | Retailer lookup scope | **The shelf tag is the only price source in v1.** No retailer API is built | Sections 19.3, 23.3 |
 | 8 | Store address versus no-tracking | **User-entered or seeded mock only.** Never derived from scan history or location | Sections 6.6, 12 |
-| 9 | Fetch.ai status | **Optional and off the live path.** Built only as a thin wrapper over finished backend functions | Sections 5, 7 |
+| 9 | Fetch.ai status | **Second front door, off the phone's live path.** Three ACP agents on Agentverse (orchestrator, product, payment) run the same scan → eligibility → routing → simulated checkout workflow inside an ASI:One chat, with a shelf photo attached in place of the camera. This meets the Fetch.ai track's "primary workflow inside ASI:One" rule without touching the Expo app. Moss is removed; eligibility uses the UPC table and IRS rules. The Fetch.ai Payment Protocol is **not** used for checkout (it cannot express the HSA/Visa split) and is stretch-only as agent monetization. Updated 2026-10-24 | Sections 5, 7; `backend/agents/README.md` |
 | 10 | Database | **Supabase only. No SQLite, no local fallback** | Team decision, section 7.3 |
 | 11 | WCAG target | **WCAG 2.2 Level AA** | Section 23.1 |
 | 12 | One accessibility button or two | **One button.** Short tap repeats the last prompt with haptic feedback. Long press, or saying "accessibility settings," opens the panel | Reconciles 6.5-A and 6.7 |
@@ -326,7 +326,7 @@ Every 4xx and 5xx returns the same shape, so Nak writes one handler:
 | `E_NESSIE_UNAVAILABLE` | Balance fetch failed | Atharv | "These are your last known balances" |
 | `E_DB_UNAVAILABLE` | Supabase failed or exceeded its budget | Atharv | "I can't reach your cart right now. Let me try again" |
 | `E_NO_CARD` | No card linked | Atharv | Prompt to link one; checkout blocked |
-| `E_INSUFFICIENT_ALL` | No card covers the amount | Atharv | "Please use a credit card for this item" |
+| `E_INSUFFICIENT_ALL` | No card covers the amount | Atharv | "Please use another card for this item" (never state the balance) |
 | `E_PROMPT_EXPIRED` | A "yes" arrived after the prompt expired | Atharv | Ask the question again |
 | `E_STT_LOW_CONFIDENCE` | Transcript below threshold | Atharv | "I didn't catch that. You can say add that, skip it, or checkout" |
 | `E_UPSTREAM_TIMEOUT` | Any upstream exceeded its budget | whoever called it | "Sorry, that took too long. Let me try again" |
@@ -1102,23 +1102,25 @@ The Apify go/no-go test (2.9) can run in parallel with Gate 2 because it is offl
 
 ## 4.4 Demo script — exact spoken lines
 
-These strings are the contract for `compose_speech`. Write tests against them.
+These are the **facts** each line must contain. The exact sentence may be phrased naturally by Claude, but every listed figure and label must appear verbatim and no other number may (see `backend/agents/speaker.py`).
+
+**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card drops below the low-balance level. Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
 
 **Run 1, HSA at $340.00:**
 
-| Step | Spoken |
+| Step | Must contain |
 |---|---|
-| Advil | "I see Advil, ibuprofen 200mg, $12.99. HSA eligible. Your HSA balance is $340. Want to use your HSA card?" → yes |
+| Advil | "Advil Ibuprofen 200mg", "$12.99", "HSA eligible", "HSA card" (question: use it?) → yes |
 | Bandages | Same shape, $5.49 |
-| Kettle corn | "Kettle corn, $4.99. Not HSA eligible, high confidence. I'll put this on your Visa credit card" |
-| Checkout | "Two items totaling $18.48 on your HSA card. One item totaling $4.99 on your Visa credit. Ready to check out?" → yes |
-| Result | "Payment complete. Your HSA balance is now $321.52" |
+| Kettle corn | "Kettle Corn", "$4.99", "Not HSA eligible", "Visa credit" |
+| Checkout | "$18.48" on "HSA card", "$4.99" on "Visa credit", "before tax", "Ready to check out?" → yes |
+| Result | "simulated", "$18.48" on "HSA card", "$4.99" on "Visa credit". **No balance.** |
 
 **Run 2, HSA at $15.00:**
 
-> "Your HSA balance is only $15.00, which doesn't cover $18.48. Want me to keep the Advil on your HSA and move the bandages to your Visa credit?" → yes
+> Must contain "HSA card", "can't cover", "$18.48", "Advil Ibuprofen 200mg", "Bandages", "Visa credit" → yes. **Must not contain "$15.00".**
 
-Arithmetic check: 1299 + 549 = 1848. 34000 − 1848 = 32152 → "$321.52". Any other result means routing or money handling is wrong.
+Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 32152. Any other stored balance means routing or money handling is wrong.
 
 ## 4.5 Test matrix
 

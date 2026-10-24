@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 
 class VisionExtract(BaseModel):
+    image_kind: Literal["product", "insurance_card", "pharmacy_label"] = "product"
     name: str | None = None
     brand: str | None = None
     size: str | None = None

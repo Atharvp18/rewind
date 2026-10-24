@@ -4,47 +4,61 @@
 ![tag:hackathon](https://img.shields.io/badge/hackathon-5F43F1)
 
 Rewind helps elderly and low-vision shoppers know what a product is, what it costs,
-whether it is HSA/FSA eligible, and which card to pay with — before they reach the register.
-These agents expose that workflow inside an ASI:One conversation.
+whether it is HSA/FSA eligible, and which card to pay with, before they reach the register.
+These agents run that workflow inside an ASI:One conversation.
 
 ## Agents
 
 | Agent | Name on Agentverse | Address | Role |
 |---|---|---|---|
-| `orchestrator_agent.py` | Rewind Shopping Assistant | _fill in after first run_ | Entry point. Owns the session (cards, cart, last scan). Routes to the two workers and relays replies |
-| `product_agent.py` | Rewind Product Agent | _fill in after first run_ | Takes a shelf photo (`ResourceContent`) or a product name, runs vision → lookup → eligibility, returns a `ScanResult` |
-| `payment_agent.py` | Rewind Payment Agent | _fill in after first run_ | Cart, card routing (HSA/FSA vs. general), reroute on low balance, simulated checkout |
+| `orchestrator_agent.py` | Rewind Shopping Assistant | _fill in after first run_ | The front desk. Talks to the user over the Agent Chat Protocol, understands each message (Claude), keeps each user's session in `ctx.storage`, phrases every reply, and routes work to the specialists |
+| `product_agent.py` | Rewind Product Agent | _fill in after first run_ | Specialist. Shelf photo or product name → fixed pipeline (vision → lookup → eligibility) → facts + `ScanResult` |
+| `payment_agent.py` | Rewind Payment Agent | _fill in after first run_ | Specialist. Card routing (HSA/FSA vs. general), cart, low-balance alerts, simulated checkout |
 
-All three implement the Agent Chat Protocol (`chat_protocol_spec`), acknowledge every
-message, honour `StartSession`/`EndSession`, and publish their manifest to Agentverse.
+```
+ASI:One user ──Chat Protocol──▶ Orchestrator ──ProductRequest──▶ Product agent
+                                  (ctx.storage)◀─ProductResponse──┘
+                                       │
+                                       ├──PaymentRequest──▶ Payment agent
+                                       ◀──PaymentResponse──┘
+```
+
+Workers are stateless and deterministic: they return **facts** (`FactsMsg`), never sentences.
+The orchestrator turns facts into natural speech with Claude and refuses to speak any
+rephrasing that drops a fact or adds a number (`speaker.py`).
+
+## How it understands and where it stops
+
+- **Natural language in.** One Claude Haiku call classifies each message into a fixed set of intents. No keyword matching, except a medical-term list that always triggers the pharmacist refusal.
+- **Deterministic rules out.** Eligibility, card routing, and the cart are decided in code. Claude cannot override them.
+- **Guardrails:** no medical advice; no help with someone else's prescription; a not-eligible item never goes on the HSA/FSA; card balances are never spoken (only "can't cover it, please use another card", plus a low-balance alert); nothing enters the cart or gets paid without the user confirming in their own words.
 
 ## Workflow inside ASI:One
 
-1. Attach a shelf photo, or type "Is Advil HSA eligible?"
-2. The assistant says the item, price, eligibility, your HSA balance, and asks which card.
-3. Say "add it". Repeat for more items.
-4. Say "what's in my cart", then "checkout". Confirm with "yes".
-5. The assistant reads the split per card and the new balances. **All payments are simulated.**
+1. Attach a shelf photo, or ask "are these bandages HSA eligible?"
+2. The assistant says the item, price, eligibility, and asks which card.
+3. Say "add it" or "put it on the Visa". Repeat for more items.
+4. Ask "what's in my cart", then "checkout", and confirm.
+5. It reads what went on each card. **All payments are simulated.**
 
-Run 2 of the demo: say "reset demo run 2" to set the HSA balance to $15.00 and trigger the reroute.
+"Reset demo run 2" starts a session where the HSA card can't cover the whole cart, to show the reroute.
 
-## Run locally
+## Run
 
 ```bash
 cd backend
-python3 -m pip install -r requirements.txt      # Python 3.10+ (python.org build on this machine)
-cp .env.example .env            # set the three agent seeds
-make orchestrator               # terminal 1
-make product                    # terminal 2 (optional — orchestrator works alone)
-make payment                    # terminal 3 (optional)
+python3 -m pip install -r requirements.txt
+cp .env.example .env     # add ANTHROPIC_API_KEY and three agent seeds
 ```
 
-Each agent prints an inspector link. Open it, click **Connect → Mailbox**, then
-**Agent Profile → Chat with Agent** on the orchestrator to talk through ASI:One.
+**Locally, no Agentverse:** `make local` runs all agents in one process with a scripted shopper.
 
-To run as three separate agents, copy the product and payment addresses from their
-startup logs into `PRODUCT_AGENT_ADDRESS` and `PAYMENT_AGENT_ADDRESS` in `.env`
-and restart the orchestrator. Without them the orchestrator runs all logic in-process.
+**On Agentverse (for ASI:One):** run `make orchestrator`, `make product`, `make payment` in three
+terminals. For each, open the inspector link it prints → **Connect → Mailbox**. Then on the
+orchestrator: **Agent Profile → Chat with Agent**.
+
+Worker addresses are derived from their seeds, so the orchestrator finds them automatically.
+Set `PRODUCT_AGENT_ADDRESS` / `PAYMENT_AGENT_ADDRESS` only if a worker runs with a seed you don't have.
 
 ## Tests
 
@@ -54,8 +68,7 @@ make test
 
 ## Honest limits
 
-- Eligibility is checked against IRS category rules and retailer-listed data. It is not a certified list.
-- When the assistant cannot confirm, it says so and asks which card to use.
+- Eligibility comes from IRS category rules and retailer-listed data, not a certified list. When it can't confirm, it says so and asks.
+- Until the database is connected, items found only by name come back "could not confirm."
 - The insurance-covered part of a medication is never routed to an HSA/FSA.
-- Session state is in memory for now; it moves to the backend database next.
 - A photo attached in ASI:One passes through Fetch.ai's Agent Storage. The phone app path never stores frames.

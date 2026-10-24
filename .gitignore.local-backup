@@ -1,0 +1,8 @@
+.env
+.venv/
+node_modules/
+audio_tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/data/eligibility_data/

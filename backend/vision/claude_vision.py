@@ -16,6 +16,7 @@ from vision.prompts import VISION_SYSTEM_PROMPT, VISION_USER_PROMPT
 logger = logging.getLogger(__name__)
 
 STUB_MODE = os.environ.get("REWIND_STUB_VISION", "true").lower() == "true"
+VISION_MODEL = os.environ.get("VISION_MODEL", "claude-opus-5-5")
 
 
 def extract_product(image_bytes: bytes, barcode_hint: str | None = None) -> VisionExtract:
@@ -26,12 +27,33 @@ def extract_product(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         barcode_hint: UPC digits from the app's barcode scanner, if available.
     """
     if STUB_MODE:
-        return _stub_extract(barcode_hint)
+        return _stub_extract(barcode_hint, image_bytes)
     return _claude_extract(image_bytes, barcode_hint)
 
 
-def _stub_extract(barcode_hint: str | None = None) -> VisionExtract:
-    """Return hardcoded Advil data for integration testing."""
+def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> VisionExtract:
+    """Hardcoded data for testing: advil (default), card, rx_label, tissues_far, tissues_close.
+
+    Picked by a marker in the image bytes (b"stub:card"), else REWIND_STUB_IMAGE.
+    """
+    kind = os.environ.get("REWIND_STUB_IMAGE", "advil")
+    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close"):
+        if f"stub:{marker}".encode() in image_bytes:
+            kind = marker
+    if kind in ("tissues_far", "tissues_close"):   # same box; only the close photo shows the tag
+        return VisionExtract(
+            name="Kleenex Facial Tissues", brand="Kleenex", size="160 count", category="personal_care",
+            shelf_price_cents=349 if kind == "tissues_close" else None,
+            field_confidence={"name": 0.9, "price": 0.9 if kind == "tissues_close" else 0.0},
+        )
+    if kind == "card":
+        return VisionExtract(image_kind="insurance_card")
+    if kind == "rx_label":
+        return VisionExtract(
+            image_kind="pharmacy_label", name="Omeprazole", size="20mg", category="digestive_health",
+            is_medication=True, is_prescription_only=True,
+            field_confidence={"name": 0.95, "size": 0.93},
+        )
     return VisionExtract(
         name="Advil Ibuprofen 200mg Tablets",
         brand="Advil",
@@ -75,17 +97,22 @@ def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         })
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=VISION_MODEL,
         max_tokens=1024,
+        output_config={"effort": "low"},
         system=VISION_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
 
-    raw_text = response.content[0].text.strip()
+    raw_text = next(b.text for b in response.content if b.type == "text").strip()
     if raw_text.startswith("```"):
         raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 
     data = json.loads(raw_text)
+
+    kind = data.get("image_kind") if data.get("image_kind") in ("insurance_card", "pharmacy_label") else "product"
+    if kind == "insurance_card":
+        return VisionExtract(image_kind="insurance_card", raw_model="claude")
 
     warnings: list[str] = []
     if data.get("multiple_products_in_frame"):
@@ -107,14 +134,15 @@ def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         price_cents = None
 
     return VisionExtract(
+        image_kind=kind,
         name=data.get("name"),
         brand=data.get("brand"),
         size=data.get("size"),
         upc=barcode_hint or data.get("upc_digits"),
         shelf_price_cents=price_cents,
         category=data.get("category", "other"),
-        is_medication=data.get("is_medication", False),
-        is_prescription_only=data.get("is_prescription_only"),
+        is_medication=data.get("is_medication", False) or kind == "pharmacy_label",
+        is_prescription_only=True if kind == "pharmacy_label" else data.get("is_prescription_only"),
         package_eligibility_marking=data.get("package_eligibility_marking"),
         field_confidence=data.get("field_confidence", {}),
         warnings=warnings,
