@@ -38,10 +38,8 @@ class FakeDB:
     def install(self, monkeypatch) -> "FakeDB":
         for name in PUBLIC:
             monkeypatch.setattr(db, name, self._wrap(name))
-        # Tiea's lookup chain and classifier import these functions once and keep them
-        from eligibility import classify
+        # Tiea's lookup chain imports these functions once and keeps them
         from lookup import chain
-        monkeypatch.setattr(classify, "_eligibility_lookup_upc", db.eligibility_lookup_upc)
         monkeypatch.setattr(chain, "_cache_get", db.cache_get)
         monkeypatch.setattr(chain, "_cache_put", db.cache_put)
         return self

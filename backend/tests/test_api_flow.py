@@ -29,11 +29,11 @@ def client(fake, monkeypatch):
     return c
 
 
-def scan(client, name="Advil Ibuprofen 200mg", cents=1299, upc=seed.UPC_ADVIL, medication=True,
+def scan(client, name="Advil Ibuprofen 200mg", cents=1299, upc=None, medication=True,
          category="pain_relief", **form):
     extract = VisionExtract(name=name, upc=upc, shelf_price_cents=cents, is_medication=medication,
                             category=category)
-    client.mp.setattr(scan_api, "extract_product", lambda img, barcode: extract)
+    client.mp.setattr(scan_api, "extract_product", lambda img: extract)
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"jpeg", "image/jpeg")}, data=form)
     assert r.status_code == 200, r.text
     return r.json()
@@ -49,11 +49,11 @@ def advil(client):
 
 
 def bandages(client):
-    return scan(client, "Bandages", 549, seed.UPC_BANDAGES, False, "first_aid")
+    return scan(client, "Bandages", 549, None, False, "first_aid")
 
 
 def kettle(client):
-    return scan(client, "Kettle Corn", 499, seed.UPC_KETTLE_CORN, False, "grocery")
+    return scan(client, "Kettle Corn", 499, None, False, "grocery")
 
 
 def fill_run1(client):
@@ -97,14 +97,14 @@ def test_hint_price_fills_a_missing_price(client):
 
 @pytest.mark.parametrize("bad", ["0", "-5", "999999999999"])
 def test_a_silly_hint_price_is_rejected(client, bad):
-    client.mp.setattr(scan_api, "extract_product", lambda img, barcode: VisionExtract(name="x"))
+    client.mp.setattr(scan_api, "extract_product", lambda img: VisionExtract(name="x"))
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")}, data={"hint_price_cents": bad})
     assert r.status_code == 422 and r.json()["error"]["code"] == "E_BAD_REQUEST"
 
 
 def test_an_unidentifiable_product_is_unresolved(client):
     extract = VisionExtract()
-    client.mp.setattr(scan_api, "extract_product", lambda img, barcode: extract)
+    client.mp.setattr(scan_api, "extract_product", lambda img: extract)
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")})
     body = r.json()
     assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
@@ -119,7 +119,7 @@ def test_an_empty_image_is_rejected(client):
 def test_a_slow_scan_hits_the_budget(client):
     import time
     client.mp.setattr(scan_api, "SCAN_BUDGET_S", 0.05)
-    client.mp.setattr(scan_api, "extract_product", lambda img, barcode: time.sleep(0.3))
+    client.mp.setattr(scan_api, "extract_product", lambda img: time.sleep(0.3))
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")})
     assert r.status_code == 504 and r.json()["error"]["code"] == "E_UPSTREAM_TIMEOUT"
 
@@ -387,7 +387,7 @@ def test_a_bare_yes_does_not_pick_a_card_but_asks_again(client):
 
 def test_yes_to_the_only_alternative_card(client, fake):
     client.post("/v1/demo/reset", json={"run": 2})
-    s = scan(client, "Advil Ibuprofen 200mg", 1600, upc=seed.UPC_ADVIL, medication=True, category="pain_relief")
+    s = scan(client, "Advil Ibuprofen 200mg", 1600, upc=None, medication=True, category="pain_relief")
     assert s["recommendation"]["reason_code"] == "eligible_insufficient_balance"
     r = say(client, "yes", s["voice"]["prompt_id"]).json()
     assert r["action"] == "add_to_cart" and "Visa credit" in r["voice"]["text"]
