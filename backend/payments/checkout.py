@@ -12,7 +12,7 @@ from typing import Any
 
 from data import db
 from models.schemas import VoiceRequest
-from payments import cart_store
+from payments import cart_store, invoice
 from payments.routing import HEALTH_TYPES, CheckoutGroup, CheckoutPlan, Move, apply_moves, plan_checkout
 from speech import compose
 
@@ -37,6 +37,7 @@ class Confirmed:
     groups: list[CheckoutGroup] = field(default_factory=list)
     cards: list[dict] = field(default_factory=list)
     ledger: list[dict] = field(default_factory=list)      # withdrawals to record in Nessie (new payments only)
+    invoice: dict | None = None                           # what the screen shows after a charge
 
 
 def splits_of(groups: list[CheckoutGroup]) -> list[dict]:
@@ -95,7 +96,8 @@ def _result(payment: dict, cards: list[dict]) -> Confirmed:
                             subtotal_cents=s["amount_cents"]) for s in splits]
     low = _low_balance_cards(splits, cards, payment["new_balances"])
     ledger = [] if payment.get("replayed") else ledger_entries(payment, cards)   # a retry is not a new payment
-    return Confirmed(payment, compose.checkout_result(groups, cards, low), groups, cards, ledger)
+    return Confirmed(payment, compose.checkout_result(groups, cards, low), groups, cards, ledger,
+                     invoice.build_invoice(payment))
 
 
 def confirm(idempotency_key: str, prompt_id: str | None) -> Confirmed:
@@ -113,7 +115,8 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
     cart, cards = db.get_cart(), db.get_cards()
     items = cart_store.flat_items(cart)
     moves = [Move(**m) for m in payload.get("moves", [])]
-    plan = plan_checkout(apply_moves(items, moves), cards)
+    final_items = apply_moves(items, moves)
+    plan = plan_checkout(final_items, cards)
     splits = splits_of(plan.groups)
 
     if not items or not plan.ok or splits != payload.get("splits"):
@@ -123,7 +126,10 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
     try:
         for m in moves:                                       # the user agreed to these moves
             db.reassign_cart_item(m.item_id, m.to_card_id)
-        payment = db.confirm_checkout(idempotency_key, splits)
+        # the cart is emptied by the charge, so the paid items travel with it for the invoice
+        paid = [dict(s, items=[invoice.item_snapshot(i) for i in final_items
+                               if i["assigned_card_id"] == s["card_id"]]) for s in splits]
+        payment = db.confirm_checkout(idempotency_key, paid)
     except db.CheckoutFailed as e:
         if e.code not in ("E_CARD_CANNOT_PAY", "E_EMPTY_CART"):
             raise

@@ -14,6 +14,10 @@ KEY_ADVIL = normalize_key("Advil", "Advil Ibuprofen 200mg", "200mg")
 KEY_BANDAGES = normalize_key(None, "Bandages", None)
 KEY_KETTLE_CORN = normalize_key(None, "Kettle Corn", None)
 
+# The store printed at the top of the invoice. All mock data: override with REWIND_STORE_NAME and
+# REWIND_STORE_ADDRESS to match wherever the demo is shown.
+STORE = {"name": "Rewind Demo Store", "address": "123 Main Street, Berkeley, CA 94704"}
+
 NESSIE_ACCOUNT_ENV = {"card_hsa_1": "NESSIE_HSA_ACCOUNT_ID", "card_fsa_1": "NESSIE_FSA_ACCOUNT_ID",
                       "card_visa_1": "NESSIE_VISA_ACCOUNT_ID"}
 

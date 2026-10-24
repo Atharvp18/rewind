@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import copy
 import uuid
+from datetime import datetime, timezone
 
 from data import db, seed
 
 PUBLIC = (
     "health", "get_cards", "cache_get", "cache_put", "eligibility_lookup_upc", "save_scan", "get_cart",
     "add_cart_item", "reassign_cart_item", "remove_last_cart_item", "pop_last_cart_item", "clear_cart",
-    "create_prompt", "consume_prompt", "get_payment", "confirm_checkout", "reset_demo",
+    "create_prompt", "consume_prompt", "get_payment", "get_payment_by_id", "confirm_checkout", "reset_demo",
 )
 
 
@@ -147,7 +148,13 @@ class FakeDB:
         if not p:
             return None
         return {"payment_id": p["payment_id"], "total_cents": p["total_cents"], "splits": p["splits"],
-                "new_balances": self._balances(), "replayed": True}
+                "new_balances": self._balances(), "replayed": True, "created_at": p["created_at"]}
+
+    def get_payment_by_id(self, payment_id):
+        for key, p in self.payments.items():
+            if p["payment_id"] == payment_id:
+                return self.get_payment(key)
+        return None
 
     def confirm_checkout(self, idempotency_key, splits):
         if not splits:
@@ -168,7 +175,8 @@ class FakeDB:
             self.cards[card_id]["balance_cents"] = balance
         payment_id = uuid.uuid4().hex
         self.payments[idempotency_key] = {"payment_id": payment_id, "splits": copy.deepcopy(splits),
-                                          "total_cents": sum(s["amount_cents"] for s in splits)}
+                                          "total_cents": sum(s["amount_cents"] for s in splits),
+                                          "created_at": datetime.now(timezone.utc).isoformat()}
         self.items = []
         return {"payment_id": payment_id, "total_cents": self.payments[idempotency_key]["total_cents"],
                 "splits": splits, "new_balances": self._balances(), "replayed": False}

@@ -546,3 +546,79 @@ def test_a_nessie_outage_does_not_affect_the_payment(client, fake, monkeypatch):
     p = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "n5", "prompt_id": p["voice"]["prompt_id"]})
     assert r.status_code == 200 and r.json()["payment_id"] and fake.cards[FSA]["balance_cents"] == 32152
+
+
+# --- invoice ---------------------------------------------------------------------------------------------
+
+def checkout_run1(client, key="inv"):
+    fill_run1(client)
+    p = client.post("/v1/checkout/preview").json()
+    return client.post("/v1/checkout/confirm", json={"idempotency_key": key, "prompt_id": p["voice"]["prompt_id"]}).json()
+
+
+def test_the_invoice_has_store_date_lines_and_total(client):
+    from datetime import datetime
+    body = checkout_run1(client)
+    inv = body["invoice"]
+    today = datetime.now().astimezone().date()
+    assert inv["store"] == {"name": "Rewind Demo Store", "address": "123 Main Street, Berkeley, CA 94704"}
+    assert inv["date"] == today.isoformat() and inv["date_display"] == f"{today:%B} {today.day}, {today.year}"
+    assert [(l["name"], l["quantity"], l["unit_price_cents"], l["line_total_cents"]) for l in inv["lines"]] == [
+        ("Advil Ibuprofen 200mg", 1, 1299, 1299), ("Bandages", 1, 549, 549), ("Kettle Corn", 1, 499, 499)]
+    assert [l["line_total_display"] for l in inv["lines"]] == ["$12.99", "$5.49", "$4.99"]
+    assert inv["total_cents"] == 2347 and inv["total_display"] == "$23.47" and inv["simulated"] is True
+    assert inv["invoice_id"] == body["payment_id"]
+
+
+def test_the_same_product_twice_is_one_line_with_a_quantity(client):
+    for _ in range(2):
+        add(client, bandages(client))
+    add(client, advil(client))
+    p = client.post("/v1/checkout/preview").json()
+    inv = client.post("/v1/checkout/confirm", json={"idempotency_key": "q", "prompt_id": p["voice"]["prompt_id"]}).json()["invoice"]
+    assert [(l["name"], l["quantity"], l["unit_price_cents"], l["line_total_cents"]) for l in inv["lines"]] == [
+        ("Bandages", 2, 549, 1098), ("Advil Ibuprofen 200mg", 1, 1299, 1299)]
+    assert inv["total_cents"] == 2397 == sum(l["line_total_cents"] for l in inv["lines"])
+
+
+def test_the_invoice_comes_back_unchanged_on_a_retry_and_by_id(client):
+    fill_run1(client)
+    p = client.post("/v1/checkout/preview").json()
+    body = {"idempotency_key": "r", "prompt_id": p["voice"]["prompt_id"]}
+    first = client.post("/v1/checkout/confirm", json=body).json()
+    assert client.get("/v1/cart").json()["groups"] == []                    # the cart is gone; the invoice is not
+    again = client.post("/v1/checkout/confirm", json=body).json()
+    assert again["invoice"] == first["invoice"]
+    looked_up = client.get(f"/v1/payments/{first['payment_id']}/invoice")
+    assert looked_up.status_code == 200 and looked_up.json() == first["invoice"]
+    missing = client.get("/v1/payments/nope/invoice")
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "E_NOT_FOUND"
+
+
+def test_the_invoice_follows_the_run_2_reroute(client):
+    client.post("/v1/demo/reset", json={"run": 2})
+    add(client, advil(client)); add(client, bandages(client))
+    p = client.post("/v1/checkout/preview").json()
+    body = client.post("/v1/checkout/confirm", json={"idempotency_key": "r2", "prompt_id": p["voice"]["prompt_id"]}).json()
+    assert body["invoice"]["total_cents"] == 1848 and len(body["invoice"]["lines"]) == 2
+
+
+def test_a_voice_checkout_returns_the_invoice(client):
+    fill_run1(client)
+    pre = say(client, "checkout").json()
+    done = say(client, "yes", pre["voice"]["prompt_id"]).json()
+    assert done["result"]["invoice"]["total_display"] == "$23.47" and len(done["result"]["invoice"]["lines"]) == 3
+
+
+def test_no_invoice_when_nothing_was_charged(client, fake):
+    fill_run1(client)
+    p = client.post("/v1/checkout/preview").json()
+    fake.set_balance(FSA, 1500)
+    body = client.post("/v1/checkout/confirm", json={"idempotency_key": "none", "prompt_id": p["voice"]["prompt_id"]}).json()
+    assert body["payment_id"] is None and body["invoice"] is None
+
+
+def test_the_store_can_be_changed_without_code(client, monkeypatch):
+    monkeypatch.setenv("REWIND_STORE_NAME", "Corner Pharmacy")
+    monkeypatch.setenv("REWIND_STORE_ADDRESS", "9 Elm Street")
+    assert checkout_run1(client)["invoice"]["store"] == {"name": "Corner Pharmacy", "address": "9 Elm Street"}

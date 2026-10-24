@@ -113,7 +113,7 @@ def act_on_prompt(prompt_id: str | None, card_id: str | None, cards: list[dict],
         existing = db.get_payment(f"command-{prompt_id}")
         if existing:
             done = checkout._result(existing, cards)
-            return reply("checkout_confirm", done.voice, payment_id=existing["payment_id"])
+            return reply("checkout_confirm", done.voice, payment_id=existing["payment_id"], invoice=done.invoice)
     info = cart_store.consume(prompt_id, cart_store.ALL_SCOPES)
     scope = info["scope"]
 
@@ -122,7 +122,7 @@ def act_on_prompt(prompt_id: str | None, card_id: str | None, cards: list[dict],
         if done.ledger:
             background.add_task(nessie.log_withdrawals, done.ledger)
         return reply("checkout_confirm", done.voice,
-                     payment_id=done.payment["payment_id"] if done.payment else None)
+                     payment_id=done.payment["payment_id"] if done.payment else None, invoice=done.invoice)
     if scope == "confirm_clear_cart":
         cart_store.clear(info)
         return reply("clear_cart", compose.cart_cleared(), cart=db.get_cart())
