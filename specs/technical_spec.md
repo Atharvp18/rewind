@@ -36,7 +36,7 @@ The business spec still lists open items (section 17). This spec applies the def
 | 5 | Third eligibility label | **Approved.** The label is `could_not_confirm` everywhere: API, database, tests, and app | Sections 20, 24 |
 | 7 | Retailer lookup scope | **The shelf tag is the only price source in v1.** No retailer API is built | Sections 19.3, 23.3 |
 | 8 | Store address versus no-tracking | **User-entered or seeded mock only.** Never derived from scan history or location | Sections 6.6, 12 |
-| 9 | Fetch.ai status | **Second front door, off the phone's live path.** Three ACP agents on Agentverse (orchestrator, product, payment) run the same scan → eligibility → routing → simulated checkout workflow inside an ASI:One chat, with a shelf photo attached in place of the camera. This meets the Fetch.ai track's "primary workflow inside ASI:One" rule without touching the Expo app. Moss is removed; eligibility uses the UPC table and IRS rules. The Fetch.ai Payment Protocol is **not** used for checkout (it cannot express the HSA/Visa split) and is stretch-only as agent monetization. Updated 2026-10-24 | Sections 5, 7; `backend/agents/README.md` |
+| 9 | Fetch.ai status | **Second front door, off the phone's live path.** Three ACP agents on Agentverse (orchestrator, product, payment) run the same scan → eligibility → routing → simulated checkout workflow inside an ASI:One chat, with a shelf photo attached in place of the camera. This meets the Fetch.ai track's "primary workflow inside ASI:One" rule without touching the Expo app. Moss is removed; eligibility uses the UPC table and IRS rules. The Fetch.ai Payment Protocol is **not** used for checkout (it cannot express the HSA/Visa split) and is stretch-only as agent monetization. Updated 2026-10-24 | Sections 5, 7; `backend/agents/README.md` | **History (added 2026-10-24):** a fourth read-only agent answers questions about past purchases. Claude fills a fixed form (kind, period, card, medicine_only, category, item); code resolves dates and adds up amounts; a Moss memory of `purchase_items` rows (over-the-counter only) is queried with exact filters, with the table as fallback. Checked live: filters on date, card, amount and flags were exact and complete, recall takes milliseconds once loaded, and a purchase written by another process is visible in about a second.
 | 10 | Database | **Supabase only. No SQLite, no local fallback** | Team decision, section 7.3 |
 | 11 | WCAG target | **WCAG 2.2 Level AA** | Section 23.1 |
 | 12 | One accessibility button or two | **One button.** Short tap repeats the last prompt with haptic feedback. Long press, or saying "accessibility settings," opens the panel | Reconciles 6.5-A and 6.7 |
@@ -1238,7 +1238,7 @@ Rule 2 is the declined-card moment. For run 2, with HSA at $15.00 and a group of
 - Requires an `idempotency_key` from the app and a live `prompt_id`.
 - One Postgres function, called by RPC: insert into `payments` with the unique key; if the key already exists, return the **existing** payment unchanged; otherwise decrement every card group, write `splits_json`, set `simulated_complete`. All or nothing, in one transaction.
 - Return and speak the new balances.
-- If any balance crosses the low-balance threshold, emit a `priority: "alert"` `VoiceRequest`.
+- If any HSA/FSA balance is **under $10.00 (1000 cents)** after the payment, emit a `priority: "alert"` `VoiceRequest`. (Team decision 2026-10-24: $10.00, down from $20.00 in the agents and $25.00 in `payments/checkout.py`. Both now use `LOW_BALANCE_CENTS = 1000`.) After a successful payment, `payments/checkout.py` also copies the new `purchase_items` rows into History's Moss memory in the background, and `/v1/demo/reset` empties that memory; neither ever delays or fails the response.
 
 Empty cart: "Your cart is empty." No card linked: checkout blocked. Refunds, returns, and non-USD are out of scope.
 
@@ -1318,7 +1318,7 @@ async def scan(image: UploadFile, barcode: str | None = None, hint_price_cents: 
 ## 3.12 Atharv's definition of done
 
 - `pytest` covers group rules 1 to 3 with the demo numbers: $340.00, $15.00, $12.99, $5.49, $4.99.
-- Run 1 ends at **$321.52**. Run 2 produces the documented reroute.
+- Run 1 ends with the FSA at **$6.52** (FSA $25.00 minus $18.48). Run 2 produces the documented reroute.
 - `reset_demo()` runs twice with identical output.
 - After reset: two cards, two insurer profiles, three cached demo products, and three demo `eligibility_items` rows exist in Supabase.
 - A repeated `idempotency_key` returns the original payment and does not charge twice.
@@ -1376,7 +1376,7 @@ The Apify go/no-go test (2.9) can run in parallel with Gate 2 because it is offl
 
 These are the **facts** each line must contain. The exact sentence may be phrased naturally by Claude, but every listed figure and label must appear verbatim and no other number may (see `backend/agents/speaker.py`).
 
-**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card drops below the low-balance level. Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
+**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card is under **$10.00** (the low-balance level; team decision 2026-10-24). Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
 
 **Run 1, HSA at $340.00:**
 
@@ -1392,7 +1392,7 @@ These are the **facts** each line must contain. The exact sentence may be phrase
 
 > Must contain "HSA card", "can't cover", "$18.48", "Advil Ibuprofen 200mg", "Bandages", "Visa credit" → yes. **Must not contain "$15.00".**
 
-Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 32152. Any other stored balance means routing or money handling is wrong.
+Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 2500 − 1848 = 652 (the FSA). Any other stored balance means routing or money handling is wrong.
 
 ## 4.5 Test matrix
 

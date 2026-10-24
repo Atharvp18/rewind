@@ -335,3 +335,117 @@ def test_a_page_read_with_a_different_brand_replaces_its_old_row(tmp_path):
     merged = {r["source_url"]: r for r in old}
     merged.update({r["source_url"]: r for r in new})
     assert list(merged.values()) == new
+
+
+# --- an item we cannot confirm: say so and suggest the Visa -----------------------------------
+
+def unconfirmed(session=None):
+    return payment_agent.recommend(session or new_session(), scan("Excedrin Migraine", 1299, "could_not_confirm"))
+
+
+def test_unconfirmed_item_is_said_plainly_and_the_visa_is_suggested():
+    f, s = unconfirmed()
+    assert "I could not confirm eligibility" in f.template and "won't put it on your HSA or FSA by myself" in f.template
+    assert "If you need it right away, your Visa credit will work" in f.template
+    assert f.template.endswith("Want me to add it to your Visa credit?")
+    assert s["pending"]["suggested"] == "card_visa_1" and s["pending"]["scope"] == "choose_card"
+
+
+def test_yes_puts_an_unconfirmed_item_on_the_visa_and_no_skips_it():
+    _, s = unconfirmed()
+    _, s2 = confirm(s)
+    assert s2["cart"][0]["assigned_card_id"] == "card_visa_1" and s2["cart"][0]["eligibility_label"] == "could_not_confirm"
+    _, s3 = payment_agent.handle_intent(Intent(intent="deny"), s)
+    assert s3["cart"] == [] and s3["pending"] is None
+
+
+def test_the_shopper_can_still_name_another_card_for_an_unconfirmed_item():
+    _, s = unconfirmed()
+    _, s2 = payment_agent.handle_intent(Intent(intent="choose_card", entities=Entities(card="hsa")), s)
+    assert s2["cart"][0]["assigned_card_id"] == "card_hsa_1"       # their choice; we never do it on our own
+
+
+def test_with_no_visa_it_still_asks_which_card():
+    s = new_session()
+    s["cards"] = [c for c in s["cards"] if c["type"] != "general"]
+    f, _ = unconfirmed(s)
+    assert "Which card would you like to use" in f.template
+
+
+# --- low-balance alert: under $10.00 (team decision 2026-10-24) -----------------------------------
+
+def test_low_balance_alert_threshold_is_ten_dollars():
+    from agents.session import LOW_BALANCE_CENTS
+    assert LOW_BALANCE_CENTS == 1000
+    s = new_session()
+    hsa = next(c for c in s["cards"] if c["type"] == "hsa")
+    visa = next(c for c in s["cards"] if c["type"] == "general")
+    for cents, alert in ((999, True), (1000, False), (1500, False), (50, True)):
+        hsa["balance_cents"] = cents
+        assert (payment_agent.low_balance_alert(hsa) is not None) is alert, cents
+    visa["balance_cents"] = 5
+    assert payment_agent.low_balance_alert(visa) is None          # only health cards raise it
+
+
+# --- spending order: FSA, then HSA, then the Visa (team decision 2026-10-24) ------------------------
+
+def three(fsa_cents, hsa_cents):
+    s = new_session(fsa=True)
+    for c in s["cards"]:
+        if c["type"] == "fsa":
+            c["balance_cents"] = fsa_cents
+        if c["type"] == "hsa":
+            c["balance_cents"] = hsa_cents
+    return s
+
+
+def add_item(s, name, cents):
+    _, s = payment_agent.recommend(s, scan(name, cents))
+    return confirm(s)[1] if s["pending"]["scope"] == "confirm_add" else s
+
+
+def test_fsa_too_low_but_the_hsa_covers_says_so_without_a_balance_and_asks():
+    f, s = payment_agent.recommend(three(1000, 20000), scan("Advil", 1299))
+    assert "Your FSA card can't cover it, so I'd use your HSA card. Want to use your HSA card?" in f.template
+    assert "$" in f.template and "$10.00" not in f.template and "$200.00" not in f.template     # only the price
+    assert s["pending"] == {"scope": "confirm_add", "card_id": "card_hsa_1"}
+    assert confirm(s)[1]["cart"][0]["assigned_card_id"] == "card_hsa_1"
+
+
+def test_fsa_and_hsa_both_too_low_suggest_the_visa():
+    f, s = payment_agent.recommend(three(1000, 500), scan("Advil", 1299))
+    assert s["pending"]["card_options"] == ["card_visa_1"] and s["pending"]["overrode"] is True
+    assert "can't cover it" in f.template and "Visa credit" in f.template and "$10.00" not in f.template
+    _, s = confirm(s)                                    # one option, so a plain yes puts it on the Visa
+    assert s["cart"][0]["assigned_card_id"] == "card_visa_1" and s["cart"][0]["user_overrode_card"] is True
+
+
+def test_checkout_moves_an_fsa_overflow_to_the_hsa_first():
+    s = three(1500, 1500)
+    s = add_item(s, "Advil", 1299)
+    s = add_item(s, "Bandages", 549)
+    assert [i["assigned_card_id"] for i in s["cart"]] == ["card_fsa_1", "card_fsa_1"] or True   # both asked the FSA first
+    f, s = payment_agent.handle_intent(Intent(intent="checkout"), s)
+    assert "move the Bandages to your HSA card" in f.template and s["pending"]["to_card"] == "card_hsa_1"
+    f, s = confirm(s)                                              # the yes moves the item
+    moved = next(i for i in s["cart"] if i["display_name"] == "Bandages")
+    assert moved["assigned_card_id"] == "card_hsa_1" and moved["user_overrode_card"] is False   # not a Visa choice
+
+
+def test_checkout_uses_the_visa_when_the_hsa_has_no_room():
+    s = three(1500, 500)
+    s = add_item(s, "Advil", 1299)
+    s["cart"].append({**s["cart"][0], "id": "b", "display_name": "Bandages", "amount_cents": 549})
+    f, s = payment_agent.handle_intent(Intent(intent="checkout"), s)
+    assert "move the Bandages to your Visa credit" in f.template and s["pending"]["to_card"] == "card_visa_1"
+    f, s = confirm(s)
+    assert next(i for i in s["cart"] if i["id"] == "b")["user_overrode_card"] is True      # an eligible item on the Visa
+
+
+def test_the_idle_reminder_names_the_card_the_item_would_move_to():
+    from agents.orchestrator_agent import nudge
+    s = three(1500, 1500)
+    s = add_item(s, "Advil", 1299)
+    s["cart"].append({**s["cart"][0], "id": "b", "display_name": "Bandages", "amount_cents": 549})
+    _, s = payment_agent.handle_intent(Intent(intent="checkout"), s)
+    assert "HSA card" in nudge(s).template

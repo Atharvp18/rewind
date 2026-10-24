@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("SPEAK_MODEL", "claude-haiku-5-5")
-TIMEOUT_S = float(os.environ.get("SPEAK_TIMEOUT_S", "4.0"))
+TIMEOUT_S = float(os.environ.get("SPEAK_TIMEOUT_S", "10.0"))
 STUB_MODE = os.environ.get("REWIND_STUB_SPEAK", "false").lower() == "true"
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")

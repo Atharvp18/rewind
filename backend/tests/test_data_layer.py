@@ -57,8 +57,8 @@ def sb(monkeypatch):
 def test_run_balances_and_money_are_integer_cents():
     run1 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(1)}
     run2 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(2)}
-    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 34000, "card_visa_1": 500000}
-    assert run2 == {"card_hsa_1": 1500, "card_fsa_1": 1500, "card_visa_1": 500000}
+    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 2500, "card_visa_1": 500000}
+    assert run2 == {"card_hsa_1": 500, "card_fsa_1": 1500, "card_visa_1": 500000}
     for card in seed.CARDS:
         assert type(card["balance_cents"]) is int
     for product in seed.DEMO_PRODUCTS:
@@ -76,7 +76,7 @@ def test_demo_arithmetic_matches_the_script():
 
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
-    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 34000, 500000]
+    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 2500, 500000]
     for bad in (0, 3, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
@@ -244,13 +244,13 @@ def test_checkout_rejects_a_float_amount_before_calling_the_database(sb):
 
 
 def test_reset_demo_sends_the_seed_and_returns_cards_and_empty_cart(sb):
-    sb.outcomes = [{"cards": [{"id": "card_hsa_1", "balance_cents": 1500}]},   # rpc
+    sb.outcomes = [{"cards": [{"id": "card_hsa_1", "balance_cents": 500}]},   # rpc
                    [],                                                           # cart_items
                    [{"id": "card_hsa_1", "nickname": "HSA card"}]]               # cards
     result = db.reset_demo(2)
     rpc = next(c for c in sb.calls if c[0] == "rpc")
     assert rpc[1][0] == "reset_demo" and rpc[1][1]["p_run"] == 2
-    assert next(c for c in rpc[1][1]["p_cards"] if c["id"] == "card_hsa_1")["balance_cents"] == 1500
+    assert next(c for c in rpc[1][1]["p_cards"] if c["id"] == "card_hsa_1")["balance_cents"] == 500
     assert result["cart"] == {"groups": [], "total_cents": 0}
 
 
@@ -315,6 +315,57 @@ def test_reset_clears_scan_saved_prices_but_keeps_seeded_products():
     reset = sql[sql.index("CREATE OR REPLACE FUNCTION reset_demo"):]
     assert "DELETE FROM product_cache WHERE source <> 'seeded';" in reset
     assert all(p["source"] == "seeded" for p in seed.DEMO_PRODUCTS)
+
+
+# --- purchase history ------------------------------------------------------------------------
+
+def sql(name):
+    from pathlib import Path
+    return (Path(db.__file__).parent / name).read_text()
+
+
+def test_get_purchases_filters_by_date_and_card_type_newest_first(sb):
+    sb.data = [{"id": "a"}]
+    assert db.get_purchases("2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z", "fsa") == [{"id": "a"}]
+    names = [c[0] for c in sb.calls]
+    assert ("gte", ("purchased_at", "2026-10-01T00:00:00Z"), {}) in sb.calls
+    assert ("lt", ("purchased_at", "2026-11-01T00:00:00Z"), {}) in sb.calls
+    assert ("eq", ("card_type", "fsa"), {}) in sb.calls
+    assert ("order", ("purchased_at",), {"desc": True}) in sb.calls
+
+
+def test_checkout_copies_the_cart_into_purchase_items_before_emptying_it():
+    f = sql("functions.sql")
+    body = f[f.index("CREATE OR REPLACE FUNCTION confirm_checkout"):f.index("CREATE OR REPLACE FUNCTION reset_demo")]
+    assert body.index("INSERT INTO purchase_items") < body.index("DELETE FROM cart_items WHERE TRUE")
+    assert "JOIN cards c ON c.id = ci.assigned_card_id" in body
+
+
+def test_reset_clears_purchases_before_payments_because_of_the_foreign_key():
+    f = sql("functions.sql")
+    reset = f[f.index("CREATE OR REPLACE FUNCTION reset_demo"):]
+    assert reset.index("DELETE FROM purchase_items") < reset.index("DELETE FROM payments")
+
+
+def test_migration_file_holds_the_table_and_both_changed_functions():
+    m = sql("migration_purchase_items.sql")
+    assert "CREATE TABLE IF NOT EXISTS purchase_items" in m
+    assert "CREATE OR REPLACE FUNCTION confirm_checkout" in m and "CREATE OR REPLACE FUNCTION reset_demo" in m
+    assert "INSERT INTO purchase_items" in m and "DELETE FROM purchase_items" in m
+    schema = sql("schema.sql")
+    for col in ("payment_id", "purchased_at", "amount_cents", "card_type", "user_overrode_card"):
+        assert col in m and col in schema
+
+
+def test_purchase_items_keeps_category_and_medicine_flag_and_skips_prescriptions():
+    f = sql("functions.sql")
+    body = f[f.index("CREATE OR REPLACE FUNCTION confirm_checkout"):f.index("CREATE OR REPLACE FUNCTION reset_demo")]
+    assert "s.product_json->>'category'" in body and "is_medication" in body
+    assert "LEFT JOIN scans s ON s.scan_id = ci.scan_id" in body
+    assert "WHERE ci.product_key <> 'prescription'" in body        # History is over-the-counter only
+    m = sql("migration_purchase_items.sql")
+    assert "ADD COLUMN IF NOT EXISTS category" in m and "ADD COLUMN IF NOT EXISTS is_medication" in m
+    assert "category" in sql("schema.sql") and "is_medication" in sql("schema.sql")
 
 
 def test_checkout_keeps_the_paid_items_with_the_split_for_the_invoice(sb):

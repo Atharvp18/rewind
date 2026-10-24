@@ -209,7 +209,7 @@ def test_clear_cart_needs_a_confirmation_prompt(client):
 
 def test_cards_endpoint_lists_the_cards(client):
     cards = client.get("/v1/cards").json()
-    assert {c["id"]: c["balance_cents"] for c in cards} == {HSA: 34000, FSA: 34000, VISA: 500000}
+    assert {c["id"]: c["balance_cents"] for c in cards} == {HSA: 34000, FSA: 2500, VISA: 500000}
     assert set(cards[0]) == {"id", "type", "nickname", "balance_cents", "status"}
 
 
@@ -233,13 +233,13 @@ def test_run_1_ends_at_321_52_and_speaks_no_balance(client, fake):
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "run1", "prompt_id": p["voice"]["prompt_id"]})
     assert r.status_code == 200
     body = r.json()
-    assert fake.cards[FSA]["balance_cents"] == 32152 and fake.cards[VISA]["balance_cents"] == 499501
+    assert fake.cards[FSA]["balance_cents"] == 652 and fake.cards[VISA]["balance_cents"] == 499501
     assert fake.cards[HSA]["balance_cents"] == 34000
     voice = body["voice"]
-    assert voice["priority"] == "normal" and "simulated" in voice["text"] and "$18.48" in voice["text"]
-    assert "$321.52" not in voice["text"] and "$340" not in voice["text"]
+    assert voice["priority"] == "alert" and "simulated" in voice["text"] and "$18.48" in voice["text"]   # FSA ends at $6.52, under $10
+    assert "$6.52" not in voice["text"] and "$340" not in voice["text"]
     assert client.get("/v1/cart").json()["groups"] == []
-    assert {b["id"]: b["balance_cents"] for b in body["new_balances"]}[FSA] == 32152
+    assert {b["id"]: b["balance_cents"] for b in body["new_balances"]}[FSA] == 652
 
 
 def test_a_repeated_idempotency_key_returns_the_original_payment(client, fake):
@@ -248,7 +248,7 @@ def test_a_repeated_idempotency_key_returns_the_original_payment(client, fake):
     first = client.post("/v1/checkout/confirm", json={"idempotency_key": "k1", "prompt_id": p["voice"]["prompt_id"]}).json()
     again = client.post("/v1/checkout/confirm", json={"idempotency_key": "k1", "prompt_id": p["voice"]["prompt_id"]})
     assert again.status_code == 200 and again.json()["payment_id"] == first["payment_id"]
-    assert fake.cards[FSA]["balance_cents"] == 32152                      # charged once
+    assert fake.cards[FSA]["balance_cents"] == 652                      # charged once
 
 
 def test_a_new_key_cannot_reuse_a_spent_prompt(client):
@@ -293,19 +293,20 @@ def test_an_item_added_after_the_preview_forces_a_new_confirmation(client, fake)
 
 
 def test_low_balance_after_checkout_plays_the_alert_without_the_amount(client, fake):
-    fake.set_balance(FSA, 2500)
+    fake.set_balance(FSA, 2000)                  # $20.00 - $12.99 leaves $7.01, under the $10.00 alert line
     add(client, advil(client))
     p = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "low", "prompt_id": p["voice"]["prompt_id"]}).json()
     assert r["voice"]["priority"] == "alert"
     assert r["voice"]["text"].endswith("Your FSA card is running low. You might want to add funds.")
-    assert "$12.01" not in r["voice"]["text"]
+    assert "$7.01" not in r["voice"]["text"]
 
 
 # --- checkout: run 2 ---------------------------------------------------------------------------------
 
 def test_run_2_offers_the_reroute_and_a_yes_pays_the_split(client, fake):
     client.post("/v1/demo/reset", json={"run": 2})
+    fake.set_balance(HSA, 500)                   # the HSA ($5.00) cannot take the $5.49 bandages, so the Visa does
     add(client, advil(client))
     add(client, bandages(client))
     p = client.post("/v1/checkout/preview").json()
@@ -318,6 +319,21 @@ def test_run_2_offers_the_reroute_and_a_yes_pays_the_split(client, fake):
     assert r.status_code == 200 and r.json()["payment_id"]
     assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[VISA]["balance_cents"] == 499451
     assert "$15.00" not in r.json()["voice"]["text"] and r.json()["voice"]["priority"] == "alert"
+
+
+def test_run_2_with_both_health_cards_short_moves_the_bandages_to_the_visa(client, fake):
+    """Spending order is FSA, then HSA, then the Visa: in run 2 the HSA ($5.00) cannot take the $5.49 bandages either, so they go to the Visa."""
+    client.post("/v1/demo/reset", json={"run": 2})
+    add(client, advil(client))
+    add(client, bandages(client))
+    p = client.post("/v1/checkout/preview").json()
+    assert "keep the Advil Ibuprofen 200mg on your FSA card" in p["voice"]["text"]
+    assert "move the Bandages to your Visa credit" in p["voice"]["text"]
+    assert p["issues"][0]["moves"][0]["to_card_id"] == VISA
+    r = client.post("/v1/checkout/confirm", json={"idempotency_key": "run2visa", "prompt_id": p["voice"]["prompt_id"]})
+    assert r.status_code == 200
+    assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[HSA]["balance_cents"] == 500
+    assert fake.cards[VISA]["balance_cents"] == 499451                      # the bandages went to the Visa
 
 
 def test_nothing_that_covers_an_item_means_no_question(client, fake):
@@ -409,7 +425,7 @@ def test_cart_checkout_and_yes_by_voice(client, fake):
     assert pre["action"] == "checkout_preview" and pre["result"]["total_cents"] == 2347
     done = say(client, "yes", pre["voice"]["prompt_id"]).json()
     assert done["action"] == "checkout_confirm" and "simulated" in done["voice"]["text"]
-    assert fake.cards[FSA]["balance_cents"] == 32152 and len(fake.payments) == 1
+    assert fake.cards[FSA]["balance_cents"] == 652 and len(fake.payments) == 1
 
 
 def test_remove_last_by_voice_reads_back_what_was_removed(client):
@@ -518,6 +534,7 @@ def test_a_voice_checkout_is_recorded_too(client, nessie_log):
 
 def test_run_2_logs_the_split_that_was_actually_charged(client, nessie_log, fake):
     client.post("/v1/demo/reset", json={"run": 2})          # a reset reloads the cards, so link them after
+    fake.set_balance(HSA, 500)                              # the HSA cannot take the bandages, so the Visa does
     fake.cards[FSA]["nessie_account_id"], fake.cards[VISA]["nessie_account_id"] = "acc-fsa", "acc-visa"
     add(client, advil(client)); add(client, bandages(client))
     p = client.post("/v1/checkout/preview").json()
@@ -545,7 +562,7 @@ def test_a_nessie_outage_does_not_affect_the_payment(client, fake, monkeypatch):
     fill_run1(client)
     p = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "n5", "prompt_id": p["voice"]["prompt_id"]})
-    assert r.status_code == 200 and r.json()["payment_id"] and fake.cards[FSA]["balance_cents"] == 32152
+    assert r.status_code == 200 and r.json()["payment_id"] and fake.cards[FSA]["balance_cents"] == 652
 
 
 # --- invoice ---------------------------------------------------------------------------------------------

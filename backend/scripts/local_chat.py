@@ -19,12 +19,17 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import os
+if sys.argv[1:] == ["history"]:   # "history-live" runs the same questions against the real Moss memory
+    # Sample purchases, so this runs before the purchase_items table exists in Supabase.
+    os.environ["REWIND_STUB_HISTORY"] = "true"
+
 from uagents import Agent, Bureau, Context
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement, ChatMessage, MetadataContent, Resource, ResourceContent, StartSessionContent, TextContent,
 )
 
-from agents import orchestrator_agent, payment_agent, product_agent
+from agents import history_agent, orchestrator_agent, payment_agent, product_agent
 from agents.addresses import ORCHESTRATOR_AGENT_ADDRESS
 
 # Photos: with REWIND_STUB_VISION=true the stub reads the marker in the bytes.
@@ -58,8 +63,31 @@ SCRIPTS = {
         "sure go ahead",
         "what's in my cart",
     ],
+    "catalog": [           # live Moss eligibility index: listed, listed without a price tag, unlisted, not eligible
+        "<photo:allegra>",
+        "<photo:excedrin>",
+        "<photo:tissues_close>",
+    ],
+    "history-real": [        # questions for the real purchases of the shopping scenario (Advil on the Visa, Kleenex)
+        "hi there",
+        "I bought some medicine earlier and forgot what it was",
+        "what could I claim back",
+        "how much have I spent in total",
+        "did I buy any tissues",
+        "what did I buy last month",
+    ],
+    "history": [
+        "hi there",
+        "I bought some medicine last month and I don't remember what it was",
+        "how much did I spend on my FSA this month",
+        "what could I claim back",
+        "did I buy any allergy medicine",
+        "what have I bought recently",
+        "how many things did I buy on my visa",
+        "what did I buy last week",
+    ],
 }
-SCRIPT = SCRIPTS[sys.argv[1] if len(sys.argv) > 1 else "shopping"]
+SCRIPT = SCRIPTS[(sys.argv[1] if len(sys.argv) > 1 else "shopping").replace("history-live", "history")]
 
 replies: asyncio.Queue = asyncio.Queue()
 shopper = Agent(name="test-shopper", seed="rewind-local-test-shopper", port=8010, endpoint=["http://127.0.0.1:8010/submit"])
@@ -132,5 +160,6 @@ if __name__ == "__main__":
     bureau.add(orchestrator_agent.build_agent(mailbox=False, port=8003))
     bureau.add(product_agent.build_agent(mailbox=False, port=8001))
     bureau.add(payment_agent.build_agent(mailbox=False, port=8002))
+    bureau.add(history_agent.build_agent(mailbox=False, port=8004))
     bureau.add(shopper)
     bureau.run()

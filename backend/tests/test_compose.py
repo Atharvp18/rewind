@@ -127,7 +127,6 @@ def reason_cases():
         "copay_unconfirmed": ("eligible", 500, "remaining_after_copay", both),
         "zero_copay_nothing_due": ("eligible", 0, "remaining_after_copay", both),
         "no_health_card_linked": ("eligible", 499, "shelf_price", no_health),
-        "multiple_health_cards": ("eligible", 499, "shelf_price", hsa_only),
         "no_card_linked": ("eligible", 499, "shelf_price", frozen),
         "no_card_covers": ("eligible", 499_999_99, "shelf_price", cards_for_run(2)),
     }
@@ -196,7 +195,7 @@ def test_run_1_checkout_preview_and_result():
 
 
 def test_run_2_checkout_preview_offers_to_move_the_bandages():
-    cards = cards_for_run(2)
+    cards = [dict(c, balance_cents=500) if c["id"] == "card_hsa_1" else c for c in cards_for_run(2)]   # HSA too low: Visa
     items = cart(("Advil Ibuprofen 200mg", 1299, "card_fsa_1", "eligible"), ("Bandages", 549, "card_fsa_1", "eligible"))
     preview = compose.checkout_preview(plan_checkout(items, cards), cards, items, prompt_id="p")
     assert ("keep the Advil Ibuprofen 200mg on your FSA card and move the Bandages to your Visa credit"
@@ -240,3 +239,10 @@ def test_sentences_always_match_the_splitter_and_carry_no_dollar_fragments():
     assert voice.sentences == split_sentences(voice.text)
     assert all(re.search(r"[.!?]$", s) for s in voice.sentences)
     assert compose._request("x").request_id != compose._request("x").request_id
+
+
+def test_run_2_preview_falls_through_to_the_visa_when_both_health_cards_are_short():
+    cards = cards_for_run(2)                                   # FSA $15.00, HSA $5.00
+    items = cart(("Advil Ibuprofen 200mg", 1299, "card_fsa_1", "eligible"), ("Bandages", 549, "card_fsa_1", "eligible"))
+    preview = compose.checkout_preview(plan_checkout(items, cards), cards, items, prompt_id="p")
+    assert "keep the Advil Ibuprofen 200mg on your FSA card and move the Bandages to your Visa credit" in preview.text

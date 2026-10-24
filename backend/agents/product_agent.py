@@ -8,6 +8,7 @@ decides anything here except reading the photo.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -182,6 +183,14 @@ def build_agent(mailbox: bool = True, port: int = 8001) -> Agent:
         description="Identifies a shopping item from a shelf photo or name and checks HSA/FSA eligibility.",
     )
     agent.include(product_protocol, publish_manifest=True)
+
+    @agent.on_event("startup")
+    async def warm(ctx: Context):
+        # Load the eligibility index now (about 2.5 s) so the first scan does not pay for it.
+        # Best effort: if Moss is down, scans fall back to the IRS rules alone.
+        from lookup import moss_index
+        if os.environ.get("MOSS_PROJECT_ID"):
+            await moss_index.warm_up()
     return agent
 
 

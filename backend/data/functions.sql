@@ -74,8 +74,8 @@ $$;
 --   p_splits = [{"card_id": "card_hsa_1", "amount_cents": 1848}, ...]
 -- A repeated idempotency key returns the original payment unchanged and charges nothing.
 -- Any failed debit raises, which rolls back the payment row and every earlier debit.
--- A successful checkout also empties the cart, so the same items cannot be paid twice
--- under a new key.
+-- A successful checkout copies the cart into purchase_items (for the History agent), then empties
+-- the cart, so the same items cannot be paid twice under a new key.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION confirm_checkout(p_idempotency_key TEXT, p_splits JSONB)
 RETURNS JSONB
@@ -131,6 +131,21 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Keep what was bought: the History agent reads purchase_items; the cart is about to be emptied.
+  -- Over-the-counter only: a prescription copay is not kept. Category and is_medication come from
+  -- the saved scan.
+  INSERT INTO purchase_items (id, payment_id, product_key, display_name, amount_cents, amount_basis,
+                              card_id, card_type, eligibility_label, user_overrode_card,
+                              category, is_medication)
+  SELECT ci.id, v_payment_id, ci.product_key, ci.display_name, ci.amount_cents, ci.amount_basis,
+         ci.assigned_card_id, c.type, ci.eligibility_label, ci.user_overrode_card,
+         s.product_json->>'category',
+         COALESCE((s.product_json->>'is_medication')::BOOLEAN, FALSE)
+    FROM cart_items ci
+    JOIN cards c ON c.id = ci.assigned_card_id
+    LEFT JOIN scans s ON s.scan_id = ci.scan_id
+   WHERE ci.product_key <> 'prescription';
+
   DELETE FROM cart_items WHERE TRUE;   -- WHERE TRUE: see reset_demo (pg-safeupdate)
 
   RETURN jsonb_build_object(
@@ -174,6 +189,7 @@ BEGIN
   DELETE FROM cart_items WHERE TRUE;
   DELETE FROM scans      WHERE TRUE;
   DELETE FROM prompts    WHERE TRUE;
+  DELETE FROM purchase_items WHERE TRUE;   -- references payments, so it goes first
   DELETE FROM payments   WHERE TRUE;
   -- prices saved from earlier scans go too, so every rehearsal starts the same;
   -- the seeded demo products are re-inserted below
