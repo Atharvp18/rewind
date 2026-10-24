@@ -217,8 +217,10 @@ def test_seed_links_the_cards_to_nessie_accounts_from_the_environment(monkeypatc
 
     monkeypatch.delenv("NESSIE_HSA_ACCOUNT_ID", raising=False)
     monkeypatch.delenv("NESSIE_VISA_ACCOUNT_ID", raising=False)
-    assert [c["nessie_account_id"] for c in seed.cards_for_run(1)] == [None, None]
+    monkeypatch.delenv("NESSIE_FSA_ACCOUNT_ID", raising=False)
+    assert [c["nessie_account_id"] for c in seed.cards_for_run(1)] == [None, None, None]
     monkeypatch.setenv("NESSIE_HSA_ACCOUNT_ID", "acc-hsa")
+    monkeypatch.setenv("NESSIE_FSA_ACCOUNT_ID", "acc-fsa")
     monkeypatch.setenv("NESSIE_VISA_ACCOUNT_ID", "acc-visa")
     linked = {c["id"]: c["nessie_account_id"] for c in seed.cards_for_run(2)}
-    assert linked == {"card_hsa_1": "acc-hsa", "card_visa_1": "acc-visa"}
+    assert linked == {"card_hsa_1": "acc-hsa", "card_fsa_1": "acc-fsa", "card_visa_1": "acc-visa"}

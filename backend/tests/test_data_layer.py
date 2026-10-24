@@ -57,8 +57,8 @@ def sb(monkeypatch):
 def test_run_balances_and_money_are_integer_cents():
     run1 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(1)}
     run2 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(2)}
-    assert run1 == {"card_hsa_1": 34000, "card_visa_1": 500000}
-    assert run2["card_hsa_1"] == 1500 and run2["card_visa_1"] == 500000
+    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 34000, "card_visa_1": 500000}
+    assert run2 == {"card_hsa_1": 1500, "card_fsa_1": 1500, "card_visa_1": 500000}
     for card in seed.CARDS:
         assert type(card["balance_cents"]) is int
     for product in seed.DEMO_PRODUCTS:
@@ -76,7 +76,7 @@ def test_demo_arithmetic_matches_the_script():
 
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
-    assert next(c for c in seed.CARDS if c["id"] == "card_hsa_1")["balance_cents"] == 34000
+    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 34000, 500000]
     for bad in (0, 3, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
@@ -90,6 +90,13 @@ def test_demo_products_and_eligibility_rows_line_up_with_tiea_key_function():
         assert p["product_key"] != "upc:", "placeholder UPC lost its digits"
     labels = {e["name"]: e["eligible"] for e in seed.DEMO_ELIGIBILITY}
     assert labels == {"Advil Ibuprofen 200mg": True, "Bandages": True, "Kettle Corn": False}
+
+
+def test_the_fsa_is_the_only_default_health_card_and_the_visa_is_not_a_default():
+    defaults = [c["id"] for c in seed.CARDS if c["is_default"]]
+    assert defaults == ["card_fsa_1"]
+    assert {c["id"]: c["type"] for c in seed.CARDS} == {
+        "card_hsa_1": "hsa", "card_fsa_1": "fsa", "card_visa_1": "general"}
 
 
 def test_reset_payload_is_deterministic_and_has_two_insurers():

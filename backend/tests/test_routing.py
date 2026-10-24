@@ -106,6 +106,32 @@ def test_two_health_cards_with_a_default_uses_it():
     assert (r.decision, r.card_id) == ("route_to_hsa", "card_fsa_1")
 
 
+def test_with_the_real_seed_an_eligible_item_goes_to_the_fsa_default_without_asking():
+    from data.seed import cards_for_run
+
+    r = route(cards=cards_for_run(1))
+    assert (r.decision, r.card_id, r.reason_code) == ("route_to_hsa", "card_fsa_1", "eligible_sufficient_balance")
+    assert r.balance_before_cents == 34000 and r.balance_after_cents == 32701
+
+
+def test_with_the_real_seed_run2_asks_to_use_the_visa_because_both_health_cards_are_short():
+    from data.seed import cards_for_run
+
+    r = route(amount=1848, cards=cards_for_run(2))
+    assert (r.decision, r.reason_code, r.card_id) == ("ask_user", "eligible_insufficient_balance", None)
+    assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
+
+
+def test_with_the_real_seed_run2_checkout_keeps_advil_on_the_fsa_and_moves_the_bandages():
+    from data.seed import cards_for_run
+
+    plan = plan_checkout([item("a", "Advil", ADVIL, "card_fsa_1"), item("b", "Bandages", BANDAGES, "card_fsa_1")],
+                         cards_for_run(2))
+    issue = plan.issues[0]
+    assert (issue.rule, issue.card_id, issue.keep_item_ids) == (2, "card_fsa_1", ["a"])
+    assert [(m.item_id, m.to_card_id) for m in issue.moves] == [("b", "card_visa_1")]
+
+
 def test_an_fsa_alone_is_treated_like_an_hsa():
     r = route(cards=[hsa(type="fsa"), visa()])
     assert r.decision == "route_to_hsa"
