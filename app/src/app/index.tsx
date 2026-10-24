@@ -11,12 +11,14 @@ import { HealthBanner } from '@/components/health-banner';
 import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
+import { ProfileSheet } from '@/components/profile-sheet';
 import { TranscriptPill } from '@/components/transcript-pill';
-import { domeHeight, OrbGlow, VoiceOrb } from '@/components/voice-orb';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { OrbGlow, useDomeHeight, VoiceOrb } from '@/components/voice-orb';
+import { Layout, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
+import { useResponsive } from '@/lib/responsive';
 import { inflate, photoToScreen, StageContext, type Rect } from '@/lib/stage';
 import { useSteadiness } from '@/lib/steady';
 import { useAgent } from '@/state/agent';
@@ -47,6 +49,7 @@ export default function Home() {
   const [camera, requestCamera] = useCameraPermissions();
   const focused = useIsFocused();
   const { width, height } = useWindowDimensions();
+  const r = useResponsive();
   const stage = useRef<CameraStageHandle>(null);
 
   const onboarding = loaded && !profile.onboarded;
@@ -55,13 +58,13 @@ export default function Home() {
   const granted = !!camera?.granted;
 
   // --- layout: the free area between the top bar and the orb -----------------
-  // The main widget lives between the cart/profile row and the dome, with a
-  // standard 16 pt gap to each, and is centered in that space.
+  // Free area for the answer card: below the top block (cart/profile row and
+  // transcript), above the dome, with a standard 16 pt gap to each.
   const insets = useSafeAreaInsets();
   const [rowBottom, setRowBottom] = useState(insets.top + 80);
-  const domeTop = height - domeHeight(height, insets.bottom);
+  const domeTop = height - useDomeHeight();
   const area: Rect = useMemo(
-    () => ({ x: 0, y: rowBottom + Spacing.lg, w: width, h: Math.max(0, domeTop - rowBottom - Spacing.lg * 2) }),
+    () => ({ x: 0, y: rowBottom + Layout.stack, w: width, h: Math.max(0, domeTop - rowBottom - Layout.stack * 2) }),
     [rowBottom, domeTop, width],
   );
 
@@ -151,21 +154,24 @@ export default function Home() {
   const cardMode = onboarding || addingCard || cardCapture;
   const guideW = Math.min(width * (cardMode ? 0.82 : 0.62), MaxContentWidth);
   const guideH = cardMode ? guideW / CARD_RATIO : guideW * 1.1;
+  // The camera view is what's left between the card (or the top block) and the
+  // dome. The focus corners live there; if it is too small for a proper frame,
+  // they hide until the card closes (the card is describing the item).
+  const [card, setCard] = useState<Rect | null>(null);
+  const camTop = card ? card.y + card.h + Layout.stack : area.y;
+  const camBottom = domeTop - Layout.stack;
+  const camH = Math.max(0, camBottom - camTop);
+  const guideFitH = Math.min(guideH, camH);
   const guide: Rect = {
     x: (width - guideW) / 2,
-    y: area.y + Math.max(0, (area.h - guideH) / 2),
+    y: camTop + Math.max(0, (camH - guideFitH) / 2),
     w: guideW,
-    h: Math.min(guideH, area.h),
+    h: guideFitH,
   };
-  // Keep the corners whole and in the free area: below the top bar and caption,
-  // above the pop-up card. If the card leaves too little room for a proper frame,
-  // hide the corners (the card is describing the item) until the card closes.
-  const [card, setCard] = useState<Rect | null>(null);
   const MIN_FRAME = 140;
   const fitFrame = (r: Rect): Rect | null => {
-    const top = Math.max(r.y, area.y);
-    let bottom = r.y + r.h;
-    if (card && bottom > card.y && top < card.y + card.h) bottom = Math.min(bottom, card.y - Spacing.md);
+    const top = Math.max(r.y, camTop);
+    const bottom = Math.min(r.y + r.h, camBottom);
     const h = bottom - top;
     return h >= MIN_FRAME ? { ...r, y: top, h } : null;
   };
@@ -175,7 +181,15 @@ export default function Home() {
 
   const frameBox = fitFrame(itemBox ?? guide);
 
-  const hint = autoReady ? (available ? 'Hold steady on an item' : 'Tap the screen to scan') : null;
+  // The status pill always states the real next step.
+  const answerPending = scanShowing && state.lastScan?.scan.state !== 'unresolved' && !!state.lastScan?.recommendation;
+  const hint = answerPending
+    ? 'Say yes or no, or tap a button'
+    : autoReady
+      ? available
+        ? 'Hold steady on an item'
+        : 'Tap the screen to scan'
+      : null;
 
   return (
     <View style={[styles.root, { backgroundColor: palette.bg }]}>
@@ -217,29 +231,27 @@ export default function Home() {
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
             />
+          ) : state.view === 'profile' ? (
+            <ProfileSheet />
           ) : (
             <HomePanels />
           )}
         </View>
       </StageContext.Provider>
 
-      <SafeAreaView edges={['top', 'left', 'right']} style={styles.top} pointerEvents="box-none">
-        <View
-          style={styles.topRow}
-          pointerEvents="box-none"
-          onLayout={(e) => setRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
+      <SafeAreaView
+        edges={['top', 'left', 'right']}
+        style={styles.top}
+        pointerEvents="box-none"
+        onLayout={(e) => setRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
+        <View style={[styles.topRow, { width: r.contentWidth }]} pointerEvents="box-none">
           {onboarding ? <View /> : <CartChip />}
           <ProfileButton />
         </View>
-        {/* While the main widget is up, the caption is its top layer instead. */}
-        {card ? null : (
-          <View style={styles.pillRow} pointerEvents="box-none">
-            <TranscriptPill />
-          </View>
-        )}
-        <View style={styles.banner} pointerEvents="box-none">
-          <HealthBanner />
+        <View style={[styles.pillRow, { width: r.contentWidth }]} pointerEvents="box-none">
+          <TranscriptPill />
         </View>
+        <HealthBanner />
       </SafeAreaView>
 
       <View style={styles.bottom} pointerEvents="box-none">
@@ -257,15 +269,15 @@ function AddCardFlow(props: Omit<Parameters<typeof OnboardingFlow>[0], 'startAt'
 const styles = StyleSheet.create({
   root: { flex: 1 },
   top: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Rows sit in the centered content column (Layout.margin on phones, max 640 pt on tablets).
   topRow: {
+    alignSelf: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
-    gap: Spacing.md,
+    gap: Layout.stack,
   },
-  pillRow: { flexDirection: 'row', paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
-  banner: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  pillRow: { alignSelf: 'center', flexDirection: 'row', paddingTop: Layout.stack },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });

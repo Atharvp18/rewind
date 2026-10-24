@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -19,9 +19,43 @@ import { withOpacity } from '@/components/info-panel';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { onMicLevel } from '@/lib/audio';
+import { responsiveFor } from '@/lib/responsive';
 import { useAgent, type Phase } from '@/state/agent';
 
-export const ORB_SIZE = 104;
+/**
+ * Orb diameter: 12% of the screen height (96–112 pt on phones), times the UI
+ * scale on tablets (up to 140 pt). Uses the shorter side in landscape.
+ */
+export function orbSizeFor(width: number, height: number): number {
+  // Height is the long side in portrait and the short side in landscape: right in both.
+  return Math.round(Math.min(112, Math.max(96, height * 0.12)) * responsiveFor(width, height).ui);
+}
+
+/**
+ * Lift above the bottom safe area so the orb sits in the one-handed thumb zone
+ * (its center about 20–23% up the screen on every phone): 16–48 pt, growing with height.
+ */
+function thumbLiftFor(screenHeight: number): number {
+  // Small phones need less lift: their bottom edge is already in easy reach.
+  return Math.round(Math.min(48, Math.max(16, (screenHeight - 600) * 0.1 + 16)));
+}
+
+// Measured height of the orb block (orb + status + lift). The dome and the
+// card's free area are sized from it, so the orb always sits inside the dome
+// at every screen size and text size.
+let blockHeight = 0;
+const blockListeners = new Set<() => void>();
+function setBlockHeight(h: number) {
+  if (Math.abs(h - blockHeight) < 1) return;
+  blockHeight = h;
+  blockListeners.forEach((l) => l());
+}
+function subscribeBlock(l: () => void) {
+  blockListeners.add(l);
+  return () => {
+    blockListeners.delete(l);
+  };
+}
 
 type Mode = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -39,7 +73,7 @@ const MODE: Record<Phase, Mode> = {
 
 const STATUS: Record<Phase, string> = {
   idle: 'Tap to wake Rewind',
-  awaiting_confirm: 'Tap and say yes or no',
+  awaiting_confirm: 'Say yes or no, or tap a button',
   listening: 'Listening… tap to send',
   interrupted: 'Listening…',
   capturing: 'Taking photo…',
@@ -65,17 +99,21 @@ const STATUS: Record<Phase, string> = {
  * thin edge. Rendered as its own background layer, *behind* pop-ups, so it
  * never draws over a card. Decorative.
  */
-/** Height of the dome above the bottom edge. Pop-ups stop above this line. */
-export function domeHeight(screenHeight: number, bottomInset: number): number {
-  return Math.min(300, screenHeight * 0.3) + bottomInset;
+/** Visible height of the dome above the bottom edge. Pop-ups stop above this line. */
+export function useDomeHeight(): number {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const block = useSyncExternalStore(subscribeBlock, () => blockHeight);
+  // The measured orb block plus a little headroom above the orb; a formula until first layout.
+  return block ? block + orbSizeFor(width, height) * 0.18 : Math.min(260, height * 0.28) + insets.bottom;
 }
 
 export function OrbGlow() {
   const { palette } = useA11y();
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const glowHeight = domeHeight(height, insets.bottom);
-  const domeD = Math.max(width * 1.35, glowHeight * 2);
+  const { width } = useWindowDimensions();
+  const glowHeight = useDomeHeight();
+  // Capped on wide screens (tablets) so it stays a dome, not a flat band.
+  const domeD = Math.max(Math.min(width * 1.35, 900), glowHeight * 2);
   const f = glowHeight / domeD;
   return (
     <View pointerEvents="none" style={styles.glowLayer}>
@@ -96,8 +134,10 @@ export function OrbGlow() {
         ]}>
         <LinearGradient
           colors={[
-            withOpacity(palette.dockTop, 0),
-            withOpacity(palette.dockTop, 0.6),
+            // Clear → deep teal → mint: a light mint fading over a dark scene reads as gray,
+            // so the middle of the fade is the brand teal.
+            withOpacity(palette.dockEdge, 0),
+            withOpacity(palette.dockEdge, 0.55),
             withOpacity(palette.dockBottom, 0.95),
             withOpacity(palette.dockBottom, 0.95),
           ]}
@@ -114,6 +154,10 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
   const { palette, reduceMotion } = useA11y();
   const { state, talkTap, talkHoldStart, talkHoldEnd } = useAgent();
   const insets = useSafeAreaInsets();
+  const { width: screenW, height } = useWindowDimensions();
+  const orb = orbSizeFor(screenW, height);
+  const size = { width: orb, height: orb, borderRadius: orb / 2 };
+  const core = Math.round(orb * 0.55);
   const mode = MODE[state.phase];
 
   const spin = useSharedValue(0);
@@ -167,10 +211,13 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
   const status = hint && state.phase === 'idle' ? hint : STATUS[state.phase];
 
   return (
-    <View style={[styles.root, { paddingBottom: Math.max(insets.bottom, Spacing.lg) }]} pointerEvents="box-none">
-      <View style={styles.orbWrap} pointerEvents="box-none">
+    <View
+      style={[styles.root, { paddingBottom: insets.bottom + thumbLiftFor(height) }]}
+      pointerEvents="box-none"
+      onLayout={(e) => setBlockHeight(e.nativeEvent.layout.height)}>
+      <View style={[styles.orbWrap, { width: orb * 1.8, height: orb * 1.12 }]} pointerEvents="box-none">
         {!reduceMotion && mode === 'speaking' ? (
-          <Animated.View pointerEvents="none" style={[styles.ripple, { borderColor: palette.accent }, rippleStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.ripple, size, { borderColor: palette.accent }, rippleStyle]} />
         ) : null}
         <Animated.View style={orbStyle}>
           <Pressable
@@ -184,12 +231,18 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
             delayLongPress={350}
             style={[
               styles.orb,
+              size,
               {
                 borderColor: palette.controlBorderWidth ? palette.talkRing : withOpacity(palette.talkRing, 0.6),
                 borderWidth: palette.controlBorderWidth ? 3 : 2,
               },
             ]}>
-            <Animated.View style={[styles.spinner, spinStyle]}>
+            <Animated.View
+              style={[
+                styles.spinner,
+                { width: orb * 1.6, height: orb * 1.6, left: -orb * 0.3, top: -orb * 0.3 },
+                spinStyle,
+              ]}>
               <LinearGradient
                 colors={[palette.talkTop, palette.accent, palette.talkBottom, palette.talkTop]}
                 start={{ x: 0, y: 0 }}
@@ -198,8 +251,12 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
               />
             </Animated.View>
             {/* Steady dark core keeps the icon at a fixed contrast while the gradient moves. */}
-            <View style={[styles.core, { backgroundColor: withOpacity(palette.talkBottom, 0.92) }]}>
-              <Icon name={listening ? 'stop' : 'mic'} size={30} color="onTalk" strokeWidth={2.5} />
+            <View
+              style={[
+                styles.core,
+                { width: core, height: core, borderRadius: core / 2, backgroundColor: withOpacity(palette.talkBottom, 0.92) },
+              ]}>
+              <Icon name={listening ? 'stop' : 'mic'} size={Math.round(orb * 0.3)} color="onTalk" strokeWidth={2.5} />
             </View>
           </Pressable>
         </Animated.View>
@@ -224,30 +281,11 @@ const styles = StyleSheet.create({
   root: { alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.md },
   glowLayer: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
   dome: { position: 'absolute', overflow: 'hidden' },
-  orbWrap: { width: ORB_SIZE * 1.8, height: ORB_SIZE * 1.25, alignItems: 'center', justifyContent: 'center' },
-  ripple: {
-    position: 'absolute',
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    borderRadius: ORB_SIZE / 2,
-    borderWidth: 6,
-  },
-  orb: {
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    borderRadius: ORB_SIZE / 2,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spinner: {
-    position: 'absolute',
-    width: ORB_SIZE * 1.6,
-    height: ORB_SIZE * 1.6,
-    left: -ORB_SIZE * 0.3,
-    top: -ORB_SIZE * 0.3,
-  },
-  core: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  orbWrap: { alignItems: 'center', justifyContent: 'center' },
+  ripple: { position: 'absolute', borderWidth: 6 },
+  orb: { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  spinner: { position: 'absolute' },
+  core: { alignItems: 'center', justifyContent: 'center' },
   status: {
     borderRadius: Radius.pill,
     paddingHorizontal: Spacing.lg,

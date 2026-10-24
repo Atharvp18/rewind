@@ -242,6 +242,12 @@ export const Radius = {
 
 export const MaxContentWidth = 640;
 
+/**
+ * One spacing rule for the camera screen: 16 pt side margins, and 12 pt
+ * between every stacked element (top row → transcript → card → camera → dome).
+ */
+export const Layout = { margin: Spacing.lg, stack: Spacing.md } as const;
+
 export const Motion = {
   /** Caption pill grow / shrink. */
   pill: 260,

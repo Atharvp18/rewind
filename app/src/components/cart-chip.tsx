@@ -6,6 +6,7 @@ import { PROFILE_SIZE } from '@/components/profile-button';
 import { Elevation, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { centsForScreenReader, formatCents } from '@/lib/money';
+import { useResponsive } from '@/lib/responsive';
 import { useAgent } from '@/state/agent';
 
 /**
@@ -22,7 +23,8 @@ export function CartChip() {
     : 'Cart, empty';
   // The chip's text grows to 150% at most so it never pushes the profile button off screen;
   // the full cart in the window follows the user's text size up to 200%.
-  const scale = Math.min(settings.textScale, 1.5);
+  const { ui, type } = useResponsive();
+  const scale = Math.min(settings.textScale, 1.5) * type;
 
   return (
     <Pressable
@@ -33,13 +35,14 @@ export function CartChip() {
       hitSlop={8}
       style={({ pressed }) => [
         styles.chip,
+        { minHeight: PROFILE_SIZE * ui, minWidth: PROFILE_SIZE * ui },
         Elevation.floating,
         { backgroundColor: palette.profileBg, borderColor: palette.controlBorderWidth ? palette.profileRing : 'rgba(255,255,255,0.35)',
           borderWidth: palette.controlBorderWidth ? 3 : 1.5, opacity: pressed ? 0.85 : 1 },
       ]}>
       <Icon name="cart" size={26} color="onProfile" />
       <AppText color="onProfile" accessible={false} style={[styles.text, { fontSize: Math.round(20 * scale) }]}>
-        {count ? `${count} · ${formatCents(state.cart.total_cents)}` : '0'}
+        {count ? `Cart ${count} · ${formatCents(state.cart.total_cents)}` : 'Cart'}
       </AppText>
     </Pressable>
   );

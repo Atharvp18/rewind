@@ -2,6 +2,7 @@ import { Text, type TextProps } from 'react-native';
 
 import { LineHeight, Type, type Palette, type TypeRole } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
+import { useResponsive } from '@/lib/responsive';
 
 export type AppTextProps = TextProps & {
   kind?: TypeRole;
@@ -15,7 +16,8 @@ export type AppTextProps = TextProps & {
 export function AppText({ kind = 'body', color = 'text', style, ...rest }: AppTextProps) {
   const { palette, settings } = useA11y();
   const t = Type[kind];
-  const fontSize = Math.round(t.fontSize * settings.textScale);
+  // User text size × a gentle bump on large screens (tablets, foldables).
+  const fontSize = Math.round(t.fontSize * settings.textScale * useResponsive().type);
   return (
     <Text
       {...rest}

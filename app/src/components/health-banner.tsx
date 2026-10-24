@@ -1,4 +1,8 @@
+import { View } from 'react-native';
+
 import { AlertBlock } from '@/components/alert-block';
+import { Layout } from '@/constants/theme';
+import { useResponsive } from '@/lib/responsive';
 import type { Upstream } from '@/lib/api';
 import { useAgent } from '@/state/agent';
 
@@ -19,6 +23,7 @@ const EFFECT: Partial<Record<Upstream, string>> = {
 /** Names any upstream reported `down` by /v1/health, in words (never color alone). */
 export function HealthBanner() {
   const { state } = useAgent();
+  const { contentWidth } = useResponsive();
   const down = state.health
     ? (Object.entries(state.health.upstreams) as [Upstream, string][]).filter(([, s]) => s === 'down')
     : [];
@@ -29,9 +34,12 @@ export function HealthBanner() {
     ? ['Rewind server is not reachable.']
     : down.map(([u]) => `${NAMES[u]} is down. ${EFFECT[u] ?? ''}`.trim());
 
+  // Its own spacing, so a hidden banner adds no gap to the layout.
   return (
-    <AlertBlock level="danger" title={unreachable ? 'Offline' : 'Service down'}>
-      {lines.join(' ')}
-    </AlertBlock>
+    <View style={{ width: contentWidth, alignSelf: 'center', paddingTop: Layout.stack }}>
+      <AlertBlock level="danger" title={unreachable ? 'Offline' : 'Service down'}>
+        {lines.join(' ')}
+      </AlertBlock>
+    </View>
   );
 }
