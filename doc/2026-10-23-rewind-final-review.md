@@ -12,28 +12,43 @@ Labels used in this document
 
 - Name: Rewind (working name, see section 17)
 - One-line pitch: Point your phone at any product and hear what it is, what it costs, and which card to pay with
-- Named community: Blind and low-vision adults who shop independently for groceries and pharmacy items
-- Secondary group: Older adults, including those with tremor, for whom small buttons and menus are hard
+- Named community: Elderly and low-vision adults who shop independently for groceries and pharmacy items
+- Secondary group: Older adults, including those with tremor, for whom small buttons and menus are hard (future scope)
 - Platform: Voice-first mobile app (Expo, React Native)
-- Data policy: Mock data only. No real cards, balances, prescriptions, receipts, or personal information
+- Data policy: Mock data only. No real cards, balances(Nessie API)  prescriptions(Real data for users) , receipts(Real data) , or personal information and the user's united healthcare profile is also mock accept(United is real insurance, BluecROSS insurance, and the other three had mock data) 
 
 ## 2. Problem and Solution
 
 Problem
-
-- Blind and low-vision adults who shop on their own can find price tags hard to read
+- Elderly and low-vision adults who shop on their own can find price tags hard to read
 - They can have difficulty telling whether an item may be HSA/FSA eligible
 - They may not know which card to use
 - A low HSA/FSA balance can be discovered only when the card is declined at the register
-
-These statements are assumptions until we hear from a blind or low-vision shopper (see section 15). Replace them with that person's words once we have them
+- They may not know how much their insurance will cover
 
 Solution
 
-- The user points their phone at a product
-- The agent speaks the product name, price, whether it may be HSA/FSA eligible, and which card to use
-- The app builds a cart grouped by payment method and reads back the split at checkout
-- The app warns the user before a card is declined and suggests another card
+- The user points their phone at a product.
+- the app captures the image and sends it to the backend where we a vision llm api to determine the product name, if its a medicalItem(boolean) and the price . then the agent speaks it out to the user. If the user says yes to buy the product then..
+- If the product is a medical item:
+    - then we check if the user has an insurance card added in our app, if yes then we use the data(which we scraped or generated using AI for that specific insurance provider and tier) to determine if the insurance covers it or not. if yes, then we determine (again from the data) how much is the copay.
+- The next flow would be common for all the other products (use the price from point 1 if non medical and if medical then either use the remaining amount after copay or the price from point 1)
+- now we check if it is hsa/fsa eligible (think if we can find a list of items or generate),
+    - if yes:
+        then we check if their hsa or fsa balance has enough money for it
+            if they have enough:
+                let the user know that this is covered by hsa/fsa
+                we add it to a cart(hsa/fsa cart)
+            if not enough:
+                let the user know that this is not covered by hsa/fsa, warn them and ask if they should add it to their normal visa card cart instead.
+                if they say yes then
+                  we add it to their normal visa card cart
+
+    - if no:
+        then let the user know that this is not covered by hsa/fsa
+        we add it to their normal visa card cart
+
+- if the user has finished adding items to cart, they can let the agent know and it can tell them a summary (think of a line to say)
 
 Where this differs from existing checkout systems
 
@@ -69,7 +84,7 @@ Sponsor details come from sponsor announcements. Full track briefs were read onl
 | Figma | Plausible | Wireframes and design system |
 | Mana | Ask first | $5,000 for best project. Unknown whether our own stack qualifies |
 | Apify, Bright Data, Context.dev | Optional, pick at most one | Offline catalog only |
-| Fetch.ai | Optional, off the live path | Only if the core is reliable |
+| Fetch.ai | It is integrated | Neccessary|
 | Spacetime | Not planned | Expo and Python support unconfirmed |
 | Meta | Stretch | Community feature only |
 | Hyphenate | Dropped | Organizers said corporate payments only |
