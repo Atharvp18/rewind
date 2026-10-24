@@ -1,17 +1,15 @@
 import { Children, Fragment, isValidElement, useEffect, useState, type ReactElement, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
+import { Icon } from '@/components/icon';
+import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { useStage } from '@/lib/stage';
 
-/** `#RRGGBB` + opacity → `rgba(...)`. */
-export function withOpacity(hex: string, opacity: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${opacity})`;
-}
+export { withOpacity } from '@/lib/color';
 
 export type PanelTone = 'normal' | 'warning' | 'danger';
 
@@ -50,18 +48,20 @@ export function InfoPanel({
   tone = 'normal',
   children,
   label,
+  onClose,
 }: {
   title?: string;
   tone?: PanelTone;
   children: ReactNode;
   /** Optional screen reader label for the card's purpose. */
   label?: string;
+  /** Adds a fixed header with the title and a round ✕ (same as the profile pop-up). */
+  onClose?: () => void;
 }) {
   const { palette, reduceMotion } = useA11y();
   const { area, reportCard } = useStage();
   const [stackH, setStackH] = useState(0);
-  const [contentH, setContentH] = useState(0);
-  const [footerH, setFooterH] = useState(0);
+  const cue = useScrollCue();
   const { content, actions } = splitActions(children);
 
   const width = Math.min(area.w - Layout.margin * 2, MaxContentWidth);
@@ -101,20 +101,39 @@ export function InfoPanel({
             borderWidth: edgeWidth,
           },
         ]}>
-        <ScrollView
-          bounces={false}
-          scrollEnabled={contentH > cardMaxH - footerH - edgeWidth * 2}
-          onContentSizeChange={(_, h) => setContentH(h)}
-          contentContainerStyle={styles.body}>
-          {title ? (
-            <AppText kind="heading" accessibilityRole="header">
+        {onClose ? (
+          // Fixed header: the title stays put and the ✕ is always reachable.
+          <View style={styles.header}>
+            <AppText kind="heading" accessibilityRole="header" style={styles.headerTitle}>
               {title}
             </AppText>
-          ) : null}
-          {content}
-        </ScrollView>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Close ${title ?? 'panel'}`}
+              onPress={onClose}
+              hitSlop={6}
+              style={({ pressed }) => [styles.close, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.8 : 1 }]}>
+              <Icon name="close" size={24} />
+            </Pressable>
+          </View>
+        ) : null}
+        <View style={styles.scrollWrap}>
+          <ScrollView
+            bounces={false}
+            scrollEnabled={cue.overflowing}
+            {...cue.scrollProps}
+            contentContainerStyle={styles.body}>
+            {title && !onClose ? (
+              <AppText kind="heading" accessibilityRole="header">
+                {title}
+              </AppText>
+            ) : null}
+            {content}
+          </ScrollView>
+          <ScrollCue visible={cue.more} bg={palette.surface} />
+        </View>
         {actions.length ? (
-          <View style={styles.footer} onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}>
+          <View style={styles.footer}>
             {actions}
           </View>
         ) : null}
@@ -144,6 +163,17 @@ const styles = StyleSheet.create({
   stack: { position: 'absolute' },
   card: { borderRadius: Radius.card + 4, overflow: 'hidden' },
   body: { padding: Spacing.lg, gap: Spacing.sm },
+  scrollWrap: { flexShrink: 1, minHeight: 0 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingTop: Spacing.lg,
+    paddingLeft: Spacing.lg,
+    paddingRight: Spacing.md,
+  },
+  headerTitle: { flex: 1 },
+  close: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   // Pinned footer: same side padding as the body, so buttons line up with the text.
   footer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
   actions: { gap: Spacing.md },

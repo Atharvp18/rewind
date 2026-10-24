@@ -3,10 +3,11 @@ import { StyleSheet, View } from 'react-native';
 import { AlertBlock } from '@/components/alert-block';
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
+import { ButtonPair, ButtonRow } from '@/components/button-pair';
 import { CardArt } from '@/components/card-art';
 import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
-import { Icon } from '@/components/icon';
+import { Icon, Notice } from '@/components/icon';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
 import { Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -170,7 +171,13 @@ function PrescriptionPanel({
         </AppText>
       </View>
       <PanelActions>
-        <YesNo yes="Yes, that's right" no="No, scan again" onYes={() => onAnswer('yes')} onNo={() => onAnswer('no')} busy={busy} />
+        <ButtonPair
+          yesA11y="Yes, that's right"
+          noA11y="No, scan again"
+          onYes={() => onAnswer('yes')}
+          onNo={() => onAnswer('no')}
+          busy={busy}
+        />
       </PanelActions>
     </InfoPanel>
   );
@@ -210,32 +217,6 @@ function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Car
   return <PanelText>Which card would you like to use?</PanelText>;
 }
 
-/** Yes / No side by side: the primary answer wider, 12 pt apart so they are hard to mis-tap (2.5.8). */
-function YesNo({
-  yes,
-  no = 'No',
-  onYes,
-  onNo,
-  busy,
-}: {
-  yes: string;
-  no?: string;
-  onYes: () => void;
-  onNo: () => void;
-  busy?: boolean;
-}) {
-  return (
-    <View style={styles.row}>
-      <View style={[styles.grow2, styles.cell]}>
-        <BigButton label={yes} icon="check" variant="primary" disabled={busy} onPress={onYes} stretch />
-      </View>
-      <View style={[styles.grow, styles.cell]}>
-        <BigButton label={no} icon="close" disabled={busy} onPress={onNo} stretch />
-      </View>
-    </View>
-  );
-}
-
 /**
  * Buttons use the same words as the spoken question (WCAG 3.2.4):
  * "Want to use your HSA card?" → "Yes, use HSA card" / "No".
@@ -258,14 +239,14 @@ function Actions({
   }
   const nick = (id: string | null | undefined) => cardById(cards, id)?.nickname ?? 'this card';
   if (rec.decision === 'route_to_hsa' && rec.card_id) {
-    return <YesNo yes={`Yes, use ${nick(rec.card_id)}`} onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
+    return <ButtonPair yesA11y={`Yes, use ${nick(rec.card_id)}`} noA11y="No, skip" onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
   }
   if (rec.decision === 'route_to_general' && rec.card_id) {
-    return <YesNo yes={`Yes, add to ${nick(rec.card_id)}`} onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
+    return <ButtonPair yesA11y={`Yes, add to ${nick(rec.card_id)}`} noA11y="No, skip" onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
   }
   const options = rec.card_options.length ? rec.card_options : rec.reroute ? [rec.reroute.to_card_id] : [];
   if (options.length === 1) {
-    return <YesNo yes={`Yes, use ${nick(options[0])}`} onYes={() => onAdd(options[0])} onNo={onSkip} busy={busy} />;
+    return <ButtonPair yesA11y={`Yes, use ${nick(options[0])}`} noA11y="No, skip" onYes={() => onAdd(options[0])} onNo={onSkip} busy={busy} />;
   }
   return (
     <View style={styles.buttons}>
@@ -281,40 +262,58 @@ function Actions({
 // Cart
 // ---------------------------------------------------------------------------
 
+/** The total, pinned beside the primary action so it is always in view. */
+function TotalRow({ cents }: { cents: number }) {
+  return (
+    <View style={styles.totalRow} accessible accessibilityLabel={`Total ${centsForScreenReader(cents)}, before tax`}>
+      <View>
+        <PanelText kind="label">Total</PanelText>
+        <PanelText kind="small" muted>
+          Before tax
+        </PanelText>
+      </View>
+      <PanelText kind="title">{formatCents(cents)}</PanelText>
+    </View>
+  );
+}
+
 function CartPanel() {
-  const { state, startCheckout, removeLast, askClearCart, confirmClearCart, dismiss } = useAgent();
+  const { state, startCheckout, removeLast, askClearCart, confirmClearCart, answer, dismiss } = useAgent();
   const { cart } = state;
   const clearPending = state.livePrompt?.scope === 'confirm_clear_cart';
 
   if (!cart.groups.length) {
     return (
-      <InfoPanel title="Your cart is empty">
-        <PanelText>Point your phone at a product and tap anywhere to scan.</PanelText>
-        <PanelActions>
-          <BigButton label="Close" onPress={dismiss} />
-        </PanelActions>
+      <InfoPanel title="Your cart is empty" onClose={dismiss}>
+        <PanelText>Point your phone at a product and it will appear here.</PanelText>
       </InfoPanel>
     );
   }
   return (
-    <InfoPanel title="Your cart">
+    <InfoPanel title="Your cart" onClose={dismiss}>
       {cart.groups.map((g) => (
         <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} />
       ))}
-      <View accessible accessibilityLabel={`Total ${centsForScreenReader(cart.total_cents)}, before tax`}>
-        <PanelText kind="label">Total, before tax</PanelText>
-        <PanelText kind="display">{formatCents(cart.total_cents)}</PanelText>
-      </View>
+      {clearPending ? (
+        // Destructive: a second step, bound to the live confirm_clear_cart question.
+        <ButtonPair
+          yes="Clear all"
+          yesA11y="Yes, clear everything"
+          no="Keep"
+          noA11y="No, keep my items"
+          yesVariant="danger"
+          onYes={confirmClearCart}
+          onNo={() => answer('no')}
+        />
+      ) : (
+        <ButtonRow>
+          <BigButton label="Remove last" accessibilityLabel="Remove last item" icon="undo" variant="secondary" stretch onPress={removeLast} />
+          <BigButton label="Clear cart" icon="trash" variant="danger" stretch onPress={askClearCart} />
+        </ButtonRow>
+      )}
       <PanelActions>
+        <TotalRow cents={cart.total_cents} />
         <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
-        <BigButton label="Remove last item" icon="undo" onPress={removeLast} />
-        {clearPending ? (
-          // Destructive: the second tap confirms, bound to the live confirm_clear_cart prompt.
-          <BigButton label="Yes, clear everything" icon="alert" variant="danger" onPress={confirmClearCart} />
-        ) : (
-          <BigButton label="Clear cart" icon="trash" variant="danger" onPress={askClearCart} />
-        )}
-        <BigButton label="Close" onPress={dismiss} />
       </PanelActions>
     </InfoPanel>
   );
@@ -328,20 +327,19 @@ function CheckoutPanel() {
   const { state, confirmCheckout, startCheckout, showView } = useAgent();
   const { preview } = state;
   const busy = state.phase === 'submitting';
+  const back = () => showView('cart');
 
   if (!preview) {
     return (
-      <InfoPanel title="Checkout">
+      <InfoPanel title="Checkout" onClose={back}>
         <PanelText>Getting your split…</PanelText>
       </InfoPanel>
     );
   }
   if (!preview.groups.length) {
     return (
-      <InfoPanel title="Your cart is empty">
-        <PanelActions>
-          <BigButton label="Close" onPress={() => showView('camera')} />
-        </PanelActions>
+      <InfoPanel title="Your cart is empty" onClose={() => showView('camera')}>
+        <PanelText>Point your phone at a product and it will appear here.</PanelText>
       </InfoPanel>
     );
   }
@@ -350,7 +348,7 @@ function CheckoutPanel() {
   const reroute = preview.issues.length > 0;
 
   return (
-    <InfoPanel title="Checkout" tone={reroute ? 'warning' : 'normal'}>
+    <InfoPanel title="Checkout" tone={reroute ? 'warning' : 'normal'} onClose={back}>
       {preview.issues.map((issue) => (
         <AlertBlock key={issue.rule + issue.message} level="warning" title="Suggestion: change cards">
           {issue.message}
@@ -360,59 +358,58 @@ function CheckoutPanel() {
       {preview.groups.map((g) => (
         <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} />
       ))}
-      <View accessible accessibilityLabel={`Total ${centsForScreenReader(preview.total_cents)}, before tax`}>
-        <PanelText kind="label">Total, before tax</PanelText>
-        <PanelText kind="display">{formatCents(preview.total_cents)}</PanelText>
-      </View>
       <PanelText kind="small" muted>
         This is a simulated payment. No real card is charged.
       </PanelText>
       <PanelActions>
-      {!live ? (
-        <BigButton label="Read the split again" icon="retry" variant="primary" size="primary" onPress={startCheckout} />
-      ) : reroute ? (
-        <View style={styles.buttons}>
-          <BigButton label="Yes, move the items" icon="check" variant="primary" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
-          <BigButton label="No, keep my cards" disabled={busy} onPress={() => confirmCheckout(false)} />
-        </View>
-      ) : (
-        <View style={styles.buttons}>
+        <TotalRow cents={preview.total_cents} />
+        {!live ? (
+          <BigButton label="Read the split again" icon="retry" variant="primary" size="primary" onPress={startCheckout} />
+        ) : reroute ? (
+          <ButtonPair
+            yesA11y="Yes, move the items"
+            noA11y="No, keep my cards"
+            onYes={() => confirmCheckout(true)}
+            onNo={() => confirmCheckout(false)}
+            busy={busy}
+          />
+        ) : (
           <BigButton label="Confirm payment" icon="check" variant="primary" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
-          <BigButton label="Not now" onPress={() => showView('cart')} />
-        </View>
-      )}
+        )}
       </PanelActions>
     </InfoPanel>
   );
 }
 
 function ReceiptPanel() {
-  const { palette } = useA11y();
   const { state, dismiss } = useAgent();
   const receipt = state.receipt!;
   const lowBalance = receipt.voice.priority === 'alert';
   return (
     <InfoPanel title="Payment complete" tone={lowBalance ? 'warning' : 'normal'}>
-      <View style={[styles.done, { backgroundColor: palette.eligibleBg, borderColor: palette.eligible, borderWidth: palette.controlBorderWidth }]}>
-        <Icon name="eligible" size={56} color="eligible" strokeWidth={2.5} />
-        <AppText kind="small" color="text">
-          This was a simulated payment.
-        </AppText>
-      </View>
+      <Notice icon="eligible" color="eligible" kind="body">
+        Simulated payment. No real card was charged.
+      </Notice>
       {lowBalance ? (
         <AlertBlock level="warning" title="Low balance">
           {receipt.voice.text}
         </AlertBlock>
       ) : null}
-      <PanelText kind="heading">New balances</PanelText>
-      {receipt.new_balances.map((b) => (
-        <View key={b.card_id} style={styles.balance}>
-          <PanelText>{cardById(state.cards, b.card_id)?.nickname ?? b.card_id}</PanelText>
-          <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
-        </View>
-      ))}
+      <PanelText kind="label">New balances</PanelText>
+      {receipt.new_balances.map((b) => {
+        const card = cardById(state.cards, b.card_id);
+        return (
+          <View key={b.card_id} style={styles.balance} accessible accessibilityLabel={`${card?.nickname ?? b.card_id}, ${centsForScreenReader(b.balance_cents)}`}>
+            <View style={styles.paysWith}>
+              {card ? <CardArt type={card.type} size="swatch" /> : null}
+              <PanelText>{card?.nickname ?? b.card_id}</PanelText>
+            </View>
+            <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
+          </View>
+        );
+      })}
       <PanelActions>
-        <BigButton label="Done" variant="primary" size="primary" onPress={dismiss} />
+        <BigButton label="Done" icon="check" variant="primary" size="primary" onPress={dismiss} />
       </PanelActions>
     </InfoPanel>
   );
@@ -422,14 +419,13 @@ function ReceiptPanel() {
 function DeclinedPanel({ message }: { message: string }) {
   const { startCheckout, showView } = useAgent();
   return (
-    <InfoPanel title={Phrases.declinedTitle} tone="danger">
+    <InfoPanel title={Phrases.declinedTitle} tone="danger" onClose={() => showView('cart')}>
       <AlertBlock level="danger" title="Declined">
         {message}
       </AlertBlock>
       <PanelActions>
         <BigButton label="Move items to another card" icon="next" variant="primary" size="primary" onPress={startCheckout} />
-        <BigButton label="Add a card" icon="add" onPress={() => showView('add_card')} />
-        <BigButton label="Back to cart" onPress={() => showView('cart')} />
+        <BigButton label="Add a card" icon="add" variant="secondary" onPress={() => showView('add_card')} />
       </PanelActions>
     </InfoPanel>
   );
@@ -442,6 +438,7 @@ const styles = StyleSheet.create({
   cell: { flexDirection: 'column' },
   name: { flexShrink: 1, flexGrow: 1 },
   paysWith: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   rxNameRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },

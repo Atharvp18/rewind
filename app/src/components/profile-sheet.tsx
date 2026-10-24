@@ -1,4 +1,6 @@
 import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
+
+import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
@@ -31,6 +33,7 @@ export function ProfileSheet() {
   const { profile, reset } = useProfile();
   const { state, resetDemo, sayLocal, showView } = useAgent();
   const { area } = useStage();
+  const cue = useScrollCue();
 
   const width = Math.min(area.w - Layout.margin * 2, MaxContentWidth);
   const ins = profile.insurance;
@@ -88,7 +91,8 @@ export function ProfileSheet() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.scrollWrap}>
+      <ScrollView contentContainerStyle={styles.scroll} {...cue.scrollProps}>
         <Section title="Insurance">
           {ins ? (
             <View style={styles.block} accessible>
@@ -189,6 +193,9 @@ export function ProfileSheet() {
           />
         </Section>
       </ScrollView>
+      {/* "More below": a soft fade and a bobbing chevron until the end is near. */}
+      <ScrollCue visible={cue.more} bg={palette.bg} />
+      </View>
     </Animated.View>
   );
 }
@@ -226,6 +233,7 @@ const styles = StyleSheet.create({
   close: { width: Target.min, height: Target.min, borderRadius: Target.min / 2, alignItems: 'center', justifyContent: 'center' },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   flex: { flex: 1 },
-  scroll: { padding: Spacing.md, gap: Spacing.md },
+  scrollWrap: { flex: 1 },
+  scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   block: { gap: Spacing.xs },
 });
