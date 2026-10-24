@@ -37,7 +37,12 @@ import { ApiError } from '@/lib/api-error';
 import { formatCents } from '@/lib/money';
 
 const LATENCY_MS = 700;
-const PROMPT_TTL_MS = 15_000;
+let promptTtlMs = 30_000;
+
+/** Mirrors the user's "Time to answer" setting (proposed TTL header). */
+export function setPromptTtl(seconds: number): void {
+  promptTtlMs = seconds * 1000;
+}
 const LOW_BALANCE_CENTS = 2000;
 
 const wait = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
@@ -46,9 +51,21 @@ const wait = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
 // Seed data (tech spec 3.3)
 // ---------------------------------------------------------------------------
 
-const seedCards = (hsaCents: number): Card[] => [
-  // Both are Visa cards: an HSA Visa and an everyday Visa credit (tech spec 3.3 nicknames).
-  { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: hsaCents, status: 'active', network: 'visa' },
+/**
+ * Demo seed (PROPOSED update to tech spec 3.3): an FSA, an HSA, and an
+ * everyday Visa credit, all Visa cards.
+ *   run 1: FSA $25.00, HSA $340.00 → eligible items go to the FSA first
+ *   run 2: FSA $15.00, HSA $5.00   → at checkout the FSA can't cover $18.48;
+ *          the overflow can't fit the HSA either, so it moves to the Visa
+ */
+const SEED: Record<1 | 2, { fsa: number; hsa: number }> = {
+  1: { fsa: 2500, hsa: 34000 },
+  2: { fsa: 1500, hsa: 500 },
+};
+
+const seedCards = (run: 1 | 2): Card[] => [
+  { id: 'card_fsa_1', type: 'fsa', nickname: 'FSA card', balance_cents: SEED[run].fsa, status: 'active', network: 'visa' },
+  { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: SEED[run].hsa, status: 'active', network: 'visa' },
   { id: 'card_visa_1', type: 'general', nickname: 'Visa credit', balance_cents: 500000, status: 'active', network: 'visa' },
 ];
 
@@ -106,7 +123,7 @@ type Prompt = { scope: ResponseScope; scan_id: string | null; expiresAt: number;
 type ProposedSplit = { item_id: string; card_id: string }[];
 
 const state = {
-  cards: seedCards(34000),
+  cards: seedCards(1),
   items: [] as StoredItem[],
   seq: 0,
   scanIndex: 0,
@@ -118,8 +135,18 @@ const state = {
 };
 
 const card = (id: string) => state.cards.find((c) => c.id === id)!;
-const hsa = () => card('card_hsa_1');
 const visa = () => card('card_visa_1');
+
+/**
+ * Spending order for HSA/FSA-eligible items (team decision 2026-10-24):
+ * FSA first (employer money that can be lost when the person leaves that job),
+ * then HSA, then the everyday card. Every choice still needs the user's yes.
+ */
+const HEALTH_ORDER: Card['type'][] = ['fsa', 'hsa'];
+const healthCards = () =>
+  HEALTH_ORDER.flatMap((t) => state.cards.filter((c) => c.type === t && c.status === 'active'));
+/** "FSA card" → "FSA", "Visa credit" stays. For "your FSA balance". */
+const short = (c: Card) => c.nickname.replace(/ card$/, '');
 
 function voice(
   text: string,
@@ -131,7 +158,7 @@ function voice(
     state.prompts.set(prompt_id, {
       scope: opts.prompt.scope,
       scan_id: opts.prompt.scan_id ?? null,
-      expiresAt: Date.now() + PROMPT_TTL_MS,
+      expiresAt: Date.now() + promptTtlMs,
       consumed: false,
     });
   }
@@ -220,14 +247,26 @@ function route(scanId: string, item: DemoItem): PaymentRecommendation {
     return { ...base, decision: 'ask_user', card_id: null, reason_code: 'eligibility_unconfirmed',
       balance_before_cents: null, balance_after_cents: null, card_options: state.cards.map((c) => c.id) };
   }
-  if (hsa().balance_cents >= amount) {
-    return { ...base, decision: 'route_to_hsa', card_id: hsa().id, reason_code: 'eligible_sufficient_balance',
-      balance_before_cents: hsa().balance_cents, balance_after_cents: hsa().balance_cents - amount };
+  const health = healthCards();
+  if (!health.length) {
+    return { ...base, decision: 'route_to_general', card_id: visa().id, reason_code: 'no_health_card_linked',
+      balance_before_cents: visa().balance_cents, balance_after_cents: visa().balance_cents - amount };
+  }
+  const first = health[0];
+  if (first.balance_cents >= amount) {
+    return { ...base, decision: 'route_to_hsa', card_id: first.id, reason_code: 'eligible_sufficient_balance',
+      balance_before_cents: first.balance_cents, balance_after_cents: first.balance_cents - amount };
+  }
+  // First choice can't cover it: suggest the next card in order (HSA, then the everyday Visa).
+  const next = health.slice(1).find((c) => c.balance_cents >= amount) ?? (visa().balance_cents >= amount ? visa() : null);
+  if (!next) {
+    return { ...base, decision: 'blocked', card_id: null, reason_code: 'no_card_covers',
+      balance_before_cents: first.balance_cents, balance_after_cents: null };
   }
   return { ...base, decision: 'ask_user', card_id: null, reason_code: 'eligible_insufficient_balance',
-    balance_before_cents: hsa().balance_cents, balance_after_cents: null,
-    reroute: { from_card_id: hsa().id, to_card_id: visa().id, reason: 'insufficient_balance' },
-    card_options: [visa().id] };
+    balance_before_cents: first.balance_cents, balance_after_cents: null,
+    reroute: { from_card_id: first.id, to_card_id: next.id, reason: 'insufficient_balance' },
+    card_options: [next.id] };
 }
 
 // ---------------------------------------------------------------------------
@@ -270,10 +309,17 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
   const rec = route(scanId, item);
   state.scans.set(scanId, { item, rec });
   const price = formatCents(item.product.amount_cents!);
+  const suggested = rec.card_id ? card(rec.card_id) : null;
+  const from = rec.reroute ? card(rec.reroute.from_card_id) : null;
+  const to = rec.reroute ? card(rec.reroute.to_card_id) : null;
   const text =
-    item.eligibility.label === 'eligible'
-      ? `I see ${item.spokenName}, ${price}. HSA eligible. Your HSA balance is ${spokenBalance(hsa().balance_cents)}. Want to use your HSA card?`
-      : `${item.spokenName}, ${price}. Not HSA eligible, high confidence. I'll put this on your Visa credit card.`;
+    item.eligibility.label !== 'eligible'
+      ? `${item.spokenName}, ${price}. Not HSA eligible, high confidence. I'll put this on your Visa credit card.`
+      : from && to
+        ? `I see ${item.spokenName}, ${price}. HSA eligible. Your ${short(from)} balance of ${spokenBalance(from.balance_cents)} doesn't cover it. Want to use your ${to.nickname} instead?`
+        : suggested
+          ? `I see ${item.spokenName}, ${price}. HSA eligible. Your ${short(suggested)} balance is ${spokenBalance(suggested.balance_cents)}. Want to use your ${suggested.nickname}?`
+          : `I see ${item.spokenName}, ${price}. HSA eligible. No card can cover this. Please use another card.`;
 
   return {
     scan: {
@@ -346,7 +392,7 @@ export async function scanCard(kind: CardScanKind): Promise<CardScanResult> {
 export async function linkCard(body: LinkCardRequest): Promise<Card> {
   await wait(300);
   // Reuse the seeded card of the same type so the demo balances (3.3) still apply.
-  const seeded = state.cards.find((c) => c.type === body.type || (body.type === 'fsa' && c.type === 'hsa'));
+  const seeded = state.cards.find((c) => c.type === body.type);
   if (seeded) {
     Object.assign(seeded, { last4: body.last4, network: body.network, nickname: body.nickname, type: body.type });
     return { ...seeded };
@@ -379,6 +425,21 @@ function insertItem(scanId: string, cardId: string): void {
     eligibility_label: entry.item.eligibility.label,
   });
   state.proposedSplit = null;
+}
+
+export async function reissuePrompt(
+  scanId: string,
+  scope: ResponseScope,
+): Promise<{ prompt_id: string; expires_in_s: number }> {
+  await wait(150);
+  const entry = state.scans.get(scanId);
+  if (!entry?.item) {
+    throw new ApiError({ code: 'E_PRODUCT_UNRESOLVED', message: 'unknown scan',
+      speech: 'I could not confirm this item. Try another angle, or tell me what it is.', retryable: false });
+  }
+  const prompt_id = randomUUID();
+  state.prompts.set(prompt_id, { scope, scan_id: scanId, expiresAt: Date.now() + promptTtlMs, consumed: false });
+  return { prompt_id, expires_in_s: promptTtlMs / 1000 };
 }
 
 export async function addCartItem(scanId: string, cardId: string, promptId: string): Promise<CartResponse> {
@@ -416,30 +477,45 @@ export async function checkoutPreview(): Promise<CheckoutPreview> {
   if (!state.items.length) {
     return { groups: [], total_cents: 0, issues: [], voice: voice('Your cart is empty.') };
   }
-  // Group rule 2 (3.5): keep items in descending amount order while they fit, move the rest.
-  const hsaItems = state.items.filter((it) => it.card_id === hsa().id);
-  const hsaTotal = hsaItems.reduce((s, it) => s + it.amount_cents, 0);
-  if (hsaTotal > hsa().balance_cents) {
-    let room = hsa().balance_cents;
-    const split: ProposedSplit = [];
+  // Group rule 2 (3.5), in spending order: for each HSA/FSA card whose items exceed its
+  // balance, keep items (largest first) while they fit; move the rest to the next card
+  // in order that has room (HSA, then the everyday Visa).
+  const order = [...healthCards(), visa()];
+  const room = new Map(order.map((c) => [c.id, c.balance_cents]));
+  for (const it of state.items) room.set(it.card_id, (room.get(it.card_id) ?? 0) - it.amount_cents);
+  const split: ProposedSplit = [];
+  let message: string | null = null;
+  for (const [i, c] of order.entries()) {
+    if (c.type === 'general') continue;
+    const items = state.items.filter((it) => it.card_id === c.id);
+    const total = items.reduce((sum, it) => sum + it.amount_cents, 0);
+    if (total <= c.balance_cents) continue;
+    let left = c.balance_cents;
+    room.set(c.id, c.balance_cents);
     const kept: string[] = [];
-    const moved: string[] = [];
-    for (const it of [...hsaItems].sort((a, b) => b.amount_cents - a.amount_cents)) {
-      if (it.amount_cents <= room) {
-        room -= it.amount_cents;
+    const moved = new Map<string, string[]>();
+    for (const it of [...items].sort((x, y) => y.amount_cents - x.amount_cents)) {
+      if (it.amount_cents <= left) {
+        left -= it.amount_cents;
         kept.push(it.display_name.split(' ')[0]);
-      } else {
-        split.push({ item_id: it.id, card_id: visa().id });
-        moved.push(it.display_name.toLowerCase());
+        continue;
       }
+      const dest = order.slice(i + 1).find((d) => (room.get(d.id) ?? 0) >= it.amount_cents) ?? visa();
+      room.set(dest.id, (room.get(dest.id) ?? 0) - it.amount_cents);
+      split.push({ item_id: it.id, card_id: dest.id });
+      moved.set(dest.nickname, [...(moved.get(dest.nickname) ?? []), it.display_name.toLowerCase()]);
     }
+    message ??= `Your ${short(c)} balance is only ${formatCents(c.balance_cents)}, which doesn't cover ${formatCents(total)}. Want me to ${
+      kept.length ? `keep the ${kept.join(' and the ')} on your ${short(c)} and ` : ''
+    }${[...moved].map(([to, names]) => `move the ${names.join(' and the ')} to your ${to}`).join(', and ')}?`;
+  }
+  if (message) {
     state.proposedSplit = split;
     const cart = buildCart(split);
-    const msg = `Your HSA balance is only ${formatCents(hsa().balance_cents)}, which doesn't cover ${formatCents(hsaTotal)}. Want me to keep the ${kept.join(' and the ')} on your HSA and move the ${moved.join(' and the ')} to your Visa credit?`;
     return {
       ...cart,
-      issues: [{ rule: 'group_too_large', message: msg }],
-      voice: voice(msg, { prompt: { scope: 'confirm_checkout' }, priority: 'alert' }),
+      issues: [{ rule: 'group_too_large', message }],
+      voice: voice(message, { prompt: { scope: 'confirm_checkout' }, priority: 'alert' }),
     };
   }
   state.proposedSplit = null;
@@ -484,21 +560,22 @@ export async function checkoutConfirm(
   state.items = [];
   state.proposedSplit = null;
 
-  const hsaAfter = hsa().balance_cents;
+  // Read back every HSA/FSA card that was charged; alert if one is now low.
+  const charged = cart.groups.map((g) => card(g.card_id)).filter((c) => c.type !== 'general');
+  const lines = charged.map((c) => `Your ${short(c)} balance is now ${formatCents(c.balance_cents)}.`);
+  const low = charged.some((c) => c.balance_cents < LOW_BALANCE_CENTS);
   const result: CheckoutResult = {
     payment_id: randomUUID(),
     groups: cart.groups,
     new_balances: state.cards.map((c) => ({ card_id: c.id, balance_cents: c.balance_cents })),
-    voice: voice(`Payment complete. Your HSA balance is now ${formatCents(hsaAfter)}.`, {
-      priority: hsaAfter < LOW_BALANCE_CENTS ? 'alert' : 'normal',
-    }),
+    voice: voice(`Payment complete. ${lines.join(' ')}`.trim(), { priority: low ? 'alert' : 'normal' }),
   };
   state.payments.set(idempotencyKey, result);
   return result;
 }
 
 export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
-  state.cards = seedCards(run === 1 ? 34000 : 1500);
+  state.cards = seedCards(run);
   state.items = [];
   state.scanIndex = 0;
   state.scans.clear();

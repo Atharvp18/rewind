@@ -687,6 +687,34 @@ All payment cards are **Visa**: HSA and FSA cards are Visa cards from the health
 
 Nothing else on either card is read or stored. TypeScript shapes: `InsuranceCard` and `PaymentCardRead` in `app/src/lib/api.ts`.
 
+### Spending order for HSA/FSA-eligible items (team decision 2026-10-24, needs Atharv)
+
+**FSA first, then HSA, then the everyday Visa.** FSA money is the employer's and can be lost when the person leaves that job; HSA money stays with the person.
+
+Changes this makes elsewhere:
+- **Business spec 20.6** said: with both HSA and FSA linked, ask which to use. Now Rewind *suggests* the FSA (or the next card in order) and still needs a yes. It never charges silently, and every choice still requires confirmation (3.5).
+- **Routing (3.5) STEP 4:**
+  - Try the health cards in the order FSA, then HSA.
+  - If the first can't cover the item, suggest the next one that can, using `ask_user` + `reroute` (`insufficient_balance`). If neither can, suggest the everyday Visa.
+  - If nothing covers it, `blocked`.
+- **Group rule 2 at checkout:**
+  - For each FSA/HSA group over its balance, keep items (largest first) while they fit.
+  - Move the rest to the next card in order that has room (HSA, then Visa).
+  - Spoken example: "Your FSA balance is only $15.00, which doesn't cover $18.48. Want me to keep the Advil on your FSA and move the bandages to your Visa credit?"
+- **Seed data (3.3), proposed:**
+
+  | Card | id | Run 1 | Run 2 |
+  |---|---|---|---|
+  | FSA card (Visa) | `card_fsa_1` | $25.00 | $15.00 |
+  | HSA card (Visa) | `card_hsa_1` | $340.00 | $5.00 |
+  | Visa credit | `card_visa_1` | $5,000.00 | $5,000.00 |
+
+  - **Run 1:** Advil and bandages go to the FSA; kettle corn to the Visa; the FSA ends at **$6.52**.
+  - **Run 2:** the FSA can't cover $18.48. Keep the Advil on the FSA; the bandages ($5.49) don't fit the HSA ($5.00), so they move to the Visa. "No, keep my cards" shows the decline.
+- **Demo script (4.4) lines change.** "Your HSA balance is $340" becomes "Your FSA balance is $25", and the run 1 result line becomes "Payment complete. Your FSA balance is now $6.52." The 3.12 test numbers ($321.52) need the same update.
+
+Implemented in the app's mock backend (`app/src/lib/mock-backend.ts`); the real backend is unchanged until Atharv agrees.
+
 ### Proposed contract additions (Atharv and Tiea)
 
 | Proposed | Shape | Owner |
