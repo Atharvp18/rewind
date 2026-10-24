@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import os
 
-from lookup.normalize import product_key_from_upc
+from lookup.normalize import normalize_key
 
-# TODO(demo prep): replace these with the real UPCs read off the demo packages.
-# They must be digits only: product_key_from_upc strips everything else.
-UPC_ADVIL = "000000000001"
-UPC_BANDAGES = "000000000002"
-UPC_KETTLE_CORN = "000000000003"
+# No barcodes: Claude Vision reads the product, so items are keyed by brand|name|size.
+KEY_ADVIL = normalize_key("Advil", "Advil Ibuprofen 200mg", "200mg")
+KEY_BANDAGES = normalize_key(None, "Bandages", None)
+KEY_KETTLE_CORN = normalize_key(None, "Kettle Corn", None)
 
 NESSIE_ACCOUNT_ENV = {"card_hsa_1": "NESSIE_HSA_ACCOUNT_ID", "card_fsa_1": "NESSIE_FSA_ACCOUNT_ID",
                       "card_visa_1": "NESSIE_VISA_ACCOUNT_ID"}
@@ -36,15 +35,15 @@ CARDS = [
 
 # Pre-cached so the demo cannot fail on a lookup (business spec 19.3).
 DEMO_PRODUCTS = [
-    {"product_key": product_key_from_upc(UPC_ADVIL), "upc": UPC_ADVIL,
+    {"product_key": KEY_ADVIL, "upc": None,
      "normalized_name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg",
      "category": "pain_relief", "shelf_price_cents": 1299,
-     "eligibility_label": "eligible", "eligibility_basis": "upc_match", "source": "seeded"},
-    {"product_key": product_key_from_upc(UPC_BANDAGES), "upc": UPC_BANDAGES,
+     "eligibility_label": "eligible", "eligibility_basis": "irs_category_rule", "source": "seeded"},
+    {"product_key": KEY_BANDAGES, "upc": None,
      "normalized_name": "Bandages", "brand": None, "size": None,
      "category": "first_aid", "shelf_price_cents": 549,   # placeholder: set to the real shelf price
-     "eligibility_label": "eligible", "eligibility_basis": "upc_match", "source": "seeded"},
-    {"product_key": product_key_from_upc(UPC_KETTLE_CORN), "upc": UPC_KETTLE_CORN,
+     "eligibility_label": "eligible", "eligibility_basis": "irs_category_rule", "source": "seeded"},
+    {"product_key": KEY_KETTLE_CORN, "upc": None,
      "normalized_name": "Kettle Corn", "brand": None, "size": None,
      "category": "grocery", "shelf_price_cents": 499,
      "eligibility_label": "not_eligible", "eligibility_basis": "irs_category_rule",
@@ -57,15 +56,15 @@ _DEMO_SOURCE = "hand_entered:demo-shelf"
 _DEMO_COLLECTED_AT = "2026-10-24T00:00:00+00:00"
 
 DEMO_ELIGIBILITY = [
-    {"product_key": DEMO_PRODUCTS[0]["product_key"], "upc": UPC_ADVIL,
+    {"product_key": DEMO_PRODUCTS[0]["product_key"], "upc": None,
      "name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg",
      "category_path": "pain_relief", "eligible": True,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},
-    {"product_key": DEMO_PRODUCTS[1]["product_key"], "upc": UPC_BANDAGES,
+    {"product_key": DEMO_PRODUCTS[1]["product_key"], "upc": None,
      "name": "Bandages", "brand": None, "size": None,
      "category_path": "first_aid", "eligible": True,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},
-    {"product_key": DEMO_PRODUCTS[2]["product_key"], "upc": UPC_KETTLE_CORN,
+    {"product_key": DEMO_PRODUCTS[2]["product_key"], "upc": None,
      "name": "Kettle Corn", "brand": None, "size": None,
      "category_path": "grocery", "eligible": False,
      "source_url": _DEMO_SOURCE, "collected_at": _DEMO_COLLECTED_AT, "basis": "hand_entered"},

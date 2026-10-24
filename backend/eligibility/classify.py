@@ -1,10 +1,10 @@
 """Eligibility classifier: determines whether a product is HSA/FSA eligible.
 
-Classification chain:
-1. Exact UPC match in eligibility_items
-2. IRS category rules
-3. "could_not_confirm" fallback
-4. Cross-check against package marking
+Classification chain (no barcodes: Claude Vision reads the product):
+1. IRS category rules (shelf medicines must be in an IRS-backed category)
+2. "could_not_confirm" fallback
+3. Cross-check against package marking
+4. Cross-check against the closest scraped store listing (Apify rows, searched with Moss)
 """
 from __future__ import annotations
 
@@ -15,49 +15,68 @@ from eligibility.irs_rules import lookup_category
 
 logger = logging.getLogger(__name__)
 
-_eligibility_lookup_upc = None
+def _cross_check_retailer(result: EligibilityResult, retailer: dict | None,
+                          index_checked: bool) -> EligibilityResult:
+    """Second source: the closest scraped store listing, found by Moss (lookup/moss_index.py).
 
-
-def _get_db_lookup():
-    """Lazy import to avoid circular dependency with data.db."""
-    global _eligibility_lookup_upc
-    if _eligibility_lookup_upc is None:
-        from data.db import eligibility_lookup_upc
-        _eligibility_lookup_upc = eligibility_lookup_upc
-    return _eligibility_lookup_upc
+    "Eligible" needs two sources: the IRS rules say yes AND the store index lists the product.
+    - index answered, product not listed: could_not_confirm (never guess eligible)
+    - a listing that disagrees with the rule: could_not_confirm
+    Strength and pack size are not compared: they do not change whether an OTC medicine is eligible.
+    - index could not answer (index_checked False): the rules decide alone
+    Only the IRS rules can say eligible; a listing never upgrades could_not_confirm.
+    A "not eligible" rule answer already sends the item to the Visa, so it needs no second source.
+    """
+    if result.label == "could_not_confirm":
+        return result
+    if retailer is None:
+        if index_checked and result.label == "eligible":
+            return EligibilityResult(label="could_not_confirm", basis="no_match")
+        return result
+    retailer_label = "eligible" if retailer["eligible"] else "not_eligible"
+    if retailer_label != result.label:
+        return EligibilityResult(label="could_not_confirm", basis="package_disagreement",
+                                 source="retailer_index", collected_at=retailer["collected_at"],
+                                 matched_name=retailer["name"])
+    return EligibilityResult(label=result.label, confidence=retailer["score"], basis="semantic_match",
+                             source="retailer_index", collected_at=retailer["collected_at"],
+                             matched_name=retailer["name"])
 
 
 def classify_eligibility(
     product: ProductResolution,
     package_marking: str | None,
+    retailer: dict | None = None,
+    index_checked: bool = False,
 ) -> EligibilityResult:
-    """Classify a product's HSA/FSA eligibility.
+    """Classify a product's HSA/FSA eligibility, then cross-check the retailer listing.
 
     Args:
-        product: The resolved product from the lookup chain.
+        product: The resolved product (name and category read by Claude Vision).
+        package_marking: "eligible" or "none_seen" from vision, or None.
+        retailer: the closest store listing from moss_index.find_match, or None.
+        index_checked: True when Moss answered (so "no listing" is meaningful); False when it
+            was not consulted or was unavailable.
+    """
+    return _cross_check_retailer(_classify_by_rules(product, package_marking), retailer, index_checked)
+
+
+def _classify_by_rules(
+    product: ProductResolution,
+    package_marking: str | None,
+) -> EligibilityResult:
+    """Classify a product's HSA/FSA eligibility from the IRS category rules.
+
+    Args:
+        product: The resolved product (name and category read by Claude Vision).
         package_marking: "eligible" or "none_seen" from vision, or None.
     """
-    # Step 1: Exact UPC match
-    if product.upc:
-        try:
-            db_lookup = _get_db_lookup()
-            row = db_lookup(product.upc)
-            if row is not None:
-                label = "eligible" if row["eligible"] else "not_eligible"
-                result = EligibilityResult(
-                    label=label,
-                    confidence=None,
-                    basis="upc_match",
-                    source=row.get("basis", "retailer_index"),
-                    collected_at=row.get("collected_at"),
-                    matched_name=row.get("name"),
-                )
-                return _cross_check_package(result, package_marking)
-        except Exception:
-            logger.exception("DB eligibility lookup failed for UPC %s", product.upc)
+    rule = lookup_category(product.category)
 
-    # Medication rule: without an exact UPC match, medications get could_not_confirm
-    if product.is_medication:
+    # Medicines: Claude Vision names the product and its category. Shelf (OTC) medicine
+    # in an IRS-backed category is eligible (CARES Act). A medicine in any other
+    # category is never guessed: could_not_confirm.
+    if product.is_medication and rule != "eligible":
         return EligibilityResult(
             label="could_not_confirm",
             confidence=None,
@@ -67,8 +86,7 @@ def classify_eligibility(
             matched_name=None,
         )
 
-    # Step 2: IRS category rules
-    rule = lookup_category(product.category)
+    # IRS category rules
     if rule == "eligible":
         result = EligibilityResult(
             label="eligible",

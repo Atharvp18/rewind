@@ -3,14 +3,17 @@
 RUNS BEFORE THE DEMO, NEVER DURING A SCAN. Never imported by the API.
 
 Pipeline (business spec 24.5):
-1. Run the Apify actor against fsastore.com category listings
+1. Run Apify's E-commerce Scraping Tool over fsastore.com collection pages
 2. Export the dataset as JSON
 3. Clean and normalize each row
 4. Add non-eligible examples so the table can say "no"
-5. Bulk-insert into eligibility_items
+5. Build the Moss index from the rows (lookup/moss_index.py)
 
-Usage:
-    python -m prefetch.apify_run
+Usage (needs APIFY_TOKEN in backend/.env):
+    python -m prefetch.apify_run               # one scrape of the fixed catalog, then rebuild the Moss index
+    python -m prefetch.apify_run --index-only  # rebuild the Moss index from the saved rows, no scraping
+
+Uses Apify's ready-made E-commerce Scraping Tool on a fixed list of product pages: one run, same rows every time.
 
 Complete the terms/robots.txt check (business spec 24.4) and the go/no-go
 test (24.2) before running at any scale.
@@ -26,6 +29,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from agents import common  # noqa: F401  (loads backend/.env: APIFY_TOKEN, MOSS_*)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -35,8 +40,12 @@ FSA_STORE_CATEGORIES = [
 ]
 
 CATEGORY_MAP = {
-    "otc-medicines": "otc_medicine",
+    "pain-relief": "pain_relief",
+    "cold-and-allergy": "cold_flu_allergy",
+    "all-medicine-and-treatments": "otc_medicine",
+    "digestive-health": "digestive_health",
     "first-aid": "first_aid",
+    "otc-medicines": "otc_medicine",
     "health-devices": "diagnostic_device",
     "personal-care": "personal_care",
     "eye-care": "eye_care",
@@ -66,66 +75,97 @@ NON_ELIGIBLE_EXAMPLES = [
 ]
 
 
-def run_apify_scrape(max_items_per_category: int = 100) -> list[dict]:
-    """Run the Apify actor over each fsastore.com category. Returns raw items."""
+ACTOR_ID = "apify/e-commerce-scraping-tool"   # Apify's ready-made scraper; override with APIFY_ACTOR_ID
+_S = "https://fsastore.com/"
+
+# The catalog is a FIXED list of product pages, so every run scrapes the same products: rows are
+# replaced by key and the table never grows. Listing pages return a different handful each time,
+# which is why they are not used. Excedrin and Pepcid are left out on purpose: they are OTC
+# medicines the index does not list, for the "could not confirm, use your Visa" moment.
+CATALOG = {
+    _S + "tylenol-extra-strength-caplets-fever-reducer-and-pain-reliever-500-mg-100-ct/3556.html": "pain-relief",
+    _S + "advil-pain-reliever-and-fever-reducer-coated-tablets-200-mg/30429m.html": "pain-relief",
+    _S + "preparation-h-hemorrhoidal-cream-original-0-9-oz/42814.html": "pain-relief",
+    _S + "allegra-24-hour-indoor-outdoor-allergy-relief-tablets-90-ct/31452.html": "cold-and-allergy",
+    _S + "benadryl-ultra-allergy-relief-tablets-100-ct/28272.html": "cold-and-allergy",
+    _S + "claritin-24-hour-allergy-medicine-non-drowsy-prescription-strength-allergy-relief-loratadine-antihistamine-tablets-100-ct/40334.html": "cold-and-allergy",
+    _S + "caring-mill-24-hour-allergy-relief-cetirizine-hydrochloride-tablets-10mg/40161m.html": "cold-and-allergy",
+    _S + "tums-ultra-strength-assorted-fruit-antacid-chewable-tablets-for-heartburn-relief-72-ct/30441.html": "digestive-health",
+    _S + "band-aid-pro-heal-adhesive-bandages-5-day-protect-14-ct/42388.html": "first-aid",
+    _S + "band-aid-flexible-fabric-adhesive-bandages-assorted-sizes/25601m.html": "first-aid",
+    _S + "caring-mill-triple-antibiotic-ointment-plus-pain-relief-1-oz/41983.html": "first-aid",
+}
+STORE_BRAND = "FSA Store"   # fsastore.com's own label, not a product brand
+
+
+def run_apify_scrape() -> list[dict]:
+    """One Apify run over the whole fixed catalog. Returns the products it could read."""
     from apify_client import ApifyClient
 
     token = os.environ.get("APIFY_TOKEN")
     if not token:
-        logger.error("APIFY_TOKEN not set. Cannot run scrape.")
+        logger.error("APIFY_TOKEN is not set in backend/.env.")
         return []
-
     client = ApifyClient(token)
-    all_items: list[dict] = []
-    for category in FSA_STORE_CATEGORIES:
-        logger.info("Scraping category: %s", category)
-        run_input = {
-            "startUrls": [{"url": f"https://fsastore.com/collections/{category}"}],
-            "maxItems": max_items_per_category,
-            "proxyConfiguration": {"useApifyProxy": True},
-        }
-        try:
-            run = client.actor("apify/web-scraper").call(run_input=run_input)
-            items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
-            logger.info("Got %d items from %s", len(items), category)
-            for item in items:
-                item["_source_category"] = category
-            all_items.extend(items)
-        except Exception:
-            logger.exception("Failed to scrape category %s", category)
-    return all_items
+    run = client.actor(os.environ.get("APIFY_ACTOR_ID") or ACTOR_ID).call(
+        run_input={"detailsUrls": [{"url": u} for u in CATALOG], "maxProductResults": len(CATALOG),
+                   "scrapeMode": "AUTO"},
+        max_total_charge_usd=1.0,    # the tool's minimum allowed cap; the run costs a few tenths of a cent
+        memory_mbytes=1024,
+        timeout_secs=600,
+        logger=None,
+    )
+    items = list(client.dataset(run["defaultDatasetId"]).iterate_items(limit=len(CATALOG)))
+    logger.info("Run %s: %s, %d of %d products", run.get("id"), run.get("status"), len(items), len(CATALOG))
+    return items
+
+
+def _brand(item: dict) -> str | None:
+    brand = item.get("brand")
+    brand = (brand.get("slogan") or brand.get("name")) if isinstance(brand, dict) else brand
+    brand = (brand or "").strip()
+    return None if not brand or brand == STORE_BRAND else brand
+
+
+def _price_cents(item: dict) -> int | None:
+    try:
+        return round(float((item.get("offers") or {}).get("price")) * 100)
+    except (TypeError, ValueError):
+        return None
 
 
 def normalize_scraped_data(raw_items: list[dict]) -> list[dict]:
-    """Raw actor output -> eligibility_items rows (all eligible, basis retailer_badge)."""
-    from lookup.normalize import normalize_key, product_key_from_upc
+    """Scraper output -> eligibility_items rows (all eligible, basis retailer_badge).
+
+    fsastore.com only sells HSA/FSA-eligible items, so a listing there is the eligibility evidence.
+    """
+    from lookup.normalize import normalize_key
 
     rows: list[dict] = []
     seen: set[str] = set()
     now = datetime.now(timezone.utc).isoformat()
 
     for item in raw_items:
-        name = (item.get("title") or item.get("name") or "").strip()
+        name = (item.get("name") or item.get("title") or "").strip()
         if not name:
             continue
-        brand = (item.get("brand") or "").strip() or None
+        brand = _brand(item)
         size = (item.get("size") or item.get("variant") or "").strip() or None
-        upc = (item.get("upc") or item.get("gtin") or item.get("barcode") or "").strip() or None
-        source_category = item.get("_source_category", "")
-        product_key = product_key_from_upc(upc) if upc else normalize_key(brand, name, size)
+        collection = CATALOG.get(item.get("inputUrl", "")) or item.get("collection") or ""
+        product_key = normalize_key(brand, name, size)   # the same key a vision read produces
         if product_key in seen:
             continue
         seen.add(product_key)
         rows.append({
             "product_key": product_key,
-            "upc": upc,
+            "upc": None,
             "name": name,
             "brand": brand,
             "size": size,
-            "category_path": CATEGORY_MAP.get(source_category, "other"),
+            "category_path": CATEGORY_MAP.get(collection, "other"),
+            "price_cents": _price_cents(item),   # the store's listed price: a fallback, kept in the Moss index
             "eligible": True,
-            "source_url": item.get("url") or item.get("pageUrl")
-                          or f"https://fsastore.com/collections/{source_category}",
+            "source_url": item.get("inputUrl") or item.get("url") or f"https://fsastore.com/collections/{collection}",
             "collected_at": now,
             "basis": "retailer_badge",
         })
@@ -158,24 +198,49 @@ def save_json(rows: list[dict], path: Path) -> None:
     logger.info("Saved %d rows to %s", len(rows), path)
 
 
+def load_saved_rows(path: Path) -> list[dict]:
+    """Earlier rows for pages still in the catalog (kept if this run could not read a page)."""
+    try:
+        return [r for r in json.loads(path.read_text())
+                if r.get("basis") == "retailer_badge" and r.get("source_url") in CATALOG]
+    except (OSError, ValueError):
+        return []
+
+
 def main() -> None:
     out_dir = Path(__file__).parent.parent / "data" / "eligibility_data"
+    saved = out_dir / "eligibility_items.json"
+    index_only = "--index-only" in sys.argv
 
-    raw = run_apify_scrape(max_items_per_category=50)
-    if not raw:
-        logger.warning("No items scraped. Continuing with hand-entered non-eligible rows only.")
-    save_json(raw, out_dir / "raw_scrape.json")
+    raw = [] if index_only else run_apify_scrape()
+    if not raw and not index_only:
+        logger.warning("No items scraped. Keeping the rows saved by earlier runs.")
+    if raw:
+        save_json(raw, out_dir / "raw_scrape.json")
 
-    rows = add_non_eligible_examples(normalize_scraped_data(raw))
+    # A page can fail on a given run, so keep its earlier row; a row is replaced when its page is read again.
+    # Keyed by page address, not by the name-based key: the tool can read a brand differently from
+    # one run to the next, which changes the key and would otherwise leave the old row behind.
+    merged = {r["source_url"]: r for r in load_saved_rows(saved)}
+    for row in normalize_scraped_data(raw):
+        if row["source_url"] not in CATALOG:
+            continue
+        old = merged.get(row["source_url"])
+        if row["price_cents"] is None and old and old.get("price_cents") is not None:
+            row["price_cents"] = old["price_cents"]   # the tool sometimes omits the price; keep the last one seen
+        merged[row["source_url"]] = row
+    rows = add_non_eligible_examples(list(merged.values()))
     save_json(rows, out_dir / "eligibility_items.json")
 
-    try:
-        from data.db import eligibility_bulk_insert
-        logger.info("Inserted %d rows into eligibility_items", eligibility_bulk_insert(rows))
-    except ImportError:
-        logger.warning("data/db.py not present; rows saved to JSON only.")
-    except Exception:
-        logger.exception("Database insert failed; rows saved to JSON.")
+    if not os.environ.get("MOSS_PROJECT_ID"):
+        logger.warning("MOSS_PROJECT_ID not set; rows saved to JSON only.")
+    else:
+        import asyncio
+        from lookup.moss_index import build_index
+        try:
+            logger.info("Built the Moss index with %d rows", asyncio.run(build_index(rows)))
+        except Exception:
+            logger.exception("Moss index build failed; rows saved to JSON.")
 
     logger.info("Prefetch complete.")
 

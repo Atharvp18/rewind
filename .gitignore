@@ -7,6 +7,7 @@ audio_tmp/
 # Backend (from main)
 __pycache__/
 agent1*_data.json
+backend/data/eligibility_data/
 
 # Personal Claude Code permissions (shared settings live in .claude/settings.json)
 .claude/settings.local.json

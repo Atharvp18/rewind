@@ -36,7 +36,7 @@ IntentName = Literal[
 
 class Entities(BaseModel):
     product: str | None = Field(None, description="Product the user named, with strength if said, e.g. 'omeprazole 20mg'")
-    card: Literal["hsa", "visa"] | None = Field(None, description="Card the user named")
+    card: Literal["hsa", "fsa", "visa"] | None = Field(None, description="Card the user named")
     price_dollars: float | None = Field(None, description="A price the user spoke, in dollars")
     run: Literal[1, 2] | None = Field(None, description="Demo run number if resetting")
     plan: Literal["uhc_student", "sunrise_ppo", "evergreen_hsa", "harbor_choice", "basic_medical", "unknown"] | None = Field(

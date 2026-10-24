@@ -171,6 +171,12 @@ def eligibility_bulk_insert(rows: list[dict]) -> int:
     return len(records)
 
 
+def eligibility_delete(product_keys: list[str]) -> None:
+    """Remove rows by product_key (used to clear retired placeholder rows)."""
+    if product_keys:
+        _call(lambda: _sb().table("eligibility_items").delete().in_("product_key", product_keys).execute())
+
+
 # --- scans ----------------------------------------------------------------------------------
 
 def save_scan(scan_id: str, product: dict, eligibility: dict) -> None:
