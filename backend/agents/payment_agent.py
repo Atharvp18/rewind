@@ -28,7 +28,7 @@ from agents.messages import FactsMsg, PaymentRequest, PaymentResponse, payment_p
 from agents.intent import REFUSALS, Intent
 from agents.insurance import COPAY_HSA, also_sold_by_prescription, coverage, describe_plan, strength_of
 from agents.session import LOW_BALANCE_CENTS, plan_profile
-from agents.speaker import Facts, say
+from agents.speaker import Facts, say, PRICE_RETRY
 from data.db import DBUnavailable
 
 logger = logging.getLogger(__name__)
@@ -349,8 +349,9 @@ def _resolve_pending(session: dict, intent: Intent) -> Facts | None:
             card = _card(session, pending["card_options"][0])
         if card and card["id"] in pending["card_options"]:
             return _add_to_cart(session, session["last_scan"], card["id"], overrode=pending["overrode"])
-        nicks = [_card(session, c)["nickname"] for c in pending["card_options"]]
-        return say(f"Which card: {' or '.join(nicks)}?", *nicks)
+        if yes or name == "add_to_cart" or intent.entities.card:
+            nicks = [_card(session, c)["nickname"] for c in pending["card_options"]]
+            return say(f"Which card: {' or '.join(nicks)}?", *nicks)
     elif scope == "confirm_checkout":
         if yes:
             return _checkout_confirm(session)
@@ -377,8 +378,45 @@ def _resolve_pending(session: dict, intent: Intent) -> Facts | None:
     return None
 
 
+def pending_reminder(session: dict) -> Facts | None:
+    """One line that re-asks the open question (used after a side question, and for the idle nudge)."""
+    pending, scan = session.get("pending"), session.get("last_scan")
+    if not pending:
+        return None
+    scope = pending["scope"]
+    if scope in ("confirm_add", "choose_card") and scan:
+        p = scan["product"]
+        price = dollars(p["amount_cents"]) if p.get("amount_cents") is not None else ""
+        return say(f"You were looking at {p['name']}" + (f", {price}" if price else "") + ". Would you like to add it?",
+                   p["name"], price)
+    if scope == "confirm_checkout":
+        return say("You were about to check out. Ready, or would you like to keep shopping?", "check out")
+    if scope == "confirm_reroute":
+        return say("I asked about moving an item to your Visa credit. Shall I?", "Visa credit")
+    if scope == "confirm_clear":
+        return say("Do you still want to clear your cart?", "clear")
+    if scope == "confirm_rx" and scan:
+        return say("Is that the right medicine and strength?", "right medicine")
+    if scope == "ask_plan":
+        return say("Do you know your insurance plan? You can also show me your card.", "insurance")
+    return None
+
+
+# Questions that can be answered without dropping the open question.
+SIDE_QUESTIONS = {"insurance_question", "cart_query", "balance_query"}
+
+
 def handle_intent(intent: Intent, session: dict) -> tuple[Facts, dict]:
     """Pure handler: (facts, updated session). Never mutates the input."""
+    facts, session = _handle(intent, session)
+    reminder = pending_reminder(session) if intent.intent in SIDE_QUESTIONS else None
+    if reminder:
+        facts = say(f"{facts.template} {reminder.template}", *facts.must_say, *reminder.must_say,
+                    fixed=facts.fixed, alert=facts.alert)
+    return facts, session
+
+
+def _handle(intent: Intent, session: dict) -> tuple[Facts, dict]:
     session = copy.deepcopy(session)
     name, ent = intent.intent, intent.entities
 
@@ -388,6 +426,12 @@ def handle_intent(intent: Intent, session: dict) -> tuple[Facts, dict]:
             if visa:
                 session["pending"] = {"scope": "confirm_add", "card_id": visa["id"]}
         return say(REFUSALS[name], fixed=True), session
+
+    # Naming a card while an item is waiting means "put it on that card", whatever was asked.
+    pending_scope = (session.get("pending") or {}).get("scope")
+    if name == "choose_card" and intent.entities.card and session.get("last_scan") and pending_scope != "choose_card":
+        intent = intent.model_copy(update={"intent": "add_to_cart"})
+        name = "add_to_cart"
 
     applied = _resolve_pending(session, intent)
     if applied is not None:
@@ -439,7 +483,7 @@ def handle_intent(intent: Intent, session: dict) -> tuple[Facts, dict]:
     if name == "add_to_cart" and scan:
         pname = scan["product"]["name"]
         if scan["product"].get("amount_cents") is None:
-            return say(f"I don't have a price for {pname} yet. What does the shelf tag say?", pname), session
+            return say(f"I don't have a price for {pname} yet. {PRICE_RETRY}", pname, fixed=True), session
         label = scan["eligibility"]["label"]
         chosen = _card_by_type(session, ent.card)
         if chosen and chosen["type"] in ("hsa", "fsa") and label == "not_eligible":
@@ -466,8 +510,8 @@ def recommend(session: dict, scan: dict) -> tuple[Facts, dict]:
     pname = scan["product"]["name"]
     if scan["product"].get("amount_cents") is None:
         session["pending"] = None
-        return say(f"I see {pname} but could not read a price. Tell me the shelf price and I'll add it to your cart.",
-                   pname), session
+        return say(f"I see {pname} but could not read the price. {PRICE_RETRY}",
+                   pname, fixed=True), session
     facts = _speak_recommendation(session, scan, _route(session, scan))
     if scan["product"].get("is_medication") and also_sold_by_prescription(pname):
         line = ("If your doctor prescribed this, the pharmacy counter version may cost less through your plan. "

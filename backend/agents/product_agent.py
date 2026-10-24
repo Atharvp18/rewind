@@ -21,7 +21,7 @@ from uagents import Agent, Context
 from agents.addresses import ORCHESTRATOR_AGENT_ADDRESS, PRODUCT_SEED
 from agents.common import dollars, download_image
 from agents.messages import FactsMsg, ProductRequest, ProductResponse, product_protocol
-from agents.speaker import Facts, say
+from agents.speaker import Facts, say, PRICE_RETRY
 from models.schemas import EligibilityResult, ProductResolution, ScanResult, VisionExtract
 
 logger = logging.getLogger(__name__)
@@ -60,8 +60,10 @@ def facts_for(product: ProductResolution, elig: EligibilityResult) -> Facts:
     if product.state == "resolved":
         parts.append("Would you like to add it?")
     else:
-        parts.append("Tell me the shelf price and I can add it to your cart.")
-    return say(" ".join(parts), name, price or "", label)
+        parts.append(PRICE_RETRY)
+    # No price: the ask is spoken word for word. Rephrasing once turned "tell me the
+    # price" into "should I read you the price", which the user can't act on.
+    return say(" ".join(parts), name, price or "", label, fixed=price is None)
 
 
 def card_facts(card, profile: dict) -> Facts:

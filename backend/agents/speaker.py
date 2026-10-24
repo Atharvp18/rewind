@@ -37,6 +37,10 @@ class Facts:
         return self.template
 
 
+# No price read: low-vision users can't read the tag, so guide a closer photo first.
+PRICE_RETRY = ("Hold your phone a little closer to the price tag on the shelf, just below the item, and take another photo. If someone nearby can read it to you, you can also just say the price.")
+
+
 def say(template: str, *must_say: str, fixed: bool = False, alert: str | None = None) -> Facts:
     return Facts(template=template, must_say=[m for m in must_say if m], fixed=fixed, alert=alert)
 

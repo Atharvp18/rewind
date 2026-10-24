@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from uagents import Agent, Bureau, Context
 from uagents_core.contrib.protocols.chat import (
-    ChatAcknowledgement, ChatMessage, MetadataContent, Resource, ResourceContent, TextContent,
+    ChatAcknowledgement, ChatMessage, MetadataContent, Resource, ResourceContent, StartSessionContent, TextContent,
 )
 
 from agents import orchestrator_agent, payment_agent, product_agent
@@ -39,8 +39,8 @@ SCRIPTS = {
         "how much money is left on my hsa",
         PHOTO,
         "put it on the visa",
-        "hmm are those kleenex tissues covered",
-        "they're three forty nine",
+        "<photo:tissues_far>",     # price tag too far away to read
+        "<photo:tissues_close>",   # the shopper moves closer, as the agent suggests
         "the visa please",
         "what's in my cart",
         "checkout",
@@ -81,7 +81,7 @@ async def on_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 @shopper.on_event("startup")
 async def play(ctx: Context):
     await asyncio.sleep(4)  # let the orchestrator warm up
-    for line in SCRIPT:
+    for n, line in enumerate(SCRIPT):
         print(f"\nSHOPPER: {line}", flush=True)
         if line.startswith("<photo:"):
             kind = line[len("<photo:"):-1]
@@ -89,6 +89,8 @@ async def play(ctx: Context):
                 uri=f"http://127.0.0.1:{PHOTO_PORT}/{kind}.jpg", metadata={"mime_type": "image/jpeg"}))]
         else:
             content = [TextContent(type="text", text=line)]
+        if n == 0:   # a new chat, as ASI:One sends it: no memory from earlier runs
+            content = [StartSessionContent(type="start-session"), *content]
         await ctx.send(ORCHESTRATOR_AGENT_ADDRESS, ChatMessage(
             timestamp=datetime.now(timezone.utc), msg_id=uuid4(), content=content))
         try:

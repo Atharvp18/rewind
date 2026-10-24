@@ -146,7 +146,7 @@ def test_could_not_confirm_never_auto_routes():
 def test_scan_without_price_asks_for_it():
     s = new_session()
     f, s = payment_agent.recommend(s, scan("Yoga Mat", None, "could_not_confirm"))
-    assert "could not read a price" in f.template and s["pending"] is None
+    assert "closer to the price tag" in f.template and f.fixed and s["pending"] is None
 
 
 def test_confirm_without_a_pending_question_is_not_acted_on():
@@ -233,3 +233,40 @@ def test_orchestratornudge_wording():
     f = nudge(s)
     assert f.template == "You were looking at Advil, $12.99. Would you like to add it?"
     assert {"Advil", "$12.99"} <= set(f.must_say)
+
+
+def test_hello_mid_conversation_gets_short_greeting_with_name():
+    from agents.orchestrator_agent import greeting
+    s = {"greeted": False, "last_reply": "I read Omeprazole, 20mg. Is that right?"}
+    assert greeting(s, "Alex").template == "Hi Alex, how may I help you today?"
+
+
+def test_no_price_ask_is_spoken_word_for_word():
+    from agents import product_agent
+    from models.schemas import EligibilityResult, ProductResolution
+    p = ProductResolution(product_key="k", name="kleenex tissues", category="other", state="partial")
+    e = EligibilityResult(label="could_not_confirm", basis="no_match")
+    assert product_agent.facts_for(p, e).fixed is True
+
+
+def test_side_question_is_answered_then_card_question_comes_back():
+    from agents.intent import Intent
+    s = new_session()
+    s["insurance"] = None
+    s["last_scan"] = {"scan_id": "x", "state": "resolved",
+                      "product": {"product_key": "k", "name": "Advil", "amount_cents": 1299},
+                      "eligibility": {"label": "could_not_confirm"}}
+    s["pending"] = {"scope": "choose_card", "card_options": ["card_hsa_1", "card_visa_1"], "overrode": True}
+    f, s2 = payment_agent.handle_intent(Intent(intent="insurance_question"), s)
+    assert "Which card" not in f.template.split(".")[0]      # the question is answered first
+    assert "You were looking at Advil" in f.template          # then the open question returns
+    assert s2["pending"]["scope"] == "choose_card"
+
+
+def test_naming_a_card_answers_an_okay_question():
+    from agents.intent import Entities, Intent
+    s = new_session()
+    _, s = payment_agent.recommend(s, scan("Kleenex Facial Tissues", 349, "not_eligible"))
+    assert s["pending"]["scope"] == "confirm_add"
+    f, s = payment_agent.handle_intent(Intent(intent="choose_card", entities=Entities(card="visa")), s)
+    assert s["cart"][0]["assigned_card_id"] == "card_visa_1" and "Added" in f.template

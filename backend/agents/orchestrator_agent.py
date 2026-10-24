@@ -31,9 +31,10 @@ from agents.messages import (
     payment_protocol, product_protocol,
 )
 from agents import store
+from agents.payment_agent import pending_reminder
 from agents.session import new_session
 from data import db
-from agents.speaker import Facts, render, say
+from agents.speaker import Facts, render, say, PRICE_RETRY
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,8 @@ def take_request(ctx: Context, request_id: str) -> dict | None:
 # --- pure helpers ---------------------------------------------------------------
 
 def greeting(session: dict, first_name: str | None = None) -> Facts:
-    if session.get("greeted"):
+    if session.get("greeted") or session.get("last_reply"):   # mid-conversation: keep it short
+        session["greeted"] = True
         if first_name:
             return say(f"Hi {first_name}, how may I help you today?", first_name, fixed=True)
         return WELCOME_BACK
@@ -108,34 +110,14 @@ def greeting(session: dict, first_name: str | None = None) -> Facts:
 
 
 def nudge(session: dict) -> Facts | None:
-    pending, scan = session.get("pending"), session.get("last_scan")
-    if not pending:
-        return None
-    scope = pending["scope"]
-    if scope in ("confirm_add", "choose_card") and scan:
-        p = scan["product"]
-        price = dollars(p["amount_cents"]) if p.get("amount_cents") is not None else ""
-        return say(f"You were looking at {p['name']}" + (f", {price}" if price else "") + ". Would you like to add it?",
-                   p["name"], price)
-    if scope == "confirm_checkout":
-        return say("You were about to check out. Ready, or would you like to keep shopping?", "check out")
-    if scope == "confirm_reroute":
-        return say("I asked about moving an item to your Visa credit. Shall I?", "Visa credit")
-    if scope == "confirm_clear":
-        return say("Do you still want to clear your cart?", "clear")
-    if scope == "confirm_rx" and scan:
-        return say("Is that the right medicine and strength?", "right medicine")
-    if scope == "ask_plan":
-        return say("Do you know your insurance plan? You can also show me your card.", "insurance")
-    return None
+    return pending_reminder(session)
 
 
 def unclear_facts(session: dict) -> Facts:
     scan = session.get("last_scan")
     if scan and scan["product"].get("amount_cents") is None:
         pname = scan["product"]["name"]
-        return say(f"I didn't catch that. I still need a price for {pname}. "
-                   "Say the shelf price, or send the photo again.", pname)
+        return say(f"I didn't catch that. I still need a price for {pname}. {PRICE_RETRY}", pname, fixed=True)
     return DIDNT_CATCH
 
 

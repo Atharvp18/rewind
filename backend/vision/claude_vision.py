@@ -32,14 +32,20 @@ def extract_product(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
 
 
 def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> VisionExtract:
-    """Hardcoded data for testing: advil (default), card, or rx_label.
+    """Hardcoded data for testing: advil (default), card, rx_label, tissues_far, tissues_close.
 
     Picked by a marker in the image bytes (b"stub:card"), else REWIND_STUB_IMAGE.
     """
     kind = os.environ.get("REWIND_STUB_IMAGE", "advil")
-    for marker in ("card", "rx_label", "advil"):
+    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close"):
         if f"stub:{marker}".encode() in image_bytes:
             kind = marker
+    if kind in ("tissues_far", "tissues_close"):   # same box; only the close photo shows the tag
+        return VisionExtract(
+            name="Kleenex Facial Tissues", brand="Kleenex", size="160 count", category="personal_care",
+            shelf_price_cents=349 if kind == "tissues_close" else None,
+            field_confidence={"name": 0.9, "price": 0.9 if kind == "tissues_close" else 0.0},
+        )
     if kind == "card":
         return VisionExtract(image_kind="insurance_card")
     if kind == "rx_label":
