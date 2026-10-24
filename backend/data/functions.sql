@@ -175,6 +175,9 @@ BEGIN
   DELETE FROM scans      WHERE TRUE;
   DELETE FROM prompts    WHERE TRUE;
   DELETE FROM payments   WHERE TRUE;
+  -- prices saved from earlier scans go too, so every rehearsal starts the same;
+  -- the seeded demo products are re-inserted below
+  DELETE FROM product_cache WHERE source <> 'seeded';
 
   INSERT INTO cards (id, type, nickname, balance_cents, nessie_account_id, status, is_default)
   SELECT c->>'id', c->>'type', c->>'nickname', (c->>'balance_cents')::BIGINT,

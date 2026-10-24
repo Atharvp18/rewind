@@ -1,16 +1,14 @@
-"""Rewind Product Agent (Fetch.ai / ASI:One).
+"""Rewind Product Agent — a uAgents worker.
 
-Stateless worker. Takes a product description or an attached shelf photo,
-runs it through the scan pipeline (vision -> lookup -> eligibility), and
-returns a spoken-style summary plus the ScanResult as metadata.
-
-Session state lives in the orchestrator; this agent only receives a
-"session" metadata blob and returns a "scan" blob.
+Receives a ProductRequest (a shelf-photo URL or a product name), runs the fixed
+scan pipeline (vision -> lookup -> eligibility), and returns a ProductResponse
+with facts and the ScanResult. Stateless and deterministic: no Claude call
+decides anything here except reading the photo.
 """
 from __future__ import annotations
 
 import logging
-import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,44 +16,18 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from uagents import Agent, Context, Protocol
-from uagents_core.contrib.protocols.chat import ChatAcknowledgement, ChatMessage, chat_protocol_spec
+from uagents import Agent, Context
 
-from agents.common import Incoming, ack, dollars, download_image, reply
-from agents.session import find_demo_item
+from agents.addresses import ORCHESTRATOR_AGENT_ADDRESS, PRODUCT_SEED
+from agents.common import dollars, download_image
+from agents.messages import FactsMsg, ProductRequest, ProductResponse, product_protocol
+from agents.speaker import Facts, say, PRICE_RETRY
 from models.schemas import EligibilityResult, ProductResolution, ScanResult, VisionExtract
 
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = (
-    "I'm the Rewind Product Agent. Send me a shelf photo, or ask about a product "
-    "by name, and I'll tell you what it is, what it costs, and whether it's HSA/FSA eligible.\n\n"
-    "Try: \"Is Advil HSA eligible?\" or attach a photo of a product."
-)
-
-ELIGIBILITY_QUESTION = ["eligible", "eligibility", "hsa", "fsa", "cover"]
-
-
-def _demo_resolution(item: dict) -> tuple[ProductResolution, EligibilityResult]:
-    product = ProductResolution(
-        product_key=f"upc:{item['upc']}",
-        upc=item["upc"],
-        name=item["name"],
-        brand=item["brand"],
-        size=item["size"],
-        category=item["category"],
-        is_medication=item["is_medication"],
-        amount_cents=item["amount_cents"],
-        price_source="seeded",
-        state="resolved",
-    )
-    elig = EligibilityResult(
-        label="eligible" if item["eligible"] else "not_eligible",
-        basis="upc_match" if item["basis"] == "hand_entered" else "irs_category_rule",
-        source="hand_entered" if item["basis"] == "hand_entered" else "irs_rules",
-        matched_name=item["name"],
-    )
-    return product, elig
+HELP = say("Send me a shelf photo, or tell me the product's name, and I'll say what it is, "
+           "what it costs, and whether it's HSA eligible.")
 
 
 def _pipeline(extract: VisionExtract) -> tuple[ProductResolution, EligibilityResult]:
@@ -63,87 +35,110 @@ def _pipeline(extract: VisionExtract) -> tuple[ProductResolution, EligibilityRes
     from eligibility.classify import classify_eligibility
 
     product = resolve_product(extract)
-    demo = find_demo_item(product.name)
-    if demo and product.state != "unresolved":
-        # Pre-cached demo shelf (spec 19.3) until eligibility_items is wired to the DB.
-        demo_product, elig = _demo_resolution(demo)
-        if product.amount_cents is not None:
-            demo_product.amount_cents = product.amount_cents
-            demo_product.price_source = product.price_source
-        return demo_product, elig
-    elig = classify_eligibility(product, extract.package_eligibility_marking)
-    return product, elig
+    return product, classify_eligibility(product, extract.package_eligibility_marking)
 
 
-def _speak(product: ProductResolution, elig: EligibilityResult) -> str:
+def facts_for(product: ProductResolution, elig: EligibilityResult) -> Facts:
     if product.state == "unresolved":
-        return "I could not confirm this item. Try another angle, or tell me what it is."
+        return say("I could not confirm this item. Try another angle, or tell me what it is.",
+                   "could not confirm this item")
 
     name = product.name
     if product.brand and product.brand.lower() not in name.lower():
         name = f"{product.brand} {name}"
     price = dollars(product.amount_cents) if product.amount_cents is not None else None
 
-    parts = [f"I see {name}" + (f", {price}." if price else ". I could not read a price.")]
-
     if elig.label == "eligible":
-        if product.is_medication and elig.basis == "upc_match":
-            parts.append("HSA eligible.")
-        else:
-            conf = "high confidence" if elig.basis in ("upc_match", "irs_category_rule") else "moderate confidence"
-            parts.append(f"HSA eligible, {conf}.")
+        label = "HSA eligible"
     elif elig.label == "not_eligible":
-        parts.append("Not HSA eligible, high confidence.")
+        label = "Not HSA eligible"
     else:
-        parts.append("I could not confirm eligibility.")
+        label = "I could not confirm eligibility"
 
+    parts = [f"I see {name}" + (f", {price}." if price else ". I could not read a price.")]
+    parts.append(label + ".")
     if product.state == "resolved":
-        parts.append("Say \"add it\" to put it in your cart, or \"skip it\".")
+        parts.append("Would you like to add it?")
     else:
-        parts.append("Tell me the shelf price and I can add it to your cart.")
-    return " ".join(parts)
+        parts.append(PRICE_RETRY)
+    # No price: the ask is spoken word for word. Rephrasing once turned "tell me the
+    # price" into "should I read you the price", which the user can't act on.
+    return say(" ".join(parts), name, price or "", label, fixed=price is None)
 
 
-def _text_to_scan(text: str) -> tuple[ProductResolution, EligibilityResult]:
-    demo = find_demo_item(text)
-    if demo:
-        return _demo_resolution(demo)
+def card_facts(card, profile: dict) -> Facts:
+    from agents.insurance import describe_plan
+    first = card.first_name
+    greeting = f"Thanks, {first}. " if first else "Thanks. "
+    plan = describe_plan(profile)
+    return say(greeting + f"I see your {card.insurer or 'insurance'} card. " + plan.template
+               + " Show me any item to get started.", *([first] if first else []), *plan.must_say)
+
+
+async def handle_card(image: bytes) -> tuple[Facts, dict | None, str | None]:
+    """(facts, plan profile, first name). The profile holds no personal data."""
+    from vision.card_reader import read_card
+    from agents.insurance import card_to_profile
+    try:
+        card = read_card(image)
+    except Exception:
+        logger.exception("card read failed")
+        return say("I couldn't read that card. Try again with the front facing the camera, or tell me your plan."), None, None
+    profile = card_to_profile(card)
+    name = " ".join(p for p in (card.first_name, card.last_name) if p) or None
+    return card_facts(card, profile), profile, name
+
+
+async def handle(image_url: str | None = None, barcode: str | None = None,
+                 product_hint: str | None = None, is_prescription: bool | None = None,
+                 ) -> tuple[Facts, dict | None]:
+    """Pure handler for products and pharmacy labels: (facts, scan dict or None).
+
+    Insurance cards are handled by handle_full(); this keeps the old two-value shape.
+    """
+    facts, scan, _, _ = await handle_full(image_url, barcode, product_hint, is_prescription)
+    return facts, scan
+
+
+async def handle_full(image_url: str | None = None, barcode: str | None = None,
+                      product_hint: str | None = None, is_prescription: bool | None = None,
+                      ) -> tuple[Facts, dict | None, dict | None, str | None]:
+    """(facts, scan, card profile, person name)."""
+    from vision.claude_vision import extract_product
     from eligibility.classify import classify_eligibility
     from lookup.normalize import normalize_key
+    from agents.insurance import strength_of
 
-    name = text
-    for word in ("is", "are", "the", "hsa", "fsa", "eligible", "eligibility", "covered", "?"):
-        name = name.replace(word, " ")
-    name = " ".join(name.split()).strip() or text
-    product = ProductResolution(
-        product_key=normalize_key(None, name, None),
-        name=name,
-        category="other",
-        state="partial",
-    )
-    return product, classify_eligibility(product, None)
-
-
-async def handle(inc: Incoming) -> tuple[str, dict | None]:
-    """Pure handler: (reply text, scan metadata). Shared by the mailbox agent and the orchestrator."""
-    from vision.claude_vision import extract_product
-
-    if inc.image_url:
+    if image_url:
         try:
-            image = await download_image(inc.image_url)
+            image = await download_image(image_url)
         except Exception as exc:
             logger.warning("image download failed: %s", exc)
-            return ("I couldn't open that photo. Please re-attach it, or tell me the product name.", None)
+            return say("I couldn't open that photo. Please send it again, or tell me the product's name."), None, None, None
         try:
-            extract = extract_product(image, barcode_hint=inc.metadata.get("barcode"))
+            extract = extract_product(image, barcode_hint=barcode)
         except Exception:
             logger.exception("vision failed")
-            return ("I couldn't read that photo. Try again with the label facing the camera.", None)
+            return say("I couldn't read that photo. Try again with the label facing the camera."), None, None, None
+        if extract.image_kind == "insurance_card":
+            facts, profile, name = await handle_card(image)
+            return facts, None, profile, name
         product, elig = _pipeline(extract)
-    elif inc.text and (any(k in inc.text.lower() for k in ELIGIBILITY_QUESTION) or find_demo_item(inc.text)):
-        product, elig = _text_to_scan(inc.text)
+    elif product_hint:
+        strength = strength_of(product_hint)
+        name = re.sub(r"\s*\d+(?:\.\d+)?\s*(mg|mcg|g|ml)\b", "", product_hint, flags=re.I).strip() or product_hint
+        product = ProductResolution(
+            product_key=normalize_key(None, product_hint, None),
+            name=name,
+            size=strength,
+            category="other",
+            is_medication=bool(is_prescription),
+            is_prescription_only=bool(is_prescription),
+            state="partial",
+        )
+        elig = classify_eligibility(product, None)
     else:
-        return (HELP_TEXT, None)
+        return HELP, None, None, None
 
     scan = ScanResult(
         scan_id=str(uuid4()),
@@ -153,35 +148,29 @@ async def handle(inc: Incoming) -> tuple[str, dict | None]:
         eligibility=elig,
         warnings=product.warnings,
     )
-    return (_speak(product, elig), {"scan": scan.model_dump()})
+    return facts_for(product, elig), scan.model_dump(), None, None
 
 
-protocol = Protocol(spec=chat_protocol_spec)
+@product_protocol.on_message(ProductRequest, replies=ProductResponse)
+async def on_request(ctx: Context, sender: str, msg: ProductRequest):
+    if sender != ORCHESTRATOR_AGENT_ADDRESS:
+        ctx.logger.warning("ignoring ProductRequest from unknown sender %s", sender)
+        return
+    facts, scan, profile, name = await handle_full(msg.image_url, msg.barcode, msg.product_hint, msg.is_prescription)
+    await ctx.send(sender, ProductResponse(request_id=msg.request_id, facts=FactsMsg.of(facts), scan=scan,
+                                           card_profile=profile, person_name=name))
 
 
-@protocol.on_message(ChatMessage)
-async def on_message(ctx: Context, sender: str, msg: ChatMessage):
-    await ack(ctx, sender, msg)
-    inc = Incoming(msg)
-    text, meta = await handle(inc)
-    passthrough = {"user": inc.metadata["user"]} if "user" in inc.metadata else {}
-    await ctx.send(sender, reply(text, {**passthrough, **(meta or {})}))
-
-
-@protocol.on_message(ChatAcknowledgement)
-async def on_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
-    pass
-
-
-def build_agent() -> Agent:
+def build_agent(mailbox: bool = True, port: int = 8001) -> Agent:
     agent = Agent(
         name="Rewind Product Agent",
-        seed=os.environ.get("PRODUCT_AGENT_SEED", "rewind-product-agent-dev-seed"),
-        port=int(os.environ.get("PRODUCT_AGENT_PORT", "8001")),
-        mailbox=True,
-        publish_agent_details=True,
+        seed=PRODUCT_SEED,
+        port=port,
+        mailbox=mailbox,
+        publish_agent_details=mailbox,
+        description="Identifies a shopping item from a shelf photo or name and checks HSA/FSA eligibility.",
     )
-    agent.include(protocol, publish_manifest=True)
+    agent.include(product_protocol, publish_manifest=True)
     return agent
 
 

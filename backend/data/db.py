@@ -204,10 +204,10 @@ def get_cart() -> dict:
 
 def add_cart_item(scan_id: str, product_key: str, display_name: str, amount_cents: int,
                   amount_basis: str, assigned_card_id: str, eligibility_label: str,
-                  user_overrode_card: bool = False) -> dict:
-    """Insert one item and return the updated cart."""
+                  user_overrode_card: bool = False, item_id: str | None = None) -> dict:
+    """Insert one item and return the updated cart. item_id lets a caller keep its own id."""
     record = {
-        "id": uuid.uuid4().hex,
+        "id": item_id or uuid.uuid4().hex,
         "scan_id": scan_id,
         "product_key": product_key,
         "display_name": display_name,
@@ -219,6 +219,13 @@ def add_cart_item(scan_id: str, product_key: str, display_name: str, amount_cent
     }
     _call(lambda: _sb().table("cart_items").insert(_pick(record, _CART_COLUMNS)).execute())
     return get_cart()
+
+
+def reassign_cart_item(item_id: str, card_id: str, user_overrode_card: bool = True) -> None:
+    """Move one item to another card (the checkout reroute in spec 4.4)."""
+    _call(lambda: _sb().table("cart_items")
+          .update({"assigned_card_id": card_id, "user_overrode_card": user_overrode_card})
+          .eq("id", item_id).execute())
 
 
 def remove_last_cart_item() -> dict:

@@ -1,77 +1,125 @@
-"""In-memory session state for the Rewind agents.
+"""Session shape, seed values, and mock insurance plans for the Rewind agents.
 
-PLACEHOLDER until data/db.py (Supabase) is wired in. The orchestrator owns
-one Session per ASI:One user; worker agents never hold state.
-Seed values match tech spec section 3.3 so the demo numbers line up.
+The orchestrator keeps one session per user in its uAgents ctx.storage.
+Workers receive the session in a request and return an updated copy; they
+never store it. Cards, balances and the cart are not here: they live in
+Supabase (Atharv's data layer) and are loaded per request by agents/store.py.
+
+Nothing in a session identifies the person. The name read from an insurance
+card is held only in the orchestrator's memory, never here.
 """
 from __future__ import annotations
 
 import copy
 from typing import Any
 
-SEED_CARDS: list[dict[str, Any]] = [
-    {"id": "card_hsa_1", "type": "hsa", "nickname": "HSA card",
-     "balance_cents": 34000, "status": "active", "is_default": True},
-    {"id": "card_visa_1", "type": "general", "nickname": "Visa credit",
-     "balance_cents": 500000, "status": "active", "is_default": False},
-]
-
-# Pre-cached demo shelf (spec 19.3). Keyword -> product row. UPCs are placeholders
-# until the real packages are scanned; eligibility mirrors the seeded eligibility_items rows.
-DEMO_ITEMS: list[dict[str, Any]] = [
-    {"keywords": ["advil", "ibuprofen"], "upc": "REPLACE_ADVIL",
-     "name": "Advil Ibuprofen 200mg", "brand": "Advil", "size": "200mg",
-     "category": "pain_relief", "is_medication": True, "amount_cents": 1299,
-     "eligible": True, "basis": "hand_entered",
-     "source_url": "https://www.advil.com/products/advil-tablets/"},
-    {"keywords": ["bandage", "band-aid", "bandaid"], "upc": "REPLACE_BANDAGES",
-     "name": "Bandages", "brand": None, "size": None,
-     "category": "first_aid", "is_medication": False, "amount_cents": 549,
-     "eligible": True, "basis": "hand_entered",
-     "source_url": "https://www.irs.gov/publications/p502"},
-    {"keywords": ["kettle corn", "popcorn"], "upc": "REPLACE_KETTLE_CORN",
-     "name": "Kettle Corn", "brand": None, "size": None,
-     "category": "grocery", "is_medication": False, "amount_cents": 499,
-     "eligible": False, "basis": "irs_category_rule",
-     "source_url": "https://www.irs.gov/publications/p502"},
-]
-
 LOW_BALANCE_CENTS = 2000
 
+# --- mock insurance plans -----------------------------------------------------
+#
+# All plan details are synthetic (tech spec decision 1). One plan is modeled on the
+# structure of UnitedHealthcare Student Resources with OptumRx (tiers + pharmacy
+# deductible); its numbers are illustrative, not that plan's real benefits.
+#
+# cost_sharing:
+#   "copay"            flat amount per tier; the agent may give an ESTIMATE
+#   "coinsurance"      a percentage of the drug's price; no dollar estimate possible
+#   "deductible_first" member pays the full negotiated price until the deductible is met; no estimate
+#   None               no prescription benefit
+#
+# formulary keys are "<drug>_<strength>" (medical vocabulary, matched exactly).
+# A tier-0 drug has a $0 copay (e.g. some preventive generics).
 
-def find_demo_item(text: str) -> dict[str, Any] | None:
-    lowered = text.lower()
-    for item in DEMO_ITEMS:
-        if any(kw in lowered for kw in item["keywords"]):
-            return item
-    return None
+_FORMULARY = {
+    "omeprazole_20mg": {"tier": 1, "prior_auth": False},
+    "atorvastatin_20mg": {"tier": 1, "prior_auth": False},
+    "lisinopril_10mg": {"tier": 0, "prior_auth": False},
+    "metformin_500mg": {"tier": 0, "prior_auth": False},
+    "sumatriptan_50mg": {"tier": 2, "prior_auth": False},
+    "semaglutide_0.5mg": {"tier": 3, "prior_auth": True},
+}
+
+INSURERS: dict[str, dict[str, Any]] = {
+    "uhc_student": {
+        "display_name": "UnitedHealthcare Student Resources plan",
+        "short_name": "UnitedHealthcare plan",
+        "modeled_on": "UnitedHealthcare Student Resources with OptumRx (illustrative numbers)",
+        "has_rx_benefit": True,
+        "rx_manager": "OptumRx",
+        "cost_sharing": "copay",
+        "pharmacy_deductible_cents": 12500,
+        "tier_copays_cents": {0: 0, 1: 1500, 2: 4000, 3: 8000},
+        "formulary": _FORMULARY,
+    },
+    "sunrise_ppo": {
+        "display_name": "Sunrise PPO",
+        "short_name": "Sunrise PPO",
+        "modeled_on": "a typical employer PPO with flat copays",
+        "has_rx_benefit": True,
+        "rx_manager": "Sunrise Pharmacy Services",
+        "cost_sharing": "copay",
+        "pharmacy_deductible_cents": 0,
+        "tier_copays_cents": {0: 0, 1: 1000, 2: 3500, 3: 7000},
+        "formulary": _FORMULARY,
+    },
+    "evergreen_hsa": {
+        "display_name": "Evergreen HSA Plan",
+        "short_name": "Evergreen HSA Plan",
+        "modeled_on": "a high-deductible health plan paired with an HSA",
+        "has_rx_benefit": True,
+        "rx_manager": "Evergreen Rx",
+        "cost_sharing": "deductible_first",
+        "pharmacy_deductible_cents": 165000,
+        "tier_copays_cents": {},
+        "formulary": _FORMULARY,
+    },
+    "harbor_choice": {
+        "display_name": "Harbor Choice Plan",
+        "short_name": "Harbor Choice Plan",
+        "modeled_on": "a plan with prescription coinsurance",
+        "has_rx_benefit": True,
+        "rx_manager": "Harbor Rx",
+        "cost_sharing": "coinsurance",
+        "pharmacy_deductible_cents": 0,
+        "tier_copays_cents": {},
+        "formulary": _FORMULARY,
+    },
+    "basic_medical": {
+        "display_name": "Basic Medical Plan",
+        "short_name": "Basic Medical Plan",
+        "modeled_on": "a medical-only plan without a pharmacy benefit",
+        "has_rx_benefit": False,
+        "rx_manager": None,
+        "cost_sharing": None,
+        "pharmacy_deductible_cents": 0,
+        "tier_copays_cents": {},
+        "formulary": {},
+    },
+}
+
+PLAN_IDS = tuple(INSURERS)
+
+
+def plan_profile(plan_id: str, source: str) -> dict[str, Any]:
+    """A session-safe copy of a plan: no personal data, JSON-serializable keys."""
+    p = copy.deepcopy(INSURERS[plan_id])
+    p["tier_copays_cents"] = {str(k): v for k, v in p["tier_copays_cents"].items()}
+    p.pop("modeled_on", None)
+    p.pop("formulary", None)  # looked up by plan_id when needed, not copied per user
+    return {"plan_id": plan_id, "source": source, **p}
+
+
+def formulary_for(profile: dict) -> dict[str, Any]:
+    plan = INSURERS.get(profile.get("plan_id", ""))
+    return plan["formulary"] if plan else {}
 
 
 def new_session() -> dict[str, Any]:
+    """Conversation state only. Cards and cart live in Supabase (agents/store.py)."""
     return {
-        "cards": copy.deepcopy(SEED_CARDS),
-        "cart": [],
         "last_scan": None,
         "pending": None,
         "last_reply": "",
+        "greeted": False,
+        "insurance": None,   # a plan_profile(), from a card scan or the user naming a plan
     }
-
-
-class SessionStore:
-    def __init__(self) -> None:
-        self._sessions: dict[str, dict[str, Any]] = {}
-
-    def get(self, user: str) -> dict[str, Any]:
-        if user not in self._sessions:
-            self._sessions[user] = new_session()
-        return self._sessions[user]
-
-    def reset(self, user: str, run: int = 1) -> dict[str, Any]:
-        session = new_session()
-        if run == 2:
-            session["cards"][0]["balance_cents"] = 1500
-        self._sessions[user] = session
-        return session
-
-    def end(self, user: str) -> None:
-        self._sessions.pop(user, None)
