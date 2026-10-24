@@ -683,6 +683,8 @@ Measured contrast for every new element: `app/ACCESSIBILITY.md`.
 | Insurance | `insurer_name`, `plan_name`, `member_first_name`, `member_last_name`, `member_id_last4`, and prescription benefits `rx: {bin, pcn, group, copays: [{label, amount_cents}]}` as printed | On the phone, for suggestions. Member ID last 4 only |
 | Credit, debit, HSA, FSA | `network`, `card_type` (`hsa`/`fsa`/`general`), `funding` (`credit`/`debit`, if printed), `last4` | Only what adding the payment method needs. Never the full number, expiry, or security code |
 
+All payment cards are **Visa**: HSA and FSA cards are Visa cards from the health plan, and the everyday card is a Visa credit or debit card. The type (`hsa`, `fsa`, or `general` + `credit`/`debit`) is what Rewind tells apart; the UI says "Visa HSA card", "Visa FSA card", "Visa credit", "Visa debit".
+
 Nothing else on either card is read or stored. TypeScript shapes: `InsuranceCard` and `PaymentCardRead` in `app/src/lib/api.ts`.
 
 ### Proposed contract additions (Atharv and Tiea)

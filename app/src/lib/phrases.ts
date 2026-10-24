@@ -45,9 +45,9 @@ export const Onboarding = {
     `Your insurance is ${insurer}${plan ? `, ${plan}` : ''}.${hasRx ? ' It shows prescription benefits.' : ''} Is that right?`,
   askPayment: (first: boolean) =>
     first
-      ? 'Now your HSA or FSA card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'
-      : 'Hold up your next card, like your Visa card, then tap anywhere on the screen.',
-  askCardType: 'Is this an HSA card, an FSA card, or a regular credit or debit card?',
+      ? 'Now your HSA or FSA Visa card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'
+      : 'Now your everyday Visa card, credit or debit. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
+  askCardType: 'Is this Visa card an HSA card, an FSA card, a credit card, or a debit card?',
   confirmCard: (label: string, last4: string | null) =>
     `I see ${label}${last4 ? ` ending in ${last4.split('').join(' ')}` : ''}. Is that right?`,
   cardAdded: (label: string) => `${label} added. Do you want to add another card?`,

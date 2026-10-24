@@ -16,9 +16,10 @@ import { initials, useProfile } from '@/lib/profile';
 import { useAgent } from '@/state/agent';
 
 const TYPE_LABEL: Record<Card['type'], string> = {
-  hsa: 'HSA · for eligible health items',
-  fsa: 'FSA · for eligible health items',
-  general: 'Everyday card',
+  // All Rewind cards are Visa; the type is what differs.
+  hsa: 'Visa HSA · for eligible health items',
+  fsa: 'Visa FSA · for eligible health items',
+  general: 'Visa credit or debit · everyday purchases',
 };
 
 /**

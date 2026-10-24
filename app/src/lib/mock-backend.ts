@@ -47,8 +47,9 @@ const wait = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------------------
 
 const seedCards = (hsaCents: number): Card[] => [
-  { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: hsaCents, status: 'active' },
-  { id: 'card_visa_1', type: 'general', nickname: 'Visa credit', balance_cents: 500000, status: 'active' },
+  // Both are Visa cards: an HSA Visa and an everyday Visa credit (tech spec 3.3 nicknames).
+  { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: hsaCents, status: 'active', network: 'visa' },
+  { id: 'card_visa_1', type: 'general', nickname: 'Visa credit', balance_cents: 500000, status: 'active', network: 'visa' },
 ];
 
 type DemoItem = {
@@ -338,7 +339,7 @@ export async function scanCard(kind: CardScanKind): Promise<CardScanResult> {
     insurance: null,
     payment: first
       ? { network: 'visa', card_type: 'hsa', funding: null, last4: '4821' }
-      : { network: 'visa', card_type: null, funding: 'credit', last4: '1234' },
+      : { network: 'visa', card_type: 'general', funding: 'credit', last4: '1234' },
   };
 }
 

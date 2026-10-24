@@ -55,7 +55,7 @@ function AddCardSuggestion() {
   const { showView } = useAgent();
   return (
     <AlertBlock level="warning" title="Suggestion">
-      <AppText kind="body">Add another card, like a Visa, so Rewind can split the payment.</AppText>
+      <AppText kind="body">Add another Visa card, like your everyday credit or debit card, so Rewind can split the payment.</AppText>
       <BigButton label="Add a card" icon="add" variant="primary" onPress={() => showView('add_card')} />
     </AlertBlock>
   );

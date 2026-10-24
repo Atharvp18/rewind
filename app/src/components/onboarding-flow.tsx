@@ -45,9 +45,11 @@ const NETWORK_NAME: Record<CardNetwork, string> = {
 };
 
 function spokenCard(p: Payment): string {
-  if (p.card_type === 'hsa') return 'an HSA card';
-  if (p.card_type === 'fsa') return 'an FSA card';
-  return p.network && p.network !== 'other' ? `a ${NETWORK_NAME[p.network]} card` : 'a payment card';
+  // HSA, FSA, and everyday cards are all Visa cards; say the network, then the type.
+  const brand = p.network && p.network !== 'other' ? `${NETWORK_NAME[p.network]} ` : '';
+  if (p.card_type === 'hsa') return `a ${brand}HSA card`;
+  if (p.card_type === 'fsa') return `a ${brand}FSA card`;
+  return `a ${brand}${p.funding ?? 'credit or debit'} card`;
 }
 
 function nicknameFor(type: Card['type'], network: CardNetwork | null, kind?: 'credit' | 'debit'): string {
@@ -407,12 +409,12 @@ export function OnboardingFlow({
 
     case 'payment':
       return (
-        <InfoPanel title={cardsAdded === 0 && firstCard ? 'Your HSA or FSA card' : 'Your next card'}>
+        <InfoPanel title={cardsAdded === 0 && firstCard ? 'Your HSA or FSA Visa card' : 'Your everyday Visa card'}>
           {startAt ? null : step1of(3)}
           <PanelText>
             {cardsAdded === 0 && firstCard
-              ? 'Hold your HSA or FSA card flat, about a hand length from the phone. Then tap anywhere on the screen.'
-              : 'Hold up your next card, like your Visa card. Then tap anywhere on the screen.'}
+              ? 'Hold your HSA or FSA Visa card flat, about a hand length from the phone. Then tap anywhere on the screen.'
+              : 'Hold your everyday Visa card, credit or debit, flat about a hand length from the phone. Then tap anywhere on the screen.'}
           </PanelText>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton
