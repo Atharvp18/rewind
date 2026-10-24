@@ -7,9 +7,10 @@
  *
  * 1. WCAG 2.2 contrast (1.4.3 text 4.5:1, 1.4.11 UI parts 3:1) for every
  *    token pair the UI draws, in all three themes.
- * 2. Overlays on the live camera (caption pill, profile button, window
- *    frame, info card, dock) are checked against the worst cases, a pure
- *    white and a pure black scene: at least one of their edges must pass.
+ * 2. The focus corners sit directly on the live camera, so they are checked
+ *    against the worst cases, a pure white and a pure black scene (the bar or
+ *    its dark halo must pass). Cards, pills, chips and the orb carry their own
+ *    fills; what identifies them (text and icons on those fills) is measured.
  * 3. Color-vision deficiency: status and alert colors are simulated for
  *    protanopia, deuteranopia, tritanopia (Machado et al. 2009, severity 1)
  *    and achromatopsia, and the CIE76 color difference is reported. Colors
@@ -48,46 +49,40 @@ const WHITE = '#FFFFFF';
 const BLACK = '#000000';
 
 // --- checks ---
+const corner = (p, c, scene) => Math.max(cr(c, scene), cr(p.profileBg, scene)); // bar or its dark halo
 const pairs = (p) => [
   ['Body text on background', cr(p.text, p.bg), 4.5],
   ['Body text on card', cr(p.text, p.surface), 4.5],
   ['Secondary text on card', cr(p.textMuted, p.surface), 4.5],
   ['Secondary text on background', cr(p.textMuted, p.bg), 4.5],
-  ['Control border on card', cr(p.border, p.surface), 3],
+  ['Text on tinted rows (cart groups, settings)', cr(p.text, p.surfaceAlt), 4.5],
   ['Primary button label', cr(p.onPrimary, p.primary), 4.5],
-  ['Primary button vs card', Math.max(cr(p.primary, p.surface), cr(p.border, p.surface)), 3],
-  ['Mint button label', cr(p.onAccent, p.accent), 4.5],
-  ['Mint button edge vs card (fill or text-color border)', Math.max(cr(p.accent, p.surface), cr(p.text, p.surface)), 3],
-  ['Dock text, light end', cr(p.onDock, p.dockTop), 4.5],
-  ['Dock text, dark end', cr(p.onDock, p.dockBottom), 4.5],
-  ['Talk button vs dock, top', Math.max(cr(p.talkTop, p.dockTop), cr(p.talkRing, p.dockTop)), 3],
-  ['Talk button vs dock, bottom', Math.max(cr(p.talkBottom, p.dockBottom), cr(p.talkRing, p.dockBottom)), 3],
-  ['Talk icon and label, light end', cr(p.onTalk, p.talkTop), 4.5],
-  ['Talk icon and label, dark end', cr(p.onTalk, p.talkBottom), 4.5],
-  ['Dock edge vs white scene', Math.max(cr(p.dockEdge, WHITE), cr(p.dockTop, WHITE)), 3],
-  ['Dock edge vs black scene', Math.max(cr(p.dockEdge, BLACK), cr(p.dockTop, BLACK)), 3],
+  ['Primary button vs card', cr(p.primary, p.surface), 3],
+  ['Secondary button label', cr(p.text, p.surfaceAlt), 4.5],
+  ['Danger button label', cr(p.danger, p.dangerBg), 4.5],
+  ['Selected option edge vs tint', cr(p.primary, p.surfaceAlt), 3],
+  ['Orb vs dome (light end)', Math.max(cr(p.talkTop, p.dockTop), cr(p.talkBottom, p.dockTop)), 3],
+  ['Orb vs dome (mint end)', Math.max(cr(p.talkTop, p.dockBottom), cr(p.talkBottom, p.dockBottom)), 3],
+  ['Orb icon on its core', cr(p.onTalk, p.talkBottom), 4.5],
+  ['Status pill text', cr(p.onPill, p.pill), 4.5],
   ['Caption pill text', cr(p.onPill, p.pill), 4.5],
-  ['Caption pill vs white scene', Math.max(cr(p.pill, WHITE), cr(p.pillBorder, WHITE)), 3],
-  ['Caption pill vs black scene', Math.max(cr(p.pill, BLACK), cr(p.pillBorder, BLACK)), 3],
-  ['Profile initial', cr(p.onProfile, p.profileBg), 4.5],
-  ['Profile button vs white scene', Math.max(cr(p.profileBg, WHITE), cr(p.profileRing, WHITE)), 3],
-  ['Profile button vs black scene', Math.max(cr(p.profileBg, BLACK), cr(p.profileRing, BLACK)), 3],
-  ['Window frame vs white scene', Math.max(cr(p.frameOuter, WHITE), cr(p.frameInner, WHITE)), 3],
-  ['Window frame vs black scene', Math.max(cr(p.frameOuter, BLACK), cr(p.frameInner, BLACK)), 3],
-  ['Window frame (warning) vs either scene', Math.min(Math.max(cr(p.frameOuter, WHITE), cr(p.warningEdge, WHITE)), Math.max(cr(p.frameOuter, BLACK), cr(p.warningEdge, BLACK))), 3],
-  ['Window frame (danger) vs either scene', Math.min(Math.max(cr(p.frameOuter, WHITE), cr(p.dangerEdge, WHITE)), Math.max(cr(p.frameOuter, BLACK), cr(p.dangerEdge, BLACK))), 3],
-  ['Info card vs white scene', Math.max(cr(p.surface, WHITE), cr(p.cardEdge, WHITE)), 3],
-  ['Info card vs black scene', Math.max(cr(p.surface, BLACK), cr(p.cardEdge, BLACK)), 3],
+  ['Profile initial / cart chip text', cr(p.onProfile, p.profileBg), 4.5],
+  ['Focus corners vs white scene', corner(p, WHITE, WHITE), 3],
+  ['Focus corners vs black scene', corner(p, WHITE, BLACK), 3],
+  ['Focus corners locked (mint) vs either scene', Math.min(corner(p, p.accent, WHITE), corner(p, p.accent, BLACK)), 3],
+  ['Focus corners warning vs either scene', Math.min(corner(p, p.warningEdge, WHITE), corner(p, p.warningEdge, BLACK)), 3],
+  ['Focus corners danger vs either scene', Math.min(corner(p, p.dangerEdge, WHITE), corner(p, p.dangerEdge, BLACK)), 3],
+  ['Pop-up warning edge vs card fill', cr(p.warningEdge, p.surface), 3],
+  ['Pop-up danger edge vs card fill', cr(p.dangerEdge, p.surface), 3],
   ['HSA eligible label', cr(p.eligible, p.eligibleBg), 4.5],
   ['Not HSA eligible label', cr(p.notEligible, p.notEligibleBg), 4.5],
   ['Could not confirm label', cr(p.unconfirmed, p.unconfirmedBg), 4.5],
   ['Red alert title', cr(p.danger, p.dangerBg), 4.5],
   ['Red alert body text', cr(p.text, p.dangerBg), 4.5],
-  ['Red alert edge vs card', cr(p.dangerEdge, p.surface), 3],
+  ['Red alert accent bar vs tint', cr(p.dangerEdge, p.dangerBg), 3],
   ['Orange alert title', cr(p.warning, p.warningBg), 4.5],
   ['Orange alert body text', cr(p.text, p.warningBg), 4.5],
-  ['Orange alert edge vs card', cr(p.warningEdge, p.surface), 3],
-  ['Selected option border vs card', cr(p.primary, p.surface), 3],
+  ['Orange alert accent bar vs tint', cr(p.warningEdge, p.warningBg), 3],
 ];
 
 // --- color-vision simulation (Machado 2009, severity 1.0, linear RGB) ---

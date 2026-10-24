@@ -75,7 +75,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
     return (
       <InfoPanel title="Could not confirm this item">
         <PanelText>Try another angle, or tap Talk and say what it is.</PanelText>
-        <BigButton label="Scan again" icon="retry" variant="accent" size="primary" onPress={skip} />
+        <BigButton label="Scan again" icon="retry" variant="primary" size="primary" onPress={skip} />
       </InfoPanel>
     );
   }
@@ -83,35 +83,44 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
   if (res.voice.response_scope === 'confirm_strength') {
     return (
-      <InfoPanel title="Is this right?" label="Prescription label read-back">
+      // Compact on purpose: fits without scrolling at 100–150% text (approved).
+      <InfoPanel anchored label="Prescription label read-back">
         <PanelText kind="small" muted>
-          From the bottle label
+          From the bottle label · is this right?
         </PanelText>
-        <PanelText kind="heading">{product.name}</PanelText>
-        {product.size ? <PanelText kind="display">{product.size}</PanelText> : null}
-        <View style={styles.buttons}>
-          <BigButton label="Yes, that's right" icon="check" variant="accent" size="primary" disabled={!live} onPress={() => answer('yes')} />
-          <BigButton label="No" icon="close" onPress={() => answer('no')} />
+        <PanelText kind="title">{[product.name, product.size].filter(Boolean).join(' ')}</PanelText>
+        <View style={styles.row}>
+          <View style={styles.grow}>
+            <BigButton label="Yes" icon="check" variant="primary" disabled={!live} onPress={() => answer('yes')} />
+          </View>
+          <View style={styles.grow}>
+            <BigButton label="No" icon="close" onPress={() => answer('no')} />
+          </View>
         </View>
         <PanelText kind="small" muted>
-          Rewind can’t give medical advice. Please ask the pharmacist about dosage or safety.
+          No medical advice. Ask the pharmacist about dosage or safety.
         </PanelText>
       </InfoPanel>
     );
   }
 
   return (
-    <InfoPanel title={product.name} tone={scanTone(rec)}>
+    <InfoPanel title={product.name} tone={scanTone(rec)} anchored>
       {product.amount_cents != null ? (
-        <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
-          <PanelText kind="display">{formatCents(product.amount_cents)}</PanelText>
+        <View style={styles.priceRow}>
+          <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
+            <PanelText kind="display">{formatCents(product.amount_cents)}</PanelText>
+          </View>
+          <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
         </View>
       ) : (
         <AlertBlock level="warning" title="Price not found">
           Point at the shelf tag, or say the price.
         </AlertBlock>
       )}
-      <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
+      {product.amount_cents == null ? (
+        <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
+      ) : null}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
       {rec ? (
@@ -172,7 +181,7 @@ function Actions({
   onSkip: () => void;
 }) {
   if (rec.decision === 'blocked') {
-    return <BigButton label="OK" variant="accent" size="primary" onPress={onSkip} />;
+    return <BigButton label="OK" variant="primary" size="primary" onPress={onSkip} />;
   }
   const options =
     rec.decision === 'ask_user'
@@ -184,20 +193,23 @@ function Actions({
       : rec.card_id
         ? [rec.card_id]
         : [];
+  // One choice: Add and Skip side by side. Several cards: one row each, Skip last.
   return (
-    <View style={styles.buttons}>
+    <View style={options.length === 1 ? styles.row : styles.buttons}>
       {options.map((id) => (
-        <BigButton
-          key={id}
-          label={rec.decision === 'ask_user' ? `Use ${cardById(cards, id)?.nickname ?? 'this card'}` : 'Add to cart'}
-          icon="check"
-          variant="accent"
-          size="primary"
-          disabled={!enabled}
-          onPress={() => onAdd(id)}
-        />
+        <View key={id} style={options.length === 1 ? styles.grow2 : undefined}>
+          <BigButton
+            label={rec.decision === 'ask_user' ? `Use ${cardById(cards, id)?.nickname ?? 'this card'}` : 'Add to cart'}
+            icon="check"
+            variant="primary"
+            disabled={!enabled}
+            onPress={() => onAdd(id)}
+          />
+        </View>
       ))}
-      <BigButton label="Skip" icon="close" onPress={onSkip} />
+      <View style={options.length === 1 ? styles.grow : undefined}>
+        <BigButton label="Skip" icon="close" onPress={onSkip} />
+      </View>
     </View>
   );
 }
@@ -229,7 +241,7 @@ function CartPanel() {
         <PanelText kind="display">{formatCents(cart.total_cents)}</PanelText>
       </View>
       <View style={styles.buttons}>
-        <BigButton label="Checkout" icon="next" variant="accent" size="primary" onPress={startCheckout} />
+        <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         <BigButton label="Remove last item" icon="undo" onPress={removeLast} />
         {clearPending ? (
           // Destructive: the second tap confirms, bound to the live confirm_clear_cart prompt.
@@ -289,15 +301,15 @@ function CheckoutPanel() {
         This is a simulated payment. No real card is charged.
       </PanelText>
       {!live ? (
-        <BigButton label="Read the split again" icon="retry" variant="accent" size="primary" onPress={startCheckout} />
+        <BigButton label="Read the split again" icon="retry" variant="primary" size="primary" onPress={startCheckout} />
       ) : reroute ? (
         <View style={styles.buttons}>
-          <BigButton label="Yes, move the items" icon="check" variant="accent" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
+          <BigButton label="Yes, move the items" icon="check" variant="primary" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
           <BigButton label="No, keep my cards" disabled={busy} onPress={() => confirmCheckout(false)} />
         </View>
       ) : (
         <View style={styles.buttons}>
-          <BigButton label="Confirm payment" icon="check" variant="accent" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
+          <BigButton label="Confirm payment" icon="check" variant="primary" size="primary" disabled={busy} onPress={() => confirmCheckout(true)} />
           <BigButton label="Not now" onPress={() => showView('cart')} />
         </View>
       )}
@@ -312,7 +324,7 @@ function ReceiptPanel() {
   const lowBalance = receipt.voice.priority === 'alert';
   return (
     <InfoPanel title="Payment complete" tone={lowBalance ? 'warning' : 'normal'}>
-      <View style={[styles.done, { backgroundColor: palette.eligibleBg, borderColor: palette.eligible }]}>
+      <View style={[styles.done, { backgroundColor: palette.eligibleBg, borderColor: palette.eligible, borderWidth: palette.controlBorderWidth }]}>
         <Icon name="eligible" size={56} color="eligible" strokeWidth={2.5} />
         <AppText kind="small" color="text">
           This was a simulated payment.
@@ -330,7 +342,7 @@ function ReceiptPanel() {
           <PanelText kind="heading">{formatCents(b.balance_cents)}</PanelText>
         </View>
       ))}
-      <BigButton label="Done" variant="accent" size="primary" onPress={dismiss} />
+      <BigButton label="Done" variant="primary" size="primary" onPress={dismiss} />
     </InfoPanel>
   );
 }
@@ -344,7 +356,7 @@ function DeclinedPanel({ message }: { message: string }) {
         {message}
       </AlertBlock>
       <View style={styles.buttons}>
-        <BigButton label="Move items to another card" icon="next" variant="accent" size="primary" onPress={startCheckout} />
+        <BigButton label="Move items to another card" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         <BigButton label="Add a card" icon="add" onPress={() => showView('add_card')} />
         <BigButton label="Back to cart" onPress={() => showView('cart')} />
       </View>
@@ -353,7 +365,11 @@ function DeclinedPanel({ message }: { message: string }) {
 }
 
 const styles = StyleSheet.create({
-  buttons: { gap: Spacing.md },
-  done: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, alignItems: 'center', gap: Spacing.xs },
+  buttons: { gap: Spacing.sm },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  grow: { flexGrow: 1, flexBasis: 110 },
+  grow2: { flexGrow: 2, flexBasis: 160 },
+  priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.md, rowGap: Spacing.xs },
+  done: { borderRadius: Radius.card, padding: Spacing.lg, alignItems: 'center', gap: Spacing.xs },
   balance: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.sm },
 });

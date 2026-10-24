@@ -14,7 +14,7 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
   const count = `${group.items.length} ${group.items.length === 1 ? 'item' : 'items'}`;
   return (
     <View
-      style={[styles.group, { backgroundColor: palette.surface, borderColor: palette.border }]}
+      style={[styles.group, { backgroundColor: palette.surfaceAlt, borderColor: palette.border, borderWidth: palette.controlBorderWidth }]}
       accessibilityLabel={`${group.nickname}. ${count}. Subtotal ${centsForScreenReader(group.subtotal_cents)}.`}>
       <View style={styles.head}>
         <View style={styles.titleRow}>
@@ -55,7 +55,7 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
 }
 
 const styles = StyleSheet.create({
-  group: { borderWidth: 2, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
+  group: { borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
   head: { gap: Spacing.xs },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   item: { borderTopWidth: 1, paddingTop: Spacing.md, gap: Spacing.sm },

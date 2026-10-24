@@ -165,6 +165,26 @@ export const speaker = new Speaker();
 
 const SAMPLE_RATE = 16000;
 
+// Live microphone level (0..1) for the voice orb. Never stored or sent.
+type LevelListener = (level: number) => void;
+const levelListeners = new Set<LevelListener>();
+
+export function onMicLevel(fn: LevelListener): () => void {
+  levelListeners.add(fn);
+  return () => levelListeners.delete(fn);
+}
+
+function emitLevel(pcm: ArrayBuffer) {
+  if (!levelListeners.size) return;
+  const samples = new Int16Array(pcm);
+  let sum = 0;
+  for (let i = 0; i < samples.length; i += 4) sum += samples[i] * samples[i];
+  const rms = Math.sqrt(sum / Math.max(1, samples.length / 4)) / 32768;
+  // Speech RMS sits around 0.02 to 0.2; stretch it to fill 0..1.
+  const level = Math.min(1, rms * 6);
+  levelListeners.forEach((fn) => fn(level));
+}
+
 function wavFromPcm(chunks: ArrayBuffer[], sampleRate: number): Uint8Array {
   const dataLen = chunks.reduce((n, c) => n + c.byteLength, 0);
   const out = new Uint8Array(44 + dataLen);
@@ -207,6 +227,7 @@ export function useMic() {
     onBuffer: (b) => {
       rate.current = b.sampleRate;
       chunks.current.push(b.data);
+      emitLevel(b.data);
     },
   });
 
@@ -221,6 +242,7 @@ export function useMic() {
 
   const stop = useCallback(async (): Promise<{ uri: string; discard: () => void } | null> => {
     stream.stop();
+    levelListeners.forEach((fn) => fn(0));
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
     const captured = chunks.current;
     chunks.current = [];

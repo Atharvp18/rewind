@@ -9,7 +9,11 @@ import { useA11y } from '@/lib/a11y';
 export function Section({ title, children, hint }: { title: string; hint?: string; children: ReactNode }) {
   const { palette } = useA11y();
   return (
-    <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+    <View
+      style={[
+        styles.section,
+        { backgroundColor: palette.surface, borderColor: palette.border, borderWidth: palette.controlBorderWidth },
+      ]}>
       <AppText kind="heading" accessibilityRole="header">
         {title}
       </AppText>
@@ -53,9 +57,10 @@ export function Choice<T extends string | number>({
               styles.choice,
               row && styles.choiceRow,
               {
+                // Selected: check icon + bold label + teal edge, never color alone.
                 borderColor: selected ? palette.primary : palette.border,
-                borderWidth: selected ? 4 : 2,
-                backgroundColor: selected ? palette.surfaceAlt : palette.surface,
+                borderWidth: selected ? 2 : palette.controlBorderWidth,
+                backgroundColor: palette.surfaceAlt,
                 opacity: pressed ? 0.8 : 1,
               },
             ]}>
@@ -94,7 +99,12 @@ export function Toggle({
       onPress={() => onChange(!value)}
       style={({ pressed }) => [
         styles.toggle,
-        { borderColor: value ? palette.primary : palette.border, borderWidth: value ? 4 : 2, opacity: pressed ? 0.8 : 1 },
+        {
+          backgroundColor: palette.surfaceAlt,
+          borderColor: palette.border,
+          borderWidth: palette.controlBorderWidth,
+          opacity: pressed ? 0.8 : 1,
+        },
       ]}>
       <View style={styles.flex}>
         <AppText kind="label" accessible={false}>
@@ -109,7 +119,11 @@ export function Toggle({
       <View
         style={[
           styles.pill,
-          { backgroundColor: value ? palette.primary : palette.surface, borderColor: value ? palette.primary : palette.border },
+          {
+            backgroundColor: value ? palette.primary : palette.surface,
+            borderColor: palette.border,
+            borderWidth: value ? 0 : Math.max(1, palette.controlBorderWidth),
+          },
         ]}>
         <AppText kind="label" color={value ? 'onPrimary' : 'text'} accessible={false}>
           {value ? 'On' : 'Off'}
@@ -120,7 +134,7 @@ export function Toggle({
 }
 
 const styles = StyleSheet.create({
-  section: { borderWidth: 2, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
+  section: { borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
   choices: { gap: Spacing.md },
   row: { flexDirection: 'row', flexWrap: 'wrap' },
   choice: {
@@ -140,7 +154,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
   },
-  pill: { borderWidth: 2, borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs },
+  pill: { borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs },
   flex: { flexShrink: 1, flexGrow: 1 },
   center: { textAlign: 'center', flexShrink: 1 },
   choiceInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },

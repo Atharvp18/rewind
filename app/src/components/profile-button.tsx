@@ -29,7 +29,8 @@ export function ProfileButton() {
         Elevation.floating,
         {
           backgroundColor: palette.profileBg,
-          borderColor: palette.profileRing,
+          borderColor: palette.controlBorderWidth ? palette.profileRing : 'rgba(255,255,255,0.35)',
+          borderWidth: palette.controlBorderWidth ? 3 : 1.5,
           opacity: pressed ? 0.85 : 1,
         },
       ]}>
@@ -50,7 +51,6 @@ const styles = StyleSheet.create({
     height: PROFILE_SIZE,
     minWidth: Target.min,
     borderRadius: PROFILE_SIZE / 2,
-    borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
   },

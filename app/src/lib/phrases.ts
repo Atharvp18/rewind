@@ -21,6 +21,8 @@ export const Phrases = {
     'Microphone access is off. You can still use every button on screen. To talk, allow the microphone in your phone settings.',
   nothingToRepeat: "I haven't said anything yet. Tap Talk to start.",
   declinedTitle: 'Payment declined',
+  /** The camera could not take a photo (busy, or no camera, as in the simulator). */
+  captureFailed: "I couldn't take a photo. Hold the phone steady and tap the screen to try again.",
 } as const;
 
 /**
@@ -41,8 +43,10 @@ export const Onboarding = {
     `This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
   askInsurance:
     'Now your insurance card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
-  confirmInsurance: (insurer: string, plan: string | null) =>
-    `I see ${insurer}${plan ? `, ${plan}` : ''}. Is that right?`,
+  confirmInsurance: (insurer: string, plan: string | null, member: string | null, hasRx: boolean) =>
+    `I see ${insurer}${plan ? `, ${plan}` : ''}${member ? `, for ${member}` : ''}.${
+      hasRx ? ' It shows prescription benefits.' : ''
+    } Is that right?`,
   askPayment: (first: boolean) =>
     first
       ? 'Now your HSA or FSA card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'

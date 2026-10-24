@@ -82,6 +82,8 @@ export interface AgentState {
   lastVoice: VoiceRequest | null;
   livePrompt: LivePrompt | null;
   lastScan: ScanResponse | null;
+  /** Size of the photo behind lastScan, to place its item_bbox on screen. */
+  lastPhoto: { width: number; height: number } | null;
   cart: Cart;
   cards: Card[];
   /** undefined until the first check; null when the backend is unreachable. */
@@ -95,7 +97,7 @@ type Action =
   | { type: 'listen' }
   | { type: 'capture' }
   | { type: 'scan_sent' }
-  | { type: 'scan_received'; res: ScanResponse }
+  | { type: 'scan_received'; res: ScanResponse; photo: { width: number; height: number } }
   | { type: 'error' }
   | { type: 'submit' }
   | { type: 'interrupted' }
@@ -138,6 +140,7 @@ const initial: AgentState = {
   lastVoice: null,
   livePrompt: null,
   lastScan: null,
+  lastPhoto: null,
   cart: { groups: [], total_cents: 0 },
   cards: [],
   health: undefined,
@@ -155,7 +158,7 @@ function reducer(s: AgentState, a: Action): AgentState {
     case 'scan_sent':
       return { ...s, phase: 'awaiting_scan' };
     case 'scan_received':
-      return { ...s, phase: 'speaking_result', lastScan: a.res, view: 'camera' };
+      return { ...s, phase: 'speaking_result', lastScan: a.res, lastPhoto: a.photo, view: 'camera' };
     case 'error':
       return { ...s, phase: 'speaking_error' };
     case 'submit':
@@ -228,7 +231,12 @@ export interface AgentApi {
    */
   setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => void;
   beginCapture: () => void;
-  scanFrame: (imageUri: string, barcode: string | null, discard: () => void) => Promise<void>;
+  scanFrame: (
+    imageUri: string,
+    barcode: string | null,
+    discard: () => void,
+    photo: { width: number; height: number },
+  ) => Promise<void>;
   addToCart: (cardId: string) => Promise<void>;
   skip: () => Promise<void>;
   refreshCart: () => Promise<void>;
@@ -609,14 +617,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const scanFrame = useCallback(
-    async (imageUri: string, barcode: string | null, discard: () => void) => {
+    async (imageUri: string, barcode: string | null, discard: () => void, photo: { width: number; height: number }) => {
       dispatch({ type: 'scan_sent' });
       const looking = setTimeout(() => say(localVoice(Phrases.looking), false, true), LOOKING_MS);
       try {
         const res = await api.scan(imageUri, barcode);
         clearTimeout(looking);
         speaker.interrupt(); // cut "Looking." short if it is still playing
-        dispatch({ type: 'scan_received', res });
+        dispatch({ type: 'scan_received', res, photo });
         say(res.voice);
       } catch (e) {
         clearTimeout(looking);

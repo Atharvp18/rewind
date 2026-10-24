@@ -10,6 +10,9 @@ const BARCODE_FRESH_MS = 5000;
 
 export interface Capture {
   uri: string;
+  /** Pixel size of the sent JPEG, to map vision boxes back onto the screen. */
+  width: number;
+  height: number;
   barcode: string | null;
   /** Deletes every temp file for this capture. Call it as soon as the upload settles. */
   discard: () => void;
@@ -29,10 +32,13 @@ export function CameraStage({
   ref,
   active,
   granted,
+  onBarcode,
 }: {
   ref?: Ref<CameraStageHandle>;
   active: boolean;
   granted: boolean;
+  /** Live barcode position on screen (on-device, no network), for the focus corners. */
+  onBarcode?: (code: string, bounds: { x: number; y: number; w: number; h: number } | null) => void;
 }) {
   const camera = useRef<CameraView>(null);
   const barcode = useRef<{ data: string; at: number } | null>(null);
@@ -63,7 +69,13 @@ export function CameraStage({
         toDelete.push(img.uri);
         const b = barcode.current;
         barcode.current = null;
-        return { uri: img.uri, barcode: b && Date.now() - b.at < BARCODE_FRESH_MS ? b.data : null, discard };
+        return {
+          uri: img.uri,
+          width: img.width,
+          height: img.height,
+          barcode: b && Date.now() - b.at < BARCODE_FRESH_MS ? b.data : null,
+          discard,
+        };
       } catch {
         discard();
         return null;
@@ -71,8 +83,14 @@ export function CameraStage({
     },
   }));
 
-  const onBarcode = (r: BarcodeScanningResult) => {
-    barcode.current = { data: r.data.replace(/\D/g, ''), at: Date.now() };
+  const handleBarcode = (r: BarcodeScanningResult) => {
+    const data = r.data.replace(/\D/g, '');
+    barcode.current = { data, at: Date.now() };
+    const b = r.bounds;
+    onBarcode?.(
+      data,
+      b && b.size.width > 0 ? { x: b.origin.x, y: b.origin.y, w: b.size.width, h: b.size.height } : null,
+    );
   };
 
   return (
@@ -85,7 +103,7 @@ export function CameraStage({
           active={active}
           animateShutter={false}
           barcodeScannerSettings={{ barcodeTypes: ['ean13', 'upc_a', 'upc_e'] }}
-          onBarcodeScanned={onBarcode}
+          onBarcodeScanned={handleBarcode}
         />
       ) : null}
     </View>

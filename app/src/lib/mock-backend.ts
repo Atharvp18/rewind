@@ -277,6 +277,8 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
   return {
     scan: {
       scan_id: scanId, timestamp, state: 'resolved', warnings: [],
+      // Synthetic location so the focus corners have something to sit on offline.
+      item_bbox: { x: 0.28, y: 0.3, w: 0.44, h: 0.36 },
       product: { ...item.product, product_key: `upc:${item.product.upc}`, warnings: [] },
       eligibility: item.eligibility,
     },
@@ -311,7 +313,22 @@ export async function scanCard(kind: CardScanKind): Promise<CardScanResult> {
     return {
       state: 'read',
       framing_hint: null,
-      insurance: { insurer_name: 'Mock Plan A (synthetic)', plan_name: null, member_id_last4: '0042' },
+      insurance: {
+        insurer_name: 'Mock Plan A (synthetic)',
+        plan_name: 'PPO Silver',
+        member_first_name: 'Alex',
+        member_last_name: 'Rivera',
+        member_id_last4: '0042',
+        rx: {
+          bin: '610014',
+          pcn: 'MOCKRX',
+          group: 'RWND01',
+          copays: [
+            { label: 'Generic', amount_cents: 1000 },
+            { label: 'Brand', amount_cents: 3500 },
+          ],
+        },
+      },
       payment: null,
     };
   }
@@ -321,8 +338,8 @@ export async function scanCard(kind: CardScanKind): Promise<CardScanResult> {
     framing_hint: null,
     insurance: null,
     payment: first
-      ? { network: 'visa', card_type: 'hsa', last4: '4821' }
-      : { network: 'visa', card_type: null, last4: '1234' },
+      ? { network: 'visa', card_type: 'hsa', funding: null, last4: '4821' }
+      : { network: 'visa', card_type: null, funding: 'credit', last4: '1234' },
   };
 }
 

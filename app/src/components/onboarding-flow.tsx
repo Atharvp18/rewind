@@ -7,6 +7,7 @@ import { BigButton } from '@/components/big-button';
 import type { Capture } from '@/components/camera-stage';
 import { Notice } from '@/components/icon';
 import { InfoPanel, PanelText } from '@/components/info-panel';
+import { InsuranceSummary } from '@/components/insurance-summary';
 import { Radius, Spacing, Target, Type } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import * as api from '@/lib/api';
@@ -59,7 +60,7 @@ function nicknameFor(type: Card['type'], network: CardNetwork | null, kind?: 'cr
 function splitName(transcript: string): { first: string; last: string } | null {
   const words = transcript
     .replace(/^(my name is|i am|i'm|it's|this is)\s+/i, '')
-    .replace(/[^\p{L}\s'-]/gu, '')
+    .replace(/[^A-Za-z\u00C0-\u024F\s'-]/g, '') // letters incl. accents; no \p{} (Hermes)
     .trim()
     .split(/\s+/)
     .filter(Boolean)
@@ -129,7 +130,14 @@ export function OnboardingFlow({
       name_confirm: name ? Say.confirmName(`${name.first} ${name.last}`.trim()) : undefined,
       phone: DEMO_MODE ? Say.phoneDemo(DEMO_PHONE) : undefined,
       insurance: Say.askInsurance,
-      insurance_confirm: insurance ? Say.confirmInsurance(insurance.insurer_name, insurance.plan_name) : undefined,
+      insurance_confirm: insurance
+        ? Say.confirmInsurance(
+            insurance.insurer_name,
+            insurance.plan_name,
+            [insurance.member_first_name, insurance.member_last_name].filter(Boolean).join(' ') || null,
+            !!insurance.rx,
+          )
+        : undefined,
       payment: Say.askPayment(cardsAdded === 0 && firstCard),
       payment_type: Say.askCardType,
       payment_confirm: payment ? Say.confirmCard(spokenCard(payment), payment.last4) : undefined,
@@ -216,8 +224,10 @@ export function OnboardingFlow({
         setStep('insurance_confirm');
       } else if (kind === 'payment' && res.payment) {
         setPayment(res.payment);
-        setDebitOrCredit(undefined);
-        setStep(res.payment.card_type ? 'payment_confirm' : 'payment_type');
+        setDebitOrCredit(res.payment.funding ?? undefined);
+        // Ask the card type only when the card face doesn't say it.
+        const known = res.payment.card_type && (res.payment.card_type !== 'general' || res.payment.funding);
+        setStep(known ? 'payment_confirm' : 'payment_type');
       } else {
         sayLocal(Say.unclear);
       }
@@ -272,7 +282,7 @@ export function OnboardingFlow({
 
   const yesNoButtons = (onYes: () => void, onNo: () => void, noLabel = 'No, try again') => (
     <View style={styles.buttons}>
-      <BigButton label="Yes, that's right" icon="check" variant="accent" size="primary" onPress={onYes} />
+      <BigButton label="Yes, that's right" icon="check" variant="primary" size="primary" onPress={onYes} />
       <BigButton label={noLabel} icon="retry" onPress={onNo} />
     </View>
   );
@@ -287,14 +297,14 @@ export function OnboardingFlow({
           {camera && !camera.granted && !camera.canAskAgain ? (
             <>
               <PanelText>Camera access is off for Rewind. You can turn it on in your phone settings.</PanelText>
-              <BigButton label="Open phone settings" variant="accent" size="primary" onPress={() => Linking.openSettings()} />
+              <BigButton label="Open phone settings" variant="primary" size="primary" onPress={() => Linking.openSettings()} />
               <BigButton label="Continue without camera" onPress={() => setStep('perm_mic')} />
             </>
           ) : (
             <BigButton
               label="Allow camera"
               icon="camera"
-              variant="accent"
+              variant="primary"
               size="primary"
               onPress={async () => {
                 await requestCamera();
@@ -312,7 +322,7 @@ export function OnboardingFlow({
           <BigButton
             label="Allow microphone"
             icon="mic"
-            variant="accent"
+            variant="primary"
             size="primary"
             onPress={async () => {
               await requestRecordingPermissionsAsync();
@@ -331,7 +341,7 @@ export function OnboardingFlow({
           {typing ? (
             <>
               <NameInput value={typed} onChange={setTyped} onSubmit={() => onName(typed)} />
-              <BigButton label="Done" variant="accent" size="primary" onPress={() => onName(typed)} disabled={!typed.trim()} />
+              <BigButton label="Done" variant="primary" size="primary" onPress={() => onName(typed)} disabled={!typed.trim()} />
             </>
           ) : (
             <BigButton label="Type my name instead" icon="keyboard" onPress={() => setTyping(true)} />
@@ -358,7 +368,7 @@ export function OnboardingFlow({
           <PanelText kind="small" muted>
             {`Prototype: verified with the demo number ${DEMO_PHONE}. No text message is sent.`}
           </PanelText>
-          <BigButton label="Continue" icon="next" variant="accent" size="primary" onPress={() => setStep('insurance')} />
+          <BigButton label="Continue" icon="next" variant="primary" size="primary" onPress={() => setStep('insurance')} />
         </InfoPanel>
       );
 
@@ -367,7 +377,7 @@ export function OnboardingFlow({
         <InfoPanel title="Your insurance card">
           {step1of(3)}
           <PanelText>Hold your insurance card flat, about a hand length from the phone. Then tap anywhere on the screen.</PanelText>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
+          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton label="Skip for now" onPress={() => setStep('payment')} />
         </InfoPanel>
       );
@@ -376,11 +386,7 @@ export function OnboardingFlow({
       return (
         <InfoPanel title="Is this your insurance?">
           {step1of(3)}
-          <PanelText kind="heading">{insurance?.insurer_name}</PanelText>
-          {insurance?.plan_name ? <PanelText>{insurance.plan_name}</PanelText> : null}
-          {insurance?.member_id_last4 ? (
-            <PanelText muted>{`Member ID ending in ${insurance.member_id_last4}`}</PanelText>
-          ) : null}
+          {insurance ? <InsuranceSummary card={insurance} /> : null}
           {yesNoButtons(confirmInsurance, () => setStep('insurance'))}
         </InfoPanel>
       );
@@ -394,7 +400,7 @@ export function OnboardingFlow({
               ? 'Hold your HSA or FSA card flat, about a hand length from the phone. Then tap anywhere on the screen.'
               : 'Hold up your next card, like your Visa card. Then tap anywhere on the screen.'}
           </PanelText>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
+          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton
             label={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"}
             onPress={() => setStep('done')}
@@ -407,8 +413,8 @@ export function OnboardingFlow({
         <InfoPanel title="What kind of card is this?">
           {step1of(4)}
           <View style={styles.buttons}>
-            <BigButton label="HSA card" variant="accent" onPress={() => chooseType('hsa')} />
-            <BigButton label="FSA card" variant="accent" onPress={() => chooseType('fsa')} />
+            <BigButton label="HSA card" variant="primary" onPress={() => chooseType('hsa')} />
+            <BigButton label="FSA card" variant="primary" onPress={() => chooseType('fsa')} />
             <BigButton label="Credit card" onPress={() => chooseType('general', 'credit')} />
             <BigButton label="Debit card" onPress={() => chooseType('general', 'debit')} />
           </View>
@@ -436,7 +442,7 @@ export function OnboardingFlow({
           {step1of(4)}
           <PanelText>Do you want to add another card?</PanelText>
           <View style={styles.buttons}>
-            <BigButton label="Add another card" icon="add" variant="accent" size="primary" onPress={() => setStep('payment')} />
+            <BigButton label="Add another card" icon="add" variant="primary" size="primary" onPress={() => setStep('payment')} />
             <BigButton label="No, I'm done" onPress={() => setStep('done')} />
           </View>
         </InfoPanel>
@@ -447,7 +453,7 @@ export function OnboardingFlow({
         <InfoPanel title={`You're all set, ${profile.firstName || name?.first || ''}`}>
           {step1of(5)}
           <PanelText>Point your phone at a product and tap anywhere to scan. Your cards and settings are under the round button at the top right.</PanelText>
-          <BigButton label="Start shopping" icon="next" variant="accent" size="primary" onPress={finish} />
+          <BigButton label="Start shopping" icon="next" variant="primary" size="primary" onPress={finish} />
         </InfoPanel>
       );
   }
@@ -470,7 +476,7 @@ function NameInput({ value, onChange, onSubmit }: { value: string; onChange: (s:
       accessibilityLabel="Your first and last name"
       style={[
         styles.input,
-        { fontSize: size, color: palette.text, backgroundColor: palette.surface, borderColor: palette.accent },
+        { fontSize: size, color: palette.text, backgroundColor: palette.surface, borderColor: palette.primary },
       ]}
     />
   );
@@ -480,7 +486,7 @@ const styles = StyleSheet.create({
   buttons: { gap: Spacing.md },
   input: {
     minHeight: Target.min,
-    borderWidth: 3,
+    borderWidth: 2,
     borderRadius: Radius.button,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,

@@ -35,7 +35,16 @@ export function AlertBlock({
   return (
     <View
       accessibilityRole="alert"
-      style={[styles.block, { backgroundColor: palette[look.bg], borderColor: palette[look.edge] }]}>
+      style={[
+        styles.block,
+        {
+          backgroundColor: palette[look.bg],
+          borderColor: palette[look.edge],
+          // A slim accent bar on the leading edge; high contrast outlines the whole block.
+          borderWidth: palette.controlBorderWidth,
+          borderLeftWidth: 6,
+        },
+      ]}>
       <View style={styles.titleRow}>
         <Icon name={look.icon} size={28} color={look.fg} strokeWidth={2.5} />
         <AppText kind="label" color={look.fg} style={styles.flex}>
@@ -48,7 +57,7 @@ export function AlertBlock({
 }
 
 const styles = StyleSheet.create({
-  block: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.sm },
+  block: { borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.sm },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   flex: { flexShrink: 1 },
 });

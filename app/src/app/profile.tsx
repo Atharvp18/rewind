@@ -6,8 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
 import { Icon, Notice } from '@/components/icon';
+import { InsuranceSummary } from '@/components/insurance-summary';
 import { Choice, Section, Toggle } from '@/components/settings-controls';
-import { CameraDim, MaxContentWidth, Radius, Spacing, Target } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing, Target } from '@/constants/theme';
 import { TEXT_SCALES, THEME_LABEL, useA11y, type SpeechRate, type ThemeChoice } from '@/lib/a11y';
 import type { Card } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -119,15 +120,7 @@ export default function ProfileScreen() {
 
           <Section title="Insurance">
             {profile.insurance ? (
-              <>
-                <AppText kind="label">{profile.insurance.insurer_name}</AppText>
-                {profile.insurance.plan_name ? <AppText kind="body">{profile.insurance.plan_name}</AppText> : null}
-                {profile.insurance.member_id_last4 ? (
-                  <AppText kind="small" color="textMuted">
-                    {`Member ID ending in ${profile.insurance.member_id_last4}`}
-                  </AppText>
-                ) : null}
-              </>
+              <InsuranceSummary card={profile.insurance} />
             ) : (
               <AppText kind="body" color="textMuted">
                 No insurance added.
@@ -191,20 +184,6 @@ export default function ProfileScreen() {
               value={settings.captions}
               onChange={(captions) => update({ captions })}
             />
-            <AppText kind="label">Dim the camera behind info</AppText>
-            <AppText kind="small" color="textMuted">
-              Helps with glare. Text is always on a solid card.
-            </AppText>
-            <Choice<number>
-              label="Camera dimming"
-              value={settings.cameraDim}
-              onChange={(cameraDim) => update({ cameraDim })}
-              options={CameraDim.options.map((v) => ({
-                value: v,
-                label: v === 0 ? 'Off' : v < 0.3 ? 'Some' : 'More',
-              }))}
-              row
-            />
             <Toggle
               label="Reduce motion"
               detail="No sliding or growing animations"
@@ -246,7 +225,7 @@ function CardRow({ card }: { card: Card }) {
       accessibilityLabel={`${card.nickname}${card.last4 ? ` ending in ${card.last4.split('').join(' ')}` : ''}. ${
         TYPE_LABEL[card.type]
       }. Balance ${centsForScreenReader(card.balance_cents)}.${card.status !== 'active' ? ` ${card.status}.` : ''}`}
-      style={[styles.card, { borderColor: isHealth ? palette.eligible : palette.border }]}>
+      style={[styles.card, { backgroundColor: palette.surfaceAlt, borderColor: isHealth ? palette.eligible : palette.primary }]}>
       <View style={styles.cardTop}>
         <Icon name={isHealth ? 'health' : 'card'} size={26} color={isHealth ? 'eligible' : 'text'} />
         <AppText kind="heading" accessible={false} style={styles.flex}>
@@ -314,7 +293,7 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
-  modeBanner: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.xs },
-  card: { borderWidth: 3, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.xs },
+  modeBanner: { borderLeftWidth: 6, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.xs },
+  card: { borderLeftWidth: 6, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.xs },
   cardTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
 });

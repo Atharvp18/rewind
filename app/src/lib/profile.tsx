@@ -8,16 +8,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import type { InsuranceCard } from '@/lib/api';
+
 /** Prototype: phone verification is skipped and one preset mock number is used. */
 export const DEMO_MODE = true;
 /** 555-0100 to 555-0199 are reserved for fiction; this number reaches no one. */
 export const DEMO_PHONE = '+1 (415) 555-0100';
 
-export interface Insurance {
-  insurer_name: string;
-  plan_name: string | null;
-  member_id_last4: string | null;
-}
+/** Read from the insurance card at onboarding (see InsuranceCard). */
+export type Insurance = InsuranceCard;
 
 export interface Profile {
   onboarded: boolean;

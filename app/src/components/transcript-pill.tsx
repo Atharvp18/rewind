@@ -14,13 +14,13 @@ import { useAgent } from '@/state/agent';
  * out of the profile button and shows the words (captions, WCAG 1.2.2, on by
  * default). The user's last words show above in smaller text. Tap to repeat
  * the last message with a buzz (decision 12). With Reduce Motion it appears
- * at once. Rendered under the profile button, which sits on top at the right.
+ * at once. It grows from the right edge, under the profile button.
  */
 export function TranscriptPill() {
   const { palette, settings, reduceMotion, screenReaderOn } = useA11y();
   const { state, repeat } = useAgent();
   const [rowWidth, setRowWidth] = useState(0);
-  const width = useSharedValue(PROFILE_SIZE);
+  const width = useSharedValue(0);
   const textOpacity = useSharedValue(0);
 
   const lastAgent = [...state.transcript].reverse().find((l) => l.who === 'agent');
@@ -31,7 +31,7 @@ export function TranscriptPill() {
   const open = settings.captions && !!(lastAgent || userLine) && rowWidth > 0;
 
   useEffect(() => {
-    const target = open ? rowWidth : PROFILE_SIZE;
+    const target = open ? rowWidth : 0;
     if (reduceMotion) {
       width.value = target;
       textOpacity.value = open ? 1 : 0;
@@ -41,14 +41,14 @@ export function TranscriptPill() {
     }
   }, [open, rowWidth, reduceMotion, width, textOpacity]);
 
-  const pillStyle = useAnimatedStyle(() => ({ width: width.value }));
+  // Fully hidden when collapsed: zero width and no paint.
+  const pillStyle = useAnimatedStyle(() => ({ width: width.value, opacity: width.value > 1 ? 1 : 0 }));
   const textStyle = useAnimatedStyle(() => ({ opacity: textOpacity.value }));
 
   return (
     <View style={styles.row} onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)} pointerEvents="box-none">
       {rowWidth > 0 ? (
-        // Stays mounted so collapsing animates too. Collapsed, it is exactly the
-        // profile button's size and sits hidden under it.
+        // Stays mounted so collapsing animates too; collapsed it has zero width.
         <Animated.View
           importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
           accessibilityElementsHidden={!open}
@@ -62,7 +62,7 @@ export function TranscriptPill() {
                   ? palette.dangerEdge
                   : palette.warningEdge
                 : palette.pillBorder,
-              borderWidth: state.captionIsAlert ? 3 : 2,
+              borderWidth: state.captionIsAlert ? 2 : palette.controlBorderWidth,
             },
           ]}>
           <Pressable
@@ -105,13 +105,13 @@ export function TranscriptPill() {
 const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
   lineText: { flexShrink: 1 },
-  row: { flex: 1, alignItems: 'flex-end', minHeight: PROFILE_SIZE },
+  row: { flex: 1, alignItems: 'flex-end' },
   pill: { minHeight: PROFILE_SIZE, borderRadius: PROFILE_SIZE / 2, overflow: 'hidden' },
   press: { flex: 1, justifyContent: 'center', alignItems: 'flex-end' },
   // Right padding keeps text clear of the profile button that overlaps the pill's end.
   text: {
     paddingLeft: Spacing.xl,
-    paddingRight: PROFILE_SIZE + Spacing.sm,
+    paddingRight: Spacing.xl,
     paddingVertical: Spacing.md,
     gap: Spacing.xs,
   },

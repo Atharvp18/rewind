@@ -672,11 +672,21 @@ Measured contrast for every new element: `app/ACCESSIBILITY.md`.
 3. **Name and phone collected at onboarding.** They are not in the specs. The phone number is a fixed mock number; the name stays on the phone.
 4. **Onboarding wording is app-side** (`lib/phrases.ts`). No endpoint or `compose.py` wording exists for it.
 
+### What is extracted from cards (team decision 2026-10-24)
+
+| Card | Extracted | Kept |
+|---|---|---|
+| Insurance | `insurer_name`, `plan_name`, `member_first_name`, `member_last_name`, `member_id_last4`, and prescription benefits `rx: {bin, pcn, group, copays: [{label, amount_cents}]}` as printed | On the phone, for suggestions. Member ID last 4 only |
+| Credit, debit, HSA, FSA | `network`, `card_type` (`hsa`/`fsa`/`general`), `funding` (`credit`/`debit`, if printed), `last4` | Only what adding the payment method needs. Never the full number, expiry, or security code |
+
+Nothing else on either card is read or stored. TypeScript shapes: `InsuranceCard` and `PaymentCardRead` in `app/src/lib/api.ts`.
+
 ### Proposed contract additions (Atharv and Tiea)
 
 | Proposed | Shape | Owner |
 |---|---|---|
-| `POST /v1/onboarding/card-scan` | multipart `image`, `kind` (`insurance` or `payment`) → `{state: read\|unclear, framing_hint, insurance: {insurer_name, plan_name, member_id_last4} \| null, payment: {network, card_type, last4} \| null}`. Last 4 only; never return or log a full number | Tiea (vision prompt), Atharv (endpoint) |
+| `POST /v1/onboarding/card-scan` | multipart `image`, `kind` (`insurance` or `payment`) → `{state: read\|unclear, framing_hint, insurance: InsuranceCard \| null, payment: PaymentCardRead \| null}` (shapes below). Never return or log a full card or member number | Tiea (vision prompt), Atharv (endpoint) |
+| `item_bbox` on `ScanResult` (and `VisionExtract`) | `{x, y, w, h}` as fractions of the photo: where the item is, so the focus corners and pop-up sit on it | Tiea (vision prompt), Atharv (pass-through) |
 | `POST /v1/cards` | `{type, nickname, last4, network}` → `Card` | Atharv |
 | `Card.last4`, `Card.network` | optional fields on `/v1/cards` | Atharv |
 | `use_proposed_split` on `/v1/checkout/confirm` | `false` charges the original cards. A group over its card's balance fails all-or-nothing with `E_CARD_DECLINED` and charges nothing | Atharv |

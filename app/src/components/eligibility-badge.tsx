@@ -49,7 +49,7 @@ export function EligibilityBadge({
       style={[
         styles.badge,
         compact && styles.compact,
-        { backgroundColor: palette[look.bg], borderColor: palette[look.fg] },
+        { backgroundColor: palette[look.bg], borderColor: palette[look.fg], borderWidth: palette.controlBorderWidth },
       ]}>
       <Icon name={look.icon} size={compact ? 22 : 28} color={look.fg} strokeWidth={2.5} />
       <AppText kind={compact ? 'small' : 'label'} color={look.fg} style={styles.text}>
@@ -64,7 +64,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    borderWidth: 2,
     borderRadius: Radius.button,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,

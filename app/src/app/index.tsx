@@ -1,100 +1,185 @@
 import { useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
-import { useCallback, useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
+import { CartChip } from '@/components/cart-chip';
+import { FocusFrame, type FrameTone } from '@/components/focus-frame';
 import { HealthBanner } from '@/components/health-banner';
 import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
 import { TranscriptPill } from '@/components/transcript-pill';
-import { VoiceDock, type DockAction } from '@/components/voice-dock';
+import { VoiceOrb } from '@/components/voice-orb';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
+import { inflate, photoToScreen, StageContext, type Rect } from '@/lib/stage';
+import { useSteadiness } from '@/lib/steady';
 import { useAgent } from '@/state/agent';
 
+/** A barcode sighting older than this no longer moves the focus corners. */
+const BARCODE_LIVE_MS = 800;
+/** Barcode events arrive many times a second; update the corners at most this often. */
+const BARCODE_THROTTLE_MS = 150;
+/** Payment-card aspect ratio (ISO/IEC 7810 ID-1), for the onboarding card guide. */
+const CARD_RATIO = 1.586;
+
 /**
- * The one camera screen (wireframe frames 1 to 3). Layers, back to front:
- * live camera → tap-anywhere capture area → top row (caption pill + profile
- * button) and info panel → half-circle dock.
+ * The one camera screen. Back to front:
+ *   live camera (tap anywhere to scan)
+ *   → focus corners on the item
+ *   → the pop-up card, pointing at the item
+ *   → top bar: cart chip (left), profile (right), caption pill below
+ *   → voice orb with its glow (bottom)
+ *
+ * Scanning is automatic: holding the phone steady on a new item for about a
+ * second takes one photo (approved change to tech spec 1.3). Tapping anywhere
+ * still scans; voice works as before.
  */
 export default function Home() {
   const { palette } = useA11y();
   const { profile, loaded } = useProfile();
-  const { state, beginCapture, scanFrame, sayLocal, showView } = useAgent();
+  const { state, beginCapture, scanFrame, sayLocal } = useAgent();
   const [camera, requestCamera] = useCameraPermissions();
   const focused = useIsFocused();
+  const { width, height } = useWindowDimensions();
   const stage = useRef<CameraStageHandle>(null);
-  const onboardingCapture = useRef<(() => void) | null>(null);
 
   const onboarding = loaded && !profile.onboarded;
+  const addingCard = state.view === 'add_card';
   const busy = state.phase === 'capturing' || state.phase === 'awaiting_scan';
   const granted = !!camera?.granted;
 
+  // --- layout: the free area between the top bar and the orb -----------------
+  const [topBottom, setTopBottom] = useState(120);
+  const [orbTop, setOrbTop] = useState(height - 220);
+  const area: Rect = useMemo(
+    () => ({ x: 0, y: topBottom + Spacing.sm, w: width, h: Math.max(0, orbTop - topBottom - Spacing.md) }),
+    [topBottom, orbTop, width],
+  );
+
+  // --- onboarding card capture hooks into tap-anywhere ------------------------
+  const onboardingCapture = useRef<(() => void) | null>(null);
+  const [cardCapture, setCardCapture] = useState(false);
+  const registerCapture = useCallback((fn: (() => void) | null) => {
+    onboardingCapture.current = fn;
+    setCardCapture(!!fn);
+  }, []);
+
+  // --- live barcode (on-device) -----------------------------------------------
+  const [barcode, setBarcode] = useState<{ code: string; box: Rect | null; at: number } | null>(null);
+  const lastBarcodeUpdate = useRef(0);
+  const onBarcode = useCallback((code: string, box: Rect | null) => {
+    const now = Date.now();
+    if (now - lastBarcodeUpdate.current < BARCODE_THROTTLE_MS) return;
+    lastBarcodeUpdate.current = now;
+    setBarcode({ code, box, at: now });
+  }, []);
+  useEffect(() => {
+    if (!barcode) return;
+    const t = setTimeout(() => setBarcode(null), BARCODE_LIVE_MS);
+    return () => clearTimeout(t);
+  }, [barcode]);
+
+  // --- scanning ---------------------------------------------------------------
   const scan = useCallback(async () => {
     if (onboardingCapture.current) {
       onboardingCapture.current();
       return;
     }
-    if (onboarding || busy || !granted) {
-      if (!granted && !onboarding) sayLocal(Phrases.cameraDenied);
+    if (onboarding || addingCard || busy) return;
+    if (!granted) {
+      sayLocal(Phrases.cameraDenied);
       return;
     }
     beginCapture();
     const shot = await stage.current?.capture();
     if (!shot) {
-      sayLocal(Phrases.offline);
+      sayLocal(Phrases.captureFailed);
       return;
     }
-    await scanFrame(shot.uri, shot.barcode, shot.discard);
-  }, [onboarding, busy, granted, beginCapture, scanFrame, sayLocal]);
+    await scanFrame(shot.uri, shot.barcode, shot.discard, { width: shot.width, height: shot.height });
+  }, [onboarding, addingCard, busy, granted, beginCapture, scanFrame, sayLocal]);
 
-  const registerCapture = useCallback((fn: (() => void) | null) => {
-    onboardingCapture.current = fn;
-  }, []);
+  // Auto-capture when steady on a new item. Moving the phone or a new barcode re-arms it.
+  const autoReady =
+    !onboarding &&
+    !addingCard &&
+    granted &&
+    focused &&
+    state.view === 'camera' &&
+    state.phase === 'idle' &&
+    !state.livePrompt &&
+    !state.lastScan &&
+    !state.declined &&
+    !state.receipt;
+  const { steady, moveCount, available } = useSteadiness(autoReady);
+  const armed = useRef(true);
+  const lastScannedCode = useRef<string | null>(null);
+  useEffect(() => {
+    armed.current = true;
+  }, [moveCount]);
+  useEffect(() => {
+    if (barcode && barcode.code !== lastScannedCode.current) armed.current = true;
+  }, [barcode]);
+  useEffect(() => {
+    if (!autoReady || !available || !steady || !armed.current) return;
+    armed.current = false;
+    lastScannedCode.current = barcode?.code ?? null;
+    void scan();
+  }, [autoReady, available, steady, barcode, scan]);
 
-  const addingCard = state.view === 'add_card';
-  const left: DockAction | undefined = onboarding || addingCard
-    ? undefined
-    : { label: 'Cart', icon: 'cart', hint: 'Shows your cart, grouped by card.', onPress: () => showView('cart') };
-  const right: DockAction | undefined = onboarding || addingCard
-    ? undefined
-    : {
-        label: busy ? 'Looking…' : 'Scan',
-        icon: 'scan',
-        hint: 'Takes a photo of the item in front of the phone.',
-        onPress: () => void scan(),
-        disabled: busy,
-      };
+  // --- focus corners ----------------------------------------------------------
+  const scanShowing = !!state.lastScan && state.view === 'camera' && !state.declined && !state.receipt;
+  const vision = state.lastScan?.scan.item_bbox;
+  let itemBox: Rect | null = null;
+  let tone: FrameTone = 'guide';
+  if (scanShowing && vision && state.lastPhoto) {
+    itemBox = photoToScreen(vision, state.lastPhoto, { width, height });
+    const rec = state.lastScan?.recommendation;
+    tone = rec?.reroute || rec?.decision === 'blocked' ? 'warning' : 'locked';
+  } else if (barcode?.box && !scanShowing) {
+    itemBox = inflate(barcode.box, 2.4, { width, height });
+  }
+  const guideW = Math.min(width * (cardCapture ? 0.82 : 0.62), MaxContentWidth);
+  const guideH = cardCapture ? guideW / CARD_RATIO : guideW * 1.1;
+  const guide: Rect = {
+    x: (width - guideW) / 2,
+    y: area.y + Math.max(0, (area.h - guideH) / 2),
+    w: guideW,
+    h: Math.min(guideH, area.h),
+  };
+  const showFrame =
+    granted &&
+    (cardCapture || (!onboarding && !addingCard && state.view === 'camera' && !state.declined && !state.receipt));
+
+  const hint = autoReady ? (available ? 'Hold steady on an item' : 'Tap the screen to scan') : null;
 
   return (
     <View style={[styles.root, { backgroundColor: palette.bg }]}>
-      <CameraStage ref={stage} granted={granted} active={focused} />
+      <CameraStage ref={stage} granted={granted} active={focused} onBarcode={onBarcode} />
 
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => void scan()}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel={onboarding ? 'Camera. Tap anywhere to take the photo.' : 'Camera. Tap anywhere to scan the item in front of the phone.'}
+        accessibilityLabel={
+          cardCapture
+            ? 'Camera. Tap anywhere to take the photo.'
+            : 'Camera. Tap anywhere to scan the item in front of the phone.'
+        }
         accessibilityState={{ busy }}
       />
 
-      <SafeAreaView edges={['top', 'left', 'right']} style={styles.overlay} pointerEvents="box-none">
-        <View style={styles.topRow} pointerEvents="box-none">
-          <TranscriptPill />
-          {/* On top of the pill's right end, so the pill grows out of it (wireframe frame 2). */}
-          <View style={styles.profile}>
-            <ProfileButton />
-          </View>
-        </View>
+      {showFrame ? <FocusFrame box={itemBox ?? guide} tone={itemBox ? tone : 'guide'} /> : null}
 
-        <View style={styles.panelArea} pointerEvents="box-none">
-          <HealthBanner />
+      <StageContext.Provider value={{ itemBox: scanShowing ? itemBox : null, area }}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           {onboarding ? (
             <OnboardingFlow
               camera={camera}
@@ -102,44 +187,64 @@ export default function Home() {
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
             />
-          ) : state.view === 'add_card' ? (
+          ) : addingCard ? (
             // Business spec 6.4 / 20.6: link another card, reusing the onboarding card steps.
-            <OnboardingFlow
+            <AddCardFlow
               camera={camera}
               requestCamera={requestCamera}
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
-              startAt="payment"
-              onDone={() => showView('camera')}
             />
           ) : (
             <HomePanels />
           )}
         </View>
+      </StageContext.Provider>
+
+      <SafeAreaView
+        edges={['top', 'left', 'right']}
+        style={styles.top}
+        pointerEvents="box-none"
+        onLayout={(e) => setTopBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
+        <View style={styles.topRow} pointerEvents="box-none">
+          {onboarding ? <View /> : <CartChip />}
+          <ProfileButton />
+        </View>
+        <View style={styles.pillRow} pointerEvents="box-none">
+          <TranscriptPill />
+        </View>
+        <View style={styles.banner} pointerEvents="box-none">
+          <HealthBanner />
+        </View>
       </SafeAreaView>
 
-      <VoiceDock left={left} right={right} />
+      <View
+        style={styles.bottom}
+        pointerEvents="box-none"
+        onLayout={(e) => setOrbTop(e.nativeEvent.layout.y + Spacing.lg)}>
+        <VoiceOrb hint={hint} />
+      </View>
     </View>
   );
 }
 
+function AddCardFlow(props: Omit<Parameters<typeof OnboardingFlow>[0], 'startAt' | 'onDone'>) {
+  const { showView } = useAgent();
+  return <OnboardingFlow {...props} startAt="payment" onDone={() => showView('camera')} />;
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  overlay: { flex: 1 },
+  top: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
-  },
-  profile: { position: 'absolute', top: Spacing.sm, right: Spacing.lg },
-  panelArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
     gap: Spacing.md,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
   },
+  pillRow: { flexDirection: 'row', paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  banner: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });

@@ -53,6 +53,14 @@ export interface EligibilityResult {
   matched_name: string | null;
 }
 
+/** A box as fractions (0..1) of the captured image: x, y = top-left corner. */
+export interface NormRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface ScanResult {
   scan_id: string;
   timestamp: string;
@@ -60,6 +68,12 @@ export interface ScanResult {
   product: ProductResolution;
   eligibility: EligibilityResult;
   warnings: string[];
+  /**
+   * PROPOSED (not in 0.5): where Claude vision found the item in the photo,
+   * so the focus corners and pop-up can sit on it. Null if not located.
+   * Needs a matching `item_bbox` in VisionExtract and the vision prompt (Tiea).
+   */
+  item_bbox?: NormRect | null;
 }
 
 export interface Reroute {
@@ -208,17 +222,46 @@ export interface CommandResponse {
 
 export type CardScanKind = 'insurance' | 'payment';
 
+/**
+ * What is read from an insurance card (team decision 2026-10-24): insurer and
+ * plan, the member's name, and prescription benefits. Stored on the phone for
+ * suggestions. Member ID: last 4 digits only.
+ */
+export interface InsuranceCard {
+  insurer_name: string;
+  plan_name: string | null;
+  member_first_name: string | null;
+  member_last_name: string | null;
+  member_id_last4: string | null;
+  /** Pharmacy (Rx) benefit fields as printed on the card; null if the card shows none. */
+  rx: {
+    bin: string | null;
+    pcn: string | null;
+    group: string | null;
+    /** Copays printed on the card, e.g. { label: 'Generic', amount_cents: 1000 }. */
+    copays: { label: string; amount_cents: number }[];
+  } | null;
+}
+
+/**
+ * What is read from a payment card (credit, debit, HSA, FSA): only what adding
+ * it as a payment method needs. Never the full number, expiry, or security code.
+ */
+export interface PaymentCardRead {
+  network: CardNetwork | null;
+  /** null when the card face does not say HSA or FSA; the app then asks. */
+  card_type: Card['type'] | null;
+  /** For general cards: printed CREDIT / DEBIT, if shown. */
+  funding: 'credit' | 'debit' | null;
+  last4: string | null;
+}
+
 export interface CardScanResult {
   /** `unclear` means try again; `framing_hint` says how ("move closer", "hold steady"). */
   state: 'read' | 'unclear';
   framing_hint: string | null;
-  insurance: { insurer_name: string; plan_name: string | null; member_id_last4: string | null } | null;
-  payment: {
-    network: CardNetwork | null;
-    /** null when the card face does not say HSA or FSA; the app then asks. */
-    card_type: Card['type'] | null;
-    last4: string | null;
-  } | null;
+  insurance: InsuranceCard | null;
+  payment: PaymentCardRead | null;
 }
 
 export interface LinkCardRequest {

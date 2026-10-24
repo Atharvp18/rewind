@@ -32,8 +32,8 @@ export function BigButton({
   const colors = {
     primary: { bg: palette.primary, fg: 'onPrimary', border: palette.primary },
     accent: { bg: palette.accent, fg: 'onAccent', border: palette.text },
-    danger: { bg: palette.surface, fg: 'danger', border: palette.danger },
-    secondary: { bg: palette.surface, fg: 'text', border: palette.border },
+    danger: { bg: palette.dangerBg, fg: 'danger', border: palette.danger },
+    secondary: { bg: palette.surfaceAlt, fg: 'text', border: palette.border },
   }[variant] as { bg: string; fg: 'onPrimary' | 'onAccent' | 'danger' | 'text'; border: string };
 
   return (
@@ -49,8 +49,9 @@ export function BigButton({
           minHeight: size === 'primary' ? Target.primary : Target.min,
           backgroundColor: colors.bg,
           borderColor: colors.border,
-          // Secondary buttons always draw an edge (1.4.11 needs 3:1 against the background).
-          borderWidth: variant === 'primary' ? Math.max(palette.controlBorderWidth, 0) : 2,
+          // Soft by default: the label identifies the button (WCAG 1.4.11 needs no outline then).
+          // High contrast draws an edge on every control.
+          borderWidth: palette.controlBorderWidth,
           opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
           alignSelf: fill ? 'stretch' : 'auto',
         },

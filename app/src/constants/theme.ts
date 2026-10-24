@@ -242,13 +242,6 @@ export const Radius = {
 
 export const MaxContentWidth = 640;
 
-/**
- * How much the camera is dimmed inside the see-through window (frame 3).
- * 0 keeps the product fully visible; dimming helps glare and light
- * sensitivity. Text never depends on it: text sits on solid cards.
- */
-export const CameraDim = { options: [0, 0.25, 0.45] as const, default: 0 } as const;
-
 export const Motion = {
   /** Caption pill grow / shrink. */
   pill: 260,
