@@ -5,6 +5,8 @@ to the Postgres function in functions.sql, so the numbers live only here.
 """
 from __future__ import annotations
 
+import os
+
 from lookup.normalize import product_key_from_upc
 
 # TODO(demo prep): replace these with the real UPCs read off the demo packages.
@@ -12,6 +14,8 @@ from lookup.normalize import product_key_from_upc
 UPC_ADVIL = "000000000001"
 UPC_BANDAGES = "000000000002"
 UPC_KETTLE_CORN = "000000000003"
+
+NESSIE_ACCOUNT_ENV = {"card_hsa_1": "NESSIE_HSA_ACCOUNT_ID", "card_visa_1": "NESSIE_VISA_ACCOUNT_ID"}
 
 HSA_BALANCE_CENTS = {1: 34000, 2: 1500}   # run 1: $340.00, run 2: $15.00 (declined-card run)
 
@@ -75,6 +79,9 @@ def cards_for_run(run: int) -> list[dict]:
     for card in cards:
         if card["id"] == "card_hsa_1":
             card["balance_cents"] = HSA_BALANCE_CENTS[run]
+        # Nessie account ids belong to whoever's sandbox is in use, so they come from the
+        # environment (NESSIE_HSA_ACCOUNT_ID, NESSIE_VISA_ACCOUNT_ID); unset means not linked.
+        card["nessie_account_id"] = os.environ.get(NESSIE_ACCOUNT_ENV[card["id"]]) or None
     return cards
 
 

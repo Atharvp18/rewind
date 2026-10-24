@@ -2,8 +2,9 @@
 
 Each upstream is "ok", "degraded", or "down". The app shows a banner on "down".
 
-Only Supabase is probed live today. The other four report "down" when their credentials are
-missing (they cannot work) and "ok" when the credentials are present. That is a configuration
+Supabase and Cartesia are probed live (Cartesia by the 60 s keepalive in api/voice.py). The
+other three report "down" when their credentials are missing (they cannot work) and "ok" when
+the credentials are present. That is a configuration
 check, not a live probe: replace each with a real call as that adapter is wired in. Claude with
 no key but stub vision on is "degraded": it answers, but with hardcoded data.
 """
@@ -15,6 +16,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from api import voice
 from data import db
 
 router = APIRouter()
@@ -60,7 +62,7 @@ def _supabase() -> Status:
 def health() -> HealthResponse:      # sync on purpose: runs in a worker thread, not the event loop
     upstreams = Upstreams(
         claude=_claude(),
-        cartesia=_configured("CARTESIA_API_KEY"),
+        cartesia=voice.cartesia_status(),
         moss=_configured("MOSS_PROJECT_ID", "MOSS_PROJECT_KEY"),
         nessie=_configured("NESSIE_API_KEY"),
         supabase=_supabase(),
