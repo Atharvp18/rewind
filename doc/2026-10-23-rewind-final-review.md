@@ -94,7 +94,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Microsoft, Built for the Real World | Plausible | Accessibility and real-world users |
 | MLH Commit Fellowship category | Opt in | Interview for a 3-week sprint. Needs the opt-in checkbox and supplemental form |
 | Figma | Plausible | Wireframes and design system |
-| Apify | Selected | Offline catalog only. Bright Data and Context.dev are not used |
+| Apify | Not used | Products are looked up live (section 19). Bright Data and Context.dev are not used either |
 | Fetch.ai | Integrated | Necessary |
 | Meta | Stretch | Community feature only |
 
@@ -114,7 +114,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 - Expo shell with camera and mic
 - Voice loop: Cartesia Ink, Claude, Cartesia Sonic
 - Claude vision returning structured product JSON
-- Eligibility lookup (Moss only, no Apify needed)
+- Product lookup and eligibility classification (section 19). Moss holds the eligibility rules. No Apify and no hand-built product catalog
 - Cart, card routing, and reroute logic
 - Simulated checkout and a seeded database
 
@@ -137,7 +137,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 ### Cut
 
 - Three-agent Fetch.ai Bureau as the default backend (use plain Python functions; Fetch.ai only as an optional add-on)
-- Apify catalog as a requirement for the demo path (hand-build about 30 products instead)
+- Apify and any hand-built product catalog (products are read at the shelf and looked up live where a retailer source exists; see section 19)
 - Five insurers (build two, list the others as planned)
 - Coupon payment methods
 - True 3D AR (needs ViroReact, which does not run in Expo Go)
@@ -280,30 +280,36 @@ Owners are listed per layer and follow the ownership split in section 11. Owner 
 | Vision and reasoning | Claude (main), Gemini Flash (fallback if credits run out) | Tiea | Confirm credits at the Anthropic booth |
 | Speech to text | Cartesia Ink, streaming | Nak | Idle WebSocket closes after 3 min (secondary source); build reconnect |
 | Text to speech | Cartesia Sonic, streaming | Nak | Start speaking before the reply is complete |
-| Retrieval | Moss | Tiea | JS and Python SDKs. React Native support unconfirmed; call from the backend |
+| Retrieval | Moss | Tiea | Python SDK is `moss` (import `from moss import MossClient`); JS SDK is `@moss-js/moss` (Moss quickstart). Call from the backend, not the phone. Credentials: `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY` |
+| Product lookup | Shelf tag via vision, barcode, local cache, then retailer lookup where one exists | Tiea (lookup), Atharv (cache) | See section 19. Walmart has a documented lookup; Walgreens and CVS have no official public API found (secondary source) |
 | Account data | Nessie mock accounts | Atharv | Model the HSA as a Checking or Savings account with an HSA nickname. Confirm at the Capital One booth |
 | Database | Supabase (primary), SQLite (backup) | Atharv | One backend setting switches between them |
 | Backend | Python 3.12 or 3.13, functions behind an API | Atharv | FastAPI suggested. The app talks to the backend, not the database |
-| Optional | Fetch.ai uAgents, Apify catalog scraper | Tiea | Only if time allows. One uAgents example reports problems on Python 3.14 |
+| Optional | Fetch.ai uAgents | Tiea | Only if time allows. In a local check uagents 0.26.1 and uagents-adapter 0.6.2 installed and imported on Python 3.12, 3.13, and 3.14, but another example reports problems on 3.14, so use 3.12 |
 
 ### 7.1 Request Flow
 
 ```
-App (camera frame + voice)
-  → Cartesia Ink (speech to text)
-  → Claude Vision (structured JSON)
-  → Moss (eligibility lookup + classification)
-  → Payment function (balances, routing, reroute)
-  → Cartesia Sonic (streaming audio response)
+App (camera frame + mic audio)
+  → Backend (FastAPI; the only place API keys live)
+      → Cartesia Ink (speech to text)
+      → Claude Vision (structured JSON: name, brand, size, shelf price, barcode digits, category, medical flag, confidence)
+      → Product lookup (cache first, then retailer lookup where one exists; section 19)
+      → Moss (eligibility rules + classification)
+      → Payment function (balances, routing, reroute)
+      → Cartesia Sonic (audio, sentence by sentence)
+  → App (plays audio, shows captions)
   → Session store (scan logged for recall)
 ```
+
+The phone never calls Cartesia, Claude, Moss, or Nessie directly. Cartesia's docs say browser WebSockets cannot send request headers and recommend a short-lived access token in the query string; they do not mention React Native. Relaying through the backend avoids that question and keeps secret keys out of the app bundle.
 
 ### 7.2 Data Model
 
 | Entity | Fields |
 |---|---|
 | Cards | id, type (HSA or general), nickname, mock balance |
-| Products | name, brand, price, category, eligibility flag, source, last updated |
+| Product cache | barcode (UPC) when known, normalized name, brand, size, shelf price, retailer price (optional), category, eligibility label, eligibility confidence, source (shelf tag, barcode, retailer, user-spoken, seeded), last updated. Filled by lookups; not a hand-built catalog |
 | Cart | items, assigned card, running totals per card |
 | Scans | scanned products with timestamps (for session recall) |
 | Insurers | two mock profiles with prescription benefit flags |
@@ -419,7 +425,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | Person | Owns |
 |---|---|
 | Nak | Expo, camera, mic, Cartesia voice loop, main screens, shared components, design system contrast and tap target rules, accessibility test plan |
-| Tiea | Claude vision and tool-calling orchestration, Moss, Apify (optional catalog), Fetch.ai (optional), eligibility data and source |
+| Tiea | Claude vision and tool-calling orchestration, product lookup (section 19), Moss, Fetch.ai (optional), eligibility data and source |
 | Atharv | Backend, Supabase and SQLite backup, cart, routing, reroute, Visa (card routing and simulated checkout), Capital One (Nessie) |
 
 **Working rules**
@@ -467,7 +473,9 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 | Scope | Too many sponsors for one weekend |
 | Voice connection | Cartesia closes idle connections after 3 min (secondary source; confirm in Cartesia's docs) |
 | Venue network | Cartesia, Claude, and possibly Moss need internet |
-| Team capacity | With three owners, Tiea carries Claude vision, Moss, eligibility data, and the optional Fetch.ai and Apify work, and Nak carries the voice loop, screens, and accessibility work (see section 17) |
+| Team capacity | With three owners, Tiea carries Claude vision, product lookup, Moss, eligibility data, and the optional Fetch.ai work, and Nak carries the voice loop, screens, and accessibility work (see section 17) |
+| Product lookup coverage | No official public product API was found for Walgreens or CVS, and the Walmart API's portal status is unverified (secondary sources). Automated lookups may also breach retailer terms (unverified). The shelf tag is therefore the primary price source (section 19) |
+| Store Expo Go update | The App Store Expo Go supports SDK 57 today and is expected to move to SDK 58 within weeks (Expo SDK 58 post). Do not update Expo Go on the demo phone, or the SDK 57 app will stop opening (section 21) |
 
 ---
 
@@ -508,7 +516,7 @@ The earlier draft referenced this section but did not include it. The items belo
 7. **WCAG target.** Section 6.7 requires a WCAG conformance level and version, which are not chosen. Confirm against the primary source
 8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
 9. **Settings storage.** On device or in the database (Atharv). Not decided
-10. **Apify scope.** Apify is now the selected scraper track (Tiea). Section 5 still lists the Apify catalog as cut from the requirements, with about 30 hand-built products as the default. Confirm whether Apify stays optional or moves to Should
+10. **Apify scope.** Resolved by the team: Apify is not used and there is no hand-built 30-product catalog. Products are looked up live (section 19). Sections 4, 5, 7, 11, 14, and 18 are updated to match
 11. **Interface phases and owners.** The table in section 6.5 assigns phases and owners that you did not state. Confirm or change them
 12. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address on the invoice and shows where past purchases were made. Section 6.6 says no tracked locations, and section 12 says no automatic store assignment from scan history. Decide how store address is entered (for example chosen by the user or taken from seeded mock data) so it does not conflict
 13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Section 6.2 medication wording, section 8 (demo script), and section 10 (failure modes) still use "may be eligible, check your plan." Decide whether to align them
@@ -517,12 +525,291 @@ The earlier draft referenced this section but did not include it. The items belo
 16. **Nothing covers it.** Section 6.4 no longer says "do not choose for the user." Confirm that the credit card suggestion still requires voice confirmation, as the section states for every change
 17. **Public eligibility sources.** The assumption about posters and tags on Walmart and Amazon listings needs cited sources
 18. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
+19. **Retailer lookup scope.** Which of Walmart, CVS, and Walgreens are in the build, given that only Walmart has a documented lookup and that scraping may breach terms (section 19). Default proposed in section 19: shelf tag is the price source, retailers are optional enrichment
+20. **Third eligibility state.** Sections 6.2 and 6.5 define two labels. Section 20 needs a third, "could not confirm," for ambiguous items. Approve or reject
+21. **Fetch.ai status.** Section 4 says "Integrated, necessary." Sections 5 and 7 say optional and off the live path. Pick one
+22. **Screen reader overlap.** When VoiceOver or TalkBack is on, the app's own voice and the screen reader can speak at once. Decide whether the app mutes its own speech or uses screen reader announcements (section 20)
+23. **Supabase plus SQLite versus SQLite only.** Section 21 proposes SQLite only. Confirm
+24. **Camera frame retention.** Section 20 proposes that frames are not stored after processing. Confirm
+25. **Weighted and produce items.** Section 20 proposes they are out of scope for v1. Confirm
 
 ---
 
 ## 18. Review Checklist by Person
 
 - **Nak:** voice loop gate, reconnect logic, screen list, one quote from a user, design system contrast and tap target rules, accessibility test plan
-- **Tiea:** message formats, Claude vision prompt and failure handling, agent boundaries, Moss collections, eligibility source
+- **Tiea:** message formats, Claude vision prompt and failure handling, agent boundaries, product lookup chain and timeouts (section 19), Moss collections, eligibility source
 - **Atharv:** schema, `reset_demo()`, simulated checkout, the SQLite switch, Nessie accounts
 - **Everyone:** the open decisions in section 17, and that no real personal data appears anywhere
+
+---
+
+## 19. Product Lookup Strategy (added 2026-10-24)
+
+The team decided that products are not pre-loaded into a catalog. Every product is identified at the shelf and, where a source exists, looked up at Walmart, CVS, or Walgreens. This section defines how that works and what to do when a source is missing.
+
+### 19.1 What each source can and cannot give
+
+| Source | What it gives | Availability | Status |
+|---|---|---|---|
+| Shelf tag and package (Claude vision) | Product name, brand, size, shelf price, barcode digits if visible | Always, if the image is clear | Primary source for price. It is the price the shopper will pay in that store |
+| Barcode (UPC) scan | An exact product identity | Needs the barcode in frame. `expo-camera` barcode scanning in SDK 57 is unverified; check the expo-camera docs | Optional. Use it to make the cache and retailer lookups exact |
+| Local cache | A prior result for the same UPC or normalized name | After the first scan | Fast, works offline |
+| Walmart | A documented product lookup by item ID and UPC exists (secondary source: third-party wrappers; developer portal and key availability unverified) | Needs a developer key | Optional enrichment |
+| Walgreens | No official public API found. One third-party scraper listing describes an unofficial route, and says search pages sit behind a client-side verification step (secondary source) | Not sanctioned | Do not depend on it |
+| CVS | No product or price API found | None found | Do not depend on it |
+
+### 19.2 Lookup chain
+
+1. Claude vision extracts name, brand, size, shelf price, barcode digits, category, and medical flag, with a confidence for each field
+2. If a barcode is present, use it as the key. Otherwise build a normalized key from brand, name, and size
+3. Check the cache. A hit returns instantly
+4. On a cache miss, run the retailer lookups that are enabled, in parallel, with a hard timeout (proposed 2 seconds, estimate). A slow or failed lookup is skipped, never waited on
+5. Classify eligibility with Moss, using category and product name against the eligibility rules (source not yet chosen, section 17 item 6)
+6. Write the result to the cache with its source label
+7. Speak the result. Speak what is known first. If a retailer result arrives later, offer it only if it changes the answer
+
+### 19.3 Rules
+
+- **Shelf price wins.** If the shelf price and a retailer price differ, speak the shelf price. Mention the retailer price only when the user asks or the difference is large (threshold to be set)
+- **Say the source when it matters.** "Shelf price $4.99" versus "Walmart lists $4.49"
+- **Never invent a price.** If no source gives one, say so and ask the user to point at the tag or say the price. A price the user says aloud is stored with source "user-spoken"
+- **Never block the first spoken answer on a retailer lookup.** The 3-second goal in section 7.4 depends on this
+- **Terms of service.** Before any automated lookup of a retailer site, check that retailer's terms (unverified). Do not scrape behind a login. Do not describe an unofficial route to judges as an integration
+- **Disclosure for the demo.** The three demo shelf items (Advil, bandages, kettle corn) are pre-resolved in the cache so the demo cannot fail on a blocked lookup. The app still runs the real pipeline. Tell judges the demo items are pre-cached
+
+### 19.4 Result states
+
+| State | Meaning | What the agent does |
+|---|---|---|
+| Resolved | Name, price, and eligibility known | Normal flow (section 6.2) |
+| Partial | Name known, price or eligibility missing | Speak what is known, ask for the rest |
+| Unresolved | Product not identified | "I could not confirm this item. Try another angle, or tell me what it is" |
+
+---
+
+## 20. Edge Cases and Scenarios (added 2026-10-24)
+
+No list can cover every possible scenario. This is the known set. When the team finds a new one, add a row and give it an owner. Items marked (open) have no decision yet.
+
+### 20.1 Camera and vision
+
+| Scenario | Expected behavior |
+|---|---|
+| Dark, blurry, or glare on the image | Low confidence. Spoken framing help ("move closer", "tilt up"). Never guess a price |
+| Several products in frame | "I see more than one item. Hold one up." Do not pick one silently |
+| No price tag in frame | Say the price was not found. Ask the user to point at the shelf tag or say the price |
+| The tag may belong to the neighboring product | Read back "The tag says $X. Is that for this item?" Require a yes before adding (feasibility of detecting this is unverified) |
+| Multi-buy or sale text ("2 for $5", unit price) | Speak the shelf price and the condition. Ask for quantity |
+| Weighted or produce items (price per pound) | Out of scope for v1 (open, item 25). Say the per-pound price only and that a total needs a weight |
+| Same product in several sizes | Size must be read. If it is not visible, ask |
+| Damaged, foreign-language, or partly hidden label | "I could not confirm this item" |
+| Camera permission denied | Spoken and on-screen instructions to enable it in phone settings. Fall back to the user saying the product name |
+| Camera busy or unavailable | Same fallback, plus a retry |
+| People or faces in the frame | Frames are not stored after processing (open, item 24) |
+
+### 20.2 Voice and audio
+
+| Scenario | Expected behavior |
+|---|---|
+| Microphone permission denied | Tap-only mode with captions. Say how to re-enable |
+| Loud room | Push-to-talk. Read back any command before it spends or removes anything |
+| Transcript is wrong ("add that" heard as something else) | Unknown command gets "I didn't catch that. You can say add that, skip it, or checkout." Never act on a low-confidence transcript |
+| User speaks while the agent is speaking | Stop routine speech at once and listen. Replay a low-balance or declined-card alert afterward |
+| Long silence | Prompt after 5 to 10 seconds (section 6.5 D). After two prompts go idle. No endless loop |
+| Accent or speech difficulty | Tap alternative for every command. Slower speech-rate setting |
+| Streaming connection closes after idle (3 minutes, secondary source) | Reconnect before the next utterance without the user noticing. Warm the connection before the demo |
+| Silent switch, Bluetooth headphones, speaker routing | Test on the demo phone. Check the audio mode options in the expo-audio docs for playing in silent mode (unverified) |
+| Incoming call or app moves to background | Pause. On return, say "Welcome back, you have N items in your cart" and offer to repeat the last message |
+| Two people talking | Push-to-talk. Confirmations are always read back |
+
+### 20.3 Eligibility
+
+| Scenario | Expected behavior |
+|---|---|
+| Eligibility unknown | Do not route to the HSA/FSA automatically. Say "I could not confirm eligibility" and ask which card (needs a third label, open item 20) |
+| Ambiguous items (sunscreen, vitamins, protein bars) | "May be eligible; depends on your plan." Ask which card |
+| Bundle with eligible and non-eligible parts | Treat as not confirmed. Ask |
+| User has only an FSA, or both | Terminology rule: HSA means HSA and FSA. Use the account the user linked. Ask if two |
+| User on Medicare | Make no claim in either direction (section 3) |
+| Eligibility depends on a plan rule or a letter of medical necessity | Say "check your plan" |
+
+### 20.4 Medication and insurance
+
+| Scenario | Expected behavior |
+|---|---|
+| Pill-bottle label unreadable or partly visible | Ask the user to rotate it. Fallback: the user says the drug name |
+| Drug name or strength misread | Read both back. The user corrects by voice. Nothing proceeds until confirmed |
+| Same drug in several strengths | Confirm the strength |
+| User asks for medical advice (dose, interactions, "is it safe") | Decline: "I can't give medical advice. Please ask the pharmacist." Put this in the Claude system prompt and test it |
+| No insurance profile linked | Skip coverage. Say once: "Add your insurance in settings to hear coverage" |
+| Plan has no data for this drug, or copay unknown | "I don't have the copay. Please ask the pharmacist." Never estimate silently |
+| Restricted prescription under the plan | Wording undefined (section 17 item 2a) |
+| Prescription picked up at the counter | The app gives information only. It does not add a counter prescription to the simulated cart (open) |
+| Controlled or pharmacy-only item | Direct the user to the pharmacist. No payment routing |
+
+### 20.5 Payment, balances, and cart
+
+| Scenario | Expected behavior |
+|---|---|
+| No card linked | Prompt to link one. Checkout is blocked |
+| Balance exactly equals the total | Counts as sufficient |
+| Balance is zero or negative | Treat as insufficient. Use rule 3 in section 6.4 |
+| Balance changed since the scan | Fetch balances again at checkout and rerun routing if they differ |
+| Nessie slow or down | Use last known balances, say they are last known, and warn. In the demo, fall back to seeded balances |
+| Money math | Use whole cents. Totals are before tax and the agent says "before tax" (tax estimate is stretch) |
+| Same item scanned twice | Ask "add another, or is it the same item?" |
+| Remove, change quantity, clear cart | Support "remove last item" and "clear cart" (with confirmation) |
+| Checkout with an empty cart | "Your cart is empty" |
+| User says "yes" to a stale question | Each confirmation is tied to one prompt and expires after a short time (proposed 15 seconds, estimate) |
+| Double confirm at checkout | Simulated payment is all-or-nothing with an idempotency key, so it cannot run twice |
+| Nothing covers the total | Section 6.4 rule 3, with voice confirmation (open item 16) |
+| Refunds and returns | Out of scope |
+| Non-US currency | Out of scope (USD only) |
+
+### 20.6 Network and services
+
+| Scenario | Expected behavior |
+|---|---|
+| No internet | Say so. The cart stays readable from local state. No vision or voice without a connection |
+| Backend slow | After about 1 second say "Looking." Timeout at about 8 seconds, retry once, then fall back (all estimates) |
+| Claude error, rate limit, or no credits | Switch to Gemini Flash (section 7). If both fail, ask the user to say the product and price |
+| Cartesia down | Use on-device speech (an Expo speech package; check its docs, unverified) with captions |
+| Moss down or slow | Fall back to a plain eligibility rules table in code |
+| Retailer lookup slow or blocked | Skip it (section 19) |
+| Venue Wi-Fi blocks traffic or needs a login page | Use a phone hotspot. Rehearse it |
+
+### 20.7 Accessibility
+
+| Scenario | Expected behavior |
+|---|---|
+| VoiceOver or TalkBack on while the app also speaks | Two voices at once. Decide: mute app speech or use screen reader announcements (open item 22) |
+| Largest text size | Layouts must not clip or hide controls. Test at the maximum |
+| Reduced motion, dark mode, high contrast | Honored by the settings panel (section 6.7) |
+| Tremor or accidental touches | Large targets. Confirm destructive actions by voice or a second tap |
+| One-handed or left-handed use | Primary controls reachable at the bottom of the screen |
+| Deaf or hard of hearing | Captions on, adjustable volume, tap alternatives |
+
+### 20.8 Privacy and data
+
+| Scenario | Expected behavior |
+|---|---|
+| Camera frames | Not saved after processing (open item 24) |
+| Logs | No API keys, card numbers, or full transcripts in logs |
+| Real pill-bottle label (patient name on it) | Demo uses a prop label only. A real version would send that image to a third party and needs its own review |
+| Session recall | Per session only. No location tracking (sections 6.6 and 12) |
+| API keys | Backend `.env`, gitignored. Never in the app |
+
+### 20.9 Demo day
+
+| Scenario | Expected behavior |
+|---|---|
+| Expo Go updates itself to SDK 58 | The SDK 57 app stops opening. Turn off automatic app updates on the demo phone and do not update Expo Go |
+| iOS Expo Go sign-in expires | Log in again at the venue and test beforehand |
+| Phone overheats or the battery drains | Keep a charger and a second phone with the same build |
+| Lighting differs at the booth | Pre-test the exact shelf under booth light |
+| Judges try their own item | Unresolved path must work cleanly ("I could not confirm this item") |
+| Balances left from a previous run | Run `reset_demo()` between runs |
+| Live failure | Recorded backup video. If a saved result is replayed, say so |
+
+---
+
+## 21. Build and Environment Guide (added 2026-10-24)
+
+Checked on the lead machine on 2026-10-23 and 2026-10-24 in a throwaway directory. Everything below marked verified was installed and imported successfully. Nothing was tested on a phone.
+
+### 21.1 Versions
+
+| Item | Value | Status |
+|---|---|---|
+| Node | 24.18.0 on the lead machine. SDK 58 asks for 22.13 or newer on 22, or 24.3 or newer on 24 | Verified, [SDK 58 changelog](https://expo.dev/changelog/sdk-58) |
+| Python | 3.12 or 3.13. Use 3.12 | Verified |
+| Expo SDK | 57. SDK 58 is released but the store Expo Go for it is "within a few weeks" | [Expo SDK 58 post](https://expo.dev/blog/how-to-upgrade-to-sdk-58) |
+| Create command | `npx create-expo-app@latest app --template default@sdk-57` | [create-expo docs](https://docs.expo.dev/more/create-expo/) |
+| Expo packages (resolved by `npx expo install`) | expo-camera 57.0.6, expo-audio 57.0.5, expo-sqlite 57.0.4 | Verified |
+| Python packages | anthropic 2.1.0, cartesia 4.2.0, supabase 2.33.0, fastapi 0.161.1, uvicorn 0.54.0, pydantic 2.14.1, httpx 0.28.1, pytest 9.1.1, uagents 0.26.1, uagents-adapter 0.6.2, moss 1.21.0 | Verified on 3.12 and 3.13 |
+| Audio package | `expo-audio` (recording, and raw PCM microphone capture through `useAudioStream`) | [expo-audio docs](https://docs.expo.dev/versions/latest/sdk/audio/) |
+| Cartesia JS SDK | `@cartesia/cartesia-js` exists for Node and browsers. React Native is not mentioned. The app does not use it (relay through the backend) | [Cartesia client libraries](https://docs.cartesia.ai/tools/client-libraries) |
+| ViroReact | Not installed and not needed | Verified |
+
+### 21.2 Proposed repository layout (not yet created)
+
+```
+rewind/
+  doc/        this document
+  app/        Expo app (SDK 57)
+  backend/    FastAPI, data module, routing, lookup, tests
+  .gitignore  must ignore .env, node_modules, .venv
+```
+
+### 21.3 Setup order
+
+1. Remove the old global expo-cli so `expo` does not point to a broken version. Only with the owner's approval: `npm uninstall -g expo-cli`. Using `npx expo` avoids the problem either way
+2. Log in to Expo in the terminal (`npx expo login`) and in the Expo Go app on the phone, same account. Required for SDK 57 on iOS; not yet enforced on Android ([Expo post on SDK 57 login](https://dev.to/expo/running-an-expo-sdk-57-app-in-expo-go-you-now-need-to-be-logged-in-on-both-ends-32ef))
+3. Create the app with the command in 21.1, then `cd app && npm install`
+4. Install packages with `npx expo install expo-camera expo-audio`. Add `expo-sqlite` only if the phone stores settings or cart offline. Per section 7, the app talks to the backend, so `@supabase/supabase-js` and `react-native-url-polyfill` are not needed in the app
+5. Start with `npx expo start`. Scan the QR code with Expo Go. Phone and laptop need the same Wi-Fi, or use `npx expo start --tunnel`
+6. Backend: `/opt/homebrew/bin/python3.12 -m venv .venv`, activate it, then `pip install anthropic cartesia fastapi uvicorn pydantic httpx pytest moss`. Add `supabase` only if Supabase is kept. Add `uagents uagents-adapter` only if Fetch.ai is used
+7. Run the backend with `uvicorn`. The phone must reach it by the laptop's local address (or a tunnel). Rehearse this on the venue network or a hotspot
+
+### 21.4 Keys
+
+Keys live in a gitignored `.env` in `backend/`. The app holds none.
+
+| Service | Variable | Status |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | Standard SDK name |
+| Moss | `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY` | From the [Moss quickstart](https://docs.moss.dev/docs/start/quickstart.md) |
+| Cartesia | `CARTESIA_API_KEY` | Name not confirmed in docs |
+| Nessie | not looked up | Confirm at the Capital One booth |
+| Supabase | URL and key | Only if Supabase is kept; service key stays on the backend |
+| Walmart (optional) | key name unknown | Only if the Walmart lookup is built |
+
+Expo variables that start with `EXPO_PUBLIC_` are bundled into the app and visible to anyone who has it (check the Expo environment variable docs, unverified). Never use them for secrets.
+
+### 21.5 Proposed defaults for open choices
+
+| Choice | Default | Why |
+|---|---|---|
+| Database | SQLite only | Section 7.3 already allows it, and it removes one failure point. Open item 23 |
+| TTS playback | Backend returns one audio file per sentence; the app plays each as it arrives | Playing a raw streamed audio feed in Expo Go is unverified. Sentence files are a safer first version |
+| STT | App sends microphone audio to the backend; the backend relays to Ink | Keeps keys off the phone |
+| Tests | `pytest` for routing, reset, and money math using the demo numbers | Cheapest way to protect the demo |
+
+---
+
+## 22. Readiness for the Spec File (added 2026-10-24)
+
+**Verdict: not yet.** The product idea and flows are clear enough. The document still contradicts itself in places and lacks acceptance criteria, so a spec written from it today would copy those problems.
+
+### 22.1 Must be resolved before writing the spec
+
+| Blocker | Where |
+|---|---|
+| Data policy conflict: "mock only" versus real prescriptions, receipts, and United and BlueCross insurance | Section 1 against sections 6.1, 10, 14 (item 2) |
+| Eligibility source not chosen | Item 6, section 14 |
+| Retailer lookup scope | Section 19, item 19 |
+| Third eligibility label ("could not confirm") | Item 20 |
+| Wording of eligibility lines differs between sections 6.2, 8, and 10 | Item 13 |
+| Fetch.ai is "necessary" in one section and optional in others | Item 21 |
+| Store address versus the no-tracking rule | Item 12 |
+| One button or two (accessibility and backup) | Item 14 |
+| Restricted prescription wording | Item 2a |
+| Workload: Nak and Tiea each carry too much | Items 3 and 4 |
+| WCAG level and version | Item 7 |
+
+### 22.2 Acceptance criteria for Must items (proposed; spec to copy these)
+
+| Must item | Done when |
+|---|---|
+| Expo shell | The app opens in Expo Go on a physical phone by QR code. Camera preview and microphone prompts work. Denied permissions get the fallbacks in section 20 |
+| Voice loop | Spoken "what's in my cart" gets a spoken answer. First audio is about 3 seconds or less in most of 10 tries (estimate; measure). The connection recovers after an idle period without user action |
+| Vision JSON | 10 photos of the demo shelf return valid `ScanResult` objects. An unclear photo returns low confidence and the "could not confirm" line |
+| Lookup and eligibility | The three demo items get the right labels. An unknown item returns "could not confirm," never a guess |
+| Cart and routing | `pytest` covers rules 1 to 3 in section 6.4 using the demo numbers ($340, $15.00, $12.99, $5.49, $4.99) |
+| Simulated checkout | Run 1 ends at $321.52. Run 2 produces the reroute in section 8. `reset_demo()` can be run twice with the same result |
+| Seeded database | Cards, balances, two insurer profiles, and the three cached demo products exist after reset |
+
+### 22.3 What the spec file should contain
+
+Message schemas with example JSON for `ScanResult`, `PaymentRecommendation`, and `VoiceRequest`; the lookup chain and timeouts (section 19); the edge case table (section 20) with owners; the backend endpoint list; the acceptance criteria above; and the cut order from section 13.
