@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeOut,
+  SlideOutDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
@@ -33,8 +40,20 @@ export function HistorySheet() {
   const { width: screenW, height: screenH } = useWindowDimensions();
   const dome = useDomeHeight();
   // A full page: from under the status bar down to the dome, so the orb stays usable.
-  const top = insets.top + Spacing.sm;
-  const pageH = Math.max(0, screenH - dome - top - Spacing.sm);
+  // Measured once, when the page opens: the page must not resize while it slides (that reads as a shake).
+  const [geo] = useState(() => {
+    const t = insets.top + Spacing.sm;
+    return { top: t, pageH: Math.max(0, screenH - dome - t - Spacing.sm) };
+  });
+  const { top, pageH } = geo;
+
+  // One steady slide of the whole page from below the screen to its place: a plain timing
+  // curve on a transform, with no spring, no bounce, and nothing else moving.
+  const slide = useSharedValue(reduceMotion ? 0 : screenH);
+  useEffect(() => {
+    slide.value = withTiming(0, { duration: reduceMotion ? 0 : 420, easing: Easing.out(Easing.cubic) });
+  }, [reduceMotion, slide]);
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateY: slide.value }] }));
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const width = Math.min(screenW - Layout.margin * 2, MaxContentWidth);
@@ -82,12 +101,11 @@ export function HistorySheet() {
 
   return (
     <Animated.View
-      // One smooth slide from the bottom edge to the top: no spring, no bounce, no scaling.
-      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(420).easing(Easing.out(Easing.cubic))}
       exiting={reduceMotion ? FadeOut.duration(0) : SlideOutDown.duration(320).easing(Easing.in(Easing.cubic))}
       accessibilityViewIsModal
       style={[
         styles.sheet,
+        slideStyle,
         Elevation.floating,
         {
           top,
