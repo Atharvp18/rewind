@@ -12,6 +12,9 @@
 import { randomUUID } from 'expo-crypto';
 
 import type {
+  Invoice,
+  InvoiceLine,
+  EligibilityLabel,
   Card,
   CardScanKind,
   CardScanResult,
@@ -68,6 +71,78 @@ const seedCards = (run: 1 | 2): Card[] => [
   { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: SEED[run].hsa, status: 'active', network: 'visa' },
   { id: 'card_visa_1', type: 'general', nickname: 'Visa credit', balance_cents: 500000, status: 'active', network: 'visa' },
 ];
+
+// ---- invoices (PROPOSED, business spec 6.6) ------------------------------------
+
+/** Fixed-rate tax ESTIMATE, one state, labeled as an estimate. 7.25% as integer basis points. */
+const TAX_BP = 725;
+const TAX_NOTE = 'Estimated sales tax at 7.25% (one fixed rate). Estimate only: tax on medicine varies.';
+
+/** Fake stores and contact details: 555-01xx numbers are reserved for fiction. */
+const STORES = [
+  { name: 'CVS Pharmacy', address: '100 Example Ave, Berkeley, CA 94704', phone: '(555) 010-0142' },
+  { name: 'Walmart Pharmacy', address: '2200 Sample Blvd, Oakland, CA 94607', phone: '(555) 010-0178' },
+  { name: 'Walgreens', address: '55 Mockingbird Ln, Emeryville, CA 94608', phone: '(555) 010-0119' },
+];
+
+const CARD_LAST4: Record<string, string> = { card_fsa_1: '9999', card_hsa_1: '4242', card_visa_1: '1111' };
+
+type SeedLine = [name: string, cents: number, label: EligibilityLabel, cardId: string];
+
+function buildInvoice(id: string, date: string, store: (typeof STORES)[number], seed: SeedLine[]): Invoice {
+  const cardsById = seedCards(1);
+  const lines: InvoiceLine[] = seed.map(([name, cents, label, cardId]) => ({
+    name, qty: 1, unit_cents: cents, amount_cents: cents, eligibility_label: label, card_id: cardId,
+    card_type: cardsById.find((c) => c.id === cardId)!.type,
+  }));
+  const subtotal = lines.reduce((s, l) => s + l.amount_cents, 0);
+  const tax = Math.round((subtotal * TAX_BP) / 10000);
+  const payments = [...new Set(lines.map((l) => l.card_id))].map((cid) => {
+    const c = cardsById.find((x) => x.id === cid)!;
+    return {
+      card_id: cid, nickname: c.nickname, type: c.type, last4: CARD_LAST4[cid] ?? null,
+      amount_cents: lines.filter((l) => l.card_id === cid).reduce((s, l) => s + l.amount_cents, 0),
+    };
+  });
+  return {
+    invoice_id: id, date, store, lines, subtotal_cents: subtotal, tax_cents: tax, tax_note: TAX_NOTE,
+    total_cents: subtotal + tax, payments,
+    reimbursable_cents: lines
+      .filter((l) => l.eligibility_label === 'eligible' && l.card_type === 'general')
+      .reduce((s, l) => s + l.amount_cents, 0),
+  };
+}
+
+/** Earlier purchases, so the history is not empty on first open. Some eligible items sit on the everyday Visa. */
+function seedInvoices(): Invoice[] {
+  return [
+    buildInvoice('inv_seed_4', '2026-10-21T16:42:00', STORES[1], [
+      ['Tylenol Extra Strength 500mg', 899, 'eligible', 'card_visa_1'],
+      ['Granola bars', 449, 'not_eligible', 'card_visa_1'],
+    ]),
+    buildInvoice('inv_seed_3', '2026-10-17T10:05:00', STORES[0], [
+      ['Omeprazole 20 mg (prescription copay)', 1000, 'eligible', 'card_hsa_1'],
+      ['Bandages', 549, 'eligible', 'card_hsa_1'],
+    ]),
+    buildInvoice('inv_seed_2', '2026-10-09T13:18:00', STORES[2], [
+      ['Advil Ibuprofen 200mg', 1299, 'eligible', 'card_visa_1'],
+      ['Sunscreen SPF 50', 1149, 'eligible', 'card_fsa_1'],
+      ['Chewing gum', 249, 'not_eligible', 'card_visa_1'],
+    ]),
+    buildInvoice('inv_seed_1', '2026-09-30T18:51:00', STORES[0], [
+      ['Allergy relief tablets', 1599, 'eligible', 'card_fsa_1'],
+    ]),
+  ];
+}
+
+/** An invoice for a payment the user just completed in the app (store cycles through the mock list). */
+function invoiceFromGroups(id: string, date: string, groups: CartGroup[]): Invoice {
+  const store = STORES[(state.invoices.length + 1) % STORES.length];
+  const seed: SeedLine[] = groups.flatMap((g) =>
+    g.items.map((it): SeedLine => [it.display_name, it.amount_cents, it.eligibility_label, g.card_id]),
+  );
+  return buildInvoice(id, date, store, seed);
+}
 
 type DemoItem = {
   product: Omit<ProductResolution, 'product_key' | 'warnings'>;
@@ -133,6 +208,7 @@ const state = {
   scans: new Map<string, { item: DemoItem; rec: PaymentRecommendation | null }>(),
   prompts: new Map<string, Prompt>(),
   payments: new Map<string, CheckoutResult>(),
+  invoices: seedInvoices(),
   proposedSplit: null as ProposedSplit | null,
   /** Items already looked at in the current cart review (tap an item, or answer "look at the rest"). */
   reviewed: new Set<string>(),
@@ -508,6 +584,7 @@ async function reviewNext(itemId: string): Promise<CartResponse> {
   state.reviewed.add(it.id);
   return {
     cart: buildCart(),
+    item_id: it.id,
     voice: voice(`${it.display_name}, ${spokenBalance(it.amount_cents)}. Do you want to remove it from your cart?`, {
       prompt: { scope: 'confirm_remove_item', item_id: it.id },
     }),
@@ -536,6 +613,10 @@ export async function clearCart(promptId: string): Promise<CartResponse> {
   consumePrompt(promptId, 'confirm_clear_cart');
   state.items = [];
   return { cart: buildCart(), voice: voice('Your cart is cleared.') };
+}
+
+export async function getPaymentHistory(): Promise<Invoice[]> {
+  return state.invoices.map((i) => ({ ...i }));
 }
 
 export async function getCards(): Promise<Card[]> {
@@ -641,6 +722,7 @@ export async function checkoutConfirm(
     voice: voice(`Payment complete. ${lines.join(' ')}`.trim(), { priority: low ? 'alert' : 'normal' }),
   };
   state.payments.set(idempotencyKey, result);
+  state.invoices.unshift(invoiceFromGroups(result.payment_id, new Date().toISOString(), cart.groups));
   return result;
 }
 
@@ -653,6 +735,7 @@ export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart
   state.scans.clear();
   state.prompts.clear();
   state.payments.clear();
+  state.invoices = seedInvoices();
   state.proposedSplit = null;
   return { cards: await getCards(), cart: buildCart() };
 }
@@ -704,7 +787,7 @@ export async function command(transcript: string, promptId: string | null): Prom
       const next = otherItems()[0];
       if (next) {
         const res = await reviewNext(next.id);
-        return { action: 'review_item', result: res.cart, voice: res.voice };
+        return { action: 'review_item', result: res.cart, voice: res.voice, item_id: res.item_id };
       }
     }
     state.reviewed.clear();

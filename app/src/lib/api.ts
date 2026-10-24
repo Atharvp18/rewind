@@ -180,6 +180,8 @@ export interface Cart {
 export interface CartResponse {
   cart: Cart;
   voice: VoiceRequest;
+  /** PROPOSED: the item the agent just asked about (confirm_remove_item), so the app can open that row. */
+  item_id?: string | null;
 }
 
 export interface CheckoutIssue {
@@ -199,6 +201,44 @@ export interface CheckoutResult {
   groups: CartGroup[];
   new_balances: { card_id: string; balance_cents: number }[];
   voice: VoiceRequest;
+}
+
+/**
+ * PROPOSED (business spec 6.6, stretch; not in the tech spec's endpoint list yet):
+ * GET /v1/payments. One invoice per completed simulated payment, laid out so the
+ * user can submit it to their own HSA/FSA administrator. All store details are mock.
+ * Rewind prepares the paperwork; it never files a claim or moves money.
+ */
+export interface InvoiceLine {
+  name: string;
+  qty: number;
+  unit_cents: number;
+  amount_cents: number;
+  eligibility_label: EligibilityLabel;
+  card_id: string;
+  card_type: Card['type'];
+}
+
+export interface Invoice {
+  invoice_id: string;
+  /** ISO 8601 date-time. */
+  date: string;
+  store: { name: string; address: string; phone: string };
+  lines: InvoiceLine[];
+  subtotal_cents: number;
+  /** A fixed-rate ESTIMATE; real tax treatment of medicine varies and is unverified. */
+  tax_cents: number;
+  tax_note: string;
+  total_cents: number;
+  /** What each card was charged for the items, before tax. */
+  payments: { card_id: string; nickname: string; type: Card['type']; last4: string | null; amount_cents: number }[];
+  /** Eligible items paid with an everyday card: the "possible reimbursement" total (before tax). */
+  reimbursable_cents: number;
+}
+
+export function getPaymentHistory(): Promise<Invoice[]> {
+  if (isMock()) return mock.getPaymentHistory();
+  return request<{ invoices: Invoice[] }>('/v1/payments').then((r) => r.invoices);
 }
 
 /**
@@ -226,6 +266,8 @@ export interface CommandResponse {
   action: CommandAction;
   result: unknown;
   voice: VoiceRequest;
+  /** PROPOSED: set with review_item when the agent is asking about one cart item. */
+  item_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useSyncExternalStore } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -153,7 +153,48 @@ export function OrbGlow() {
   );
 }
 
-export function VoiceOrb({ hint }: { hint?: string | null }) {
+/**
+ * The pull-up handle under the orb (business spec 6.6): swipe up from the bottom edge, or tap,
+ * to open the purchase history. A grabber bar, a chevron, and the word, so it is never
+ * just a gesture: the tap and the label cover screen readers and switch users.
+ */
+function HistoryHandle() {
+  const { palette } = useA11y();
+  const { state, showView } = useAgent();
+  const open = state.view === 'history';
+  const toggle = () => showView(open ? 'camera' : 'history');
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+        onPanResponderRelease: (_, g) => {
+          if (g.dy < -30) showView('history');
+          else if (g.dy > 30) showView('camera');
+        },
+      }),
+    [showView],
+  );
+  return (
+    <Pressable
+      {...pan.panHandlers}
+      onPress={toggle}
+      hitSlop={{ top: 6, bottom: 12, left: 40, right: 40 }}
+      accessibilityRole="button"
+      accessibilityLabel={open ? 'Close purchase history' : 'Open purchase history'}
+      accessibilityHint="Swipe up or double tap to see your past purchases and invoices"
+      style={styles.handle}>
+      <View style={[styles.grabber, { backgroundColor: palette.onDock }]} />
+      <View style={styles.handleRow}>
+        <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} color="onDock" />
+        <AppText kind="small" color="onDock" accessible={false} style={styles.handleText}>
+          History
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}
+
+export function VoiceOrb({ hint, historyEnabled = false }: { hint?: string | null; historyEnabled?: boolean }) {
   const { palette, reduceMotion } = useA11y();
   const { state, talkTap, talkHoldStart, talkHoldEnd } = useAgent();
   const insets = useSafeAreaInsets();
@@ -278,6 +319,7 @@ export function VoiceOrb({ hint }: { hint?: string | null }) {
           {status}
         </AppText>
       </View>
+      {historyEnabled ? <HistoryHandle /> : null}
     </View>
   );
 }
@@ -297,4 +339,8 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
   },
   center: { textAlign: 'center' },
+  handle: { alignItems: 'center', gap: 2, minWidth: 120 },
+  grabber: { width: 40, height: 4, borderRadius: 2, opacity: 0.9 },
+  handleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  handleText: { fontWeight: '700' },
 });

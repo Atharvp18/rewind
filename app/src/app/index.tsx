@@ -8,6 +8,7 @@ import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { CartChip } from '@/components/cart-chip';
 import { FocusFrame, type FrameTone } from '@/components/focus-frame';
 import { HealthBanner } from '@/components/health-banner';
+import { HistorySheet } from '@/components/history-sheet';
 import { HomePanels } from '@/components/home-panels';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
@@ -233,6 +234,8 @@ export default function Home() {
             />
           ) : state.view === 'profile' ? (
             <ProfileSheet />
+          ) : state.view === 'history' ? (
+            <HistorySheet />
           ) : (
             <HomePanels />
           )}
@@ -255,7 +258,7 @@ export default function Home() {
       </SafeAreaView>
 
       <View style={styles.bottom} pointerEvents="box-none">
-        <VoiceOrb hint={hint} />
+        <VoiceOrb hint={hint} historyEnabled={!onboarding && !addingCard} />
       </View>
     </View>
   );

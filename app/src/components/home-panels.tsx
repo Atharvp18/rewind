@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { AlertBlock } from '@/components/alert-block';
 import { AppText } from '@/components/app-text';
@@ -9,7 +10,7 @@ import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon, Notice } from '@/components/icon';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Card, PaymentRecommendation, ScanResponse } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -114,9 +115,23 @@ function ScanPanel({ res }: { res: ScanResponse }) {
       ) : null}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
+      {rec && rec.decision !== 'blocked' ? (
+        <CardChooser
+          rec={rec}
+          cards={state.cards}
+          priceCents={product.amount_cents ?? rec.amount_cents}
+          eligible={eligibility.label === 'eligible'}
+          busy={busy}
+          onAdd={addToCart}
+        />
+      ) : null}
       {rec ? (
         <PanelActions>
-          <Actions rec={rec} cards={state.cards} busy={busy} onAdd={addToCart} onSkip={skip} />
+          {rec.decision === 'blocked' ? (
+            <BigButton label="OK" variant="primary" size="primary" onPress={skip} />
+          ) : (
+            <BigButton label="Skip this item" accessibilityLabel="No, skip this item" icon="close" variant="secondary" disabled={busy} onPress={skip} />
+          )}
         </PanelActions>
       ) : null}
     </InfoPanel>
@@ -218,42 +233,80 @@ function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Car
 }
 
 /**
- * Buttons use the same words as the spoken question (WCAG 3.2.4):
- * "Want to use your HSA card?" → "Yes, use HSA card" / "No".
+ * "Which card?" instead of yes / no: every Visa card linked in the profile, listed top to
+ * bottom with its balance, the suggested one first and marked. Tapping a card adds the item to
+ * it. A card that cannot pay for this item is shown but disabled, with the reason in words.
+ * (Saying "yes" still adds the item to the suggested card.)
  */
-function Actions({
+function CardChooser({
   rec,
   cards,
+  priceCents,
+  eligible,
   busy,
   onAdd,
-  onSkip,
 }: {
   rec: PaymentRecommendation;
   cards: Card[];
+  priceCents: number;
+  eligible: boolean;
   busy: boolean;
   onAdd: (cardId: string) => void;
-  onSkip: () => void;
 }) {
-  if (rec.decision === 'blocked') {
-    return <BigButton label="OK" variant="primary" size="primary" onPress={onSkip} />;
-  }
-  const nick = (id: string | null | undefined) => cardById(cards, id)?.nickname ?? 'this card';
-  if (rec.decision === 'route_to_hsa' && rec.card_id) {
-    return <ButtonPair yesA11y={`Yes, use ${nick(rec.card_id)}`} noA11y="No, skip" onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
-  }
-  if (rec.decision === 'route_to_general' && rec.card_id) {
-    return <ButtonPair yesA11y={`Yes, add to ${nick(rec.card_id)}`} noA11y="No, skip" onYes={() => onAdd(rec.card_id!)} onNo={onSkip} busy={busy} />;
-  }
-  const options = rec.card_options.length ? rec.card_options : rec.reroute ? [rec.reroute.to_card_id] : [];
-  if (options.length === 1) {
-    return <ButtonPair yesA11y={`Yes, use ${nick(options[0])}`} noA11y="No, skip" onYes={() => onAdd(options[0])} onNo={onSkip} busy={busy} />;
-  }
+  const { palette, reduceMotion } = useA11y();
+  const suggested = rec.card_id ?? rec.card_options[0] ?? rec.reroute?.to_card_id ?? null;
+  const ordered = [...cards].sort((a, b) => Number(b.id === suggested) - Number(a.id === suggested));
+
   return (
-    <View style={styles.buttons}>
-      {options.map((id) => (
-        <BigButton key={id} label={`Use ${nick(id)}`} icon="check" variant="primary" disabled={busy} onPress={() => onAdd(id)} />
-      ))}
-      <BigButton label="Skip" icon="close" disabled={busy} onPress={onSkip} />
+    <View style={styles.chooser} accessibilityRole="radiogroup" accessibilityLabel="Choose a card">
+      {ordered.map((c, i) => {
+        const health = c.type !== 'general';
+        const reason =
+          c.status !== 'active'
+            ? `Card is ${c.status}`
+            : health && !eligible
+              ? 'This item is not HSA/FSA eligible'
+              : c.balance_cents < priceCents
+                ? 'Balance too low'
+                : null;
+        const isSuggested = c.id === suggested && !reason;
+        return (
+          <Animated.View
+            key={c.id}
+            entering={reduceMotion ? undefined : FadeInDown.delay(i * 110).duration(280)}>
+            <Pressable
+              disabled={busy || !!reason}
+              onPress={() => onAdd(c.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${c.nickname}, balance ${centsForScreenReader(c.balance_cents)}${isSuggested ? ', suggested' : ''}${reason ? `. ${reason}` : ''}`}
+              accessibilityHint={reason ? undefined : 'Add this item to this card'}
+              accessibilityState={{ disabled: busy || !!reason }}
+              style={({ pressed }) => [
+                styles.cardRow,
+                {
+                  backgroundColor: isSuggested ? palette.surface : palette.surfaceAlt,
+                  borderColor: isSuggested ? palette.primary : palette.border,
+                  borderWidth: isSuggested ? 2 : 1,
+                  opacity: reason ? 0.6 : pressed ? 0.85 : 1,
+                },
+              ]}>
+              <CardArt type={c.type} size="swatch" />
+              <View style={styles.cardInfo}>
+                <PanelText kind="label">{c.nickname}</PanelText>
+                <PanelText kind="small" muted>
+                  {reason ?? `Balance ${formatCents(c.balance_cents)}`}
+                </PanelText>
+              </View>
+              {isSuggested ? (
+                <View style={[styles.suggestedTag, { backgroundColor: palette.primary }]}>
+                  <AppText kind="small" color="onPrimary">Suggested</AppText>
+                </View>
+              ) : null}
+              <Icon name={reason ? 'notEligible' : 'next'} size={20} color="textMuted" />
+            </Pressable>
+          </Animated.View>
+        );
+      })}
     </View>
   );
 }
@@ -295,22 +348,15 @@ function CartPanel() {
         Tap an item to hear it again and choose whether to remove it.
       </PanelText>
       {cart.groups.map((g) => (
-        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} onItemPress={reviewItem} />
+        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} onItemPress={reviewItem}
+          openItemId={scope === 'confirm_remove_item' ? state.reviewId : null}
+          onKeep={() => answer('no')}
+          onRemove={() => answer('yes')}
+        />
       ))}
       <PanelActions>
         <TotalRow cents={cart.total_cents} />
-        {scope === 'confirm_remove_item' ? (
-          // The agent just read an item back: remove it, or keep it.
-          <ButtonPair
-            yes="Remove"
-            yesA11y="Yes, remove it"
-            no="Keep"
-            noA11y="No, keep it"
-            yesVariant="danger"
-            onYes={() => answer('yes')}
-            onNo={() => answer('no')}
-          />
-        ) : scope === 'confirm_review_rest' ? (
+        {scope === 'confirm_review_rest' ? (
           <ButtonPair yesA11y="Yes, check the rest" noA11y="No, I'm done" onYes={() => answer('yes')} onNo={() => answer('no')} />
         ) : (
           <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
@@ -439,6 +485,10 @@ const styles = StyleSheet.create({
   cell: { flexDirection: 'column' },
   name: { flexShrink: 1, flexGrow: 1 },
   paysWith: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  chooser: { gap: Spacing.sm },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, borderRadius: Radius.card, padding: Spacing.md, minHeight: Target.min },
+  cardInfo: { flex: 1 },
+  suggestedTag: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

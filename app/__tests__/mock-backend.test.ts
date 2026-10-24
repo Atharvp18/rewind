@@ -679,3 +679,35 @@ describe('cart item review', () => {
     await expect(m.command('yes', ask.voice.prompt_id)).rejects.toMatchObject({ code: 'E_PROMPT_EXPIRED' });
   });
 });
+
+// Proposed (business spec 6.6, stretch): invoices for the purchase history.
+describe('payment history', () => {
+  it('seeds mock invoices with store details, integer money, and a fixed-rate tax estimate', async () => {
+    const list = await m.getPaymentHistory();
+    expect(list.length).toBeGreaterThan(0);
+    for (const inv of list) {
+      expect(inv.store.phone).toMatch(/555/); // fictional numbers only (business spec 6.6)
+      expect(inv.total_cents).toBe(inv.subtotal_cents + inv.tax_cents);
+      expect(inv.tax_cents).toBe(Math.round((inv.subtotal_cents * 725) / 10000));
+      expectIntegerMoney(inv);
+    }
+  });
+
+  it('marks eligible items paid with an everyday card as possible reimbursement', async () => {
+    const list = await m.getPaymentHistory();
+    const inv = list.find((i) => i.invoice_id === 'inv_seed_4')!;
+    expect(inv.reimbursable_cents).toBe(899); // Tylenol on Visa; the granola bars are not eligible
+  });
+
+  it('adds an invoice after a completed payment and resets with the demo', async () => {
+    await scanAndAdd();
+    const before = (await m.getPaymentHistory()).length;
+    const prev = await m.checkoutPreview();
+    await m.checkoutConfirm('key-1', prev.voice.prompt_id!);
+    const after = await m.getPaymentHistory();
+    expect(after).toHaveLength(before + 1);
+    expect(after[0].lines.length).toBeGreaterThan(0);
+    await m.resetDemo(1);
+    expect(await m.getPaymentHistory()).toHaveLength(before);
+  });
+});

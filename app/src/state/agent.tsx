@@ -67,7 +67,7 @@ export interface TranscriptLine {
 }
 
 /** Which content the info panel shows over the camera (one screen, tech spec 1.8 redesign). */
-export type PanelView = 'camera' | 'cart' | 'checkout' | 'add_card' | 'profile';
+export type PanelView = 'camera' | 'cart' | 'checkout' | 'add_card' | 'profile' | 'history';
 
 export interface AgentState {
   phase: Phase;
@@ -80,6 +80,8 @@ export interface AgentState {
   captionIsAlert: boolean;
   lastVoice: VoiceRequest | null;
   livePrompt: LivePrompt | null;
+  /** The cart item the agent is asking about; its row slides open to Keep / Remove. */
+  reviewId: string | null;
   lastScan: ScanResponse | null;
   /** Size of the photo behind lastScan, to place its item_bbox on screen. */
   lastPhoto: { width: number; height: number } | null;
@@ -115,6 +117,7 @@ export type Action =
   | { type: 'mic_denied' }
   | { type: 'user_said'; text: string }
   | { type: 'declined'; message: string | null }
+  | { type: 'review'; id: string | null }
   | { type: 'view'; view: PanelView };
 
 const SILENCE_MS = 8_000;
@@ -138,6 +141,7 @@ export const initial: AgentState = {
   captionIsAlert: false,
   lastVoice: null,
   livePrompt: null,
+  reviewId: null,
   lastScan: null,
   lastPhoto: null,
   cart: { groups: [], total_cents: 0 },
@@ -194,6 +198,8 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: null };
     case 'set_prompt':
       return { ...s, livePrompt: a.prompt };
+    case 'review':
+      return { ...s, reviewId: a.id };
     case 'cart':
       return { ...s, cart: a.cart };
     case 'cards':
@@ -441,10 +447,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           break;
         case 'review_item':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
+          dispatch({ type: 'review', id: res.item_id ?? null });
           break;
         case 'review_done':
           // The review is over (or the cart emptied): close the cart and leave the camera clear.
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
+          dispatch({ type: 'review', id: null });
           dispatch({ type: 'view', view: 'camera' });
           break;
         case 'read_cart':
@@ -729,6 +737,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       try {
         const res = await api.reviewCartItem(itemId);
         dispatch({ type: 'cart', cart: res.cart });
+        dispatch({ type: 'review', id: res.item_id ?? null });
         say(res.voice);
       } catch (e) {
         handleError(e);
