@@ -1,6 +1,6 @@
 # Rewind: Technical Specification
 
-**Derived from:** `doc/2026-10-23-rewind-final-review.md` (business spec, sections 1–24)
+**Derived from:** `specs/business_specs.md` (business spec, sections 1–24; formerly `doc/2026-10-23-rewind-final-review.md`)
 **Based on:** Atharv's technical spec draft, adapted for a Supabase-only database and trimmed to what a three-person team can build in one weekend.
 **Status:** Implementation-ready. Each owner can build their part in parallel without blocking the others.
 **Audience:** Nak, Tiea, Atharv.
@@ -68,16 +68,22 @@ rewind/
   doc/
     2026-10-23-rewind-final-review.md     business spec
     2026-10-23-rewind-technical-spec.md   this file
-  app/                                     NAK owns everything here
-    App.tsx
+  app/                                     NAK owns everything here (Expo Router, SDK 57)
     src/
-      screens/          Home, Scan, Cart, Checkout, Settings
-      components/       shared UI
+      app/              routes: index (Home), scan, cart, checkout, settings, _layout
+      components/       shared UI (Screen, VoiceDock, CaptionBar, AccessibilityButton, ...)
+      constants/
+        theme.ts        color tokens per theme, type scale, spacing, target sizes (1.9)
       lib/
-        api.ts          the only file that talks to the backend
+        api.ts          the only file that talks to the backend (0.5 types, 0.6 endpoints)
+        api-error.ts    the 0.6 error envelope
+        mock-backend.ts offline stand-in used by api.ts when USE_MOCK is true
         audio.ts        mic capture, playback queue
-        a11y.ts         screen reader detection, settings context
-      state/            app state machine
+        a11y.tsx        screen reader detection, settings context
+        money.ts        integer-cents formatting
+        phrases.ts      the only lines the app speaks itself (Looking., welcome back, offline)
+      state/
+        agent.tsx       the 1.2 state machine (reducer) and its provider
   backend/
     main.py                               ATHARV  FastAPI app + router registration
     models/
@@ -469,6 +475,164 @@ Also required:
 - The connection recovers from a 3-minute idle period with no user action.
 - Captions match every spoken line.
 - The largest text size clips nothing on any screen.
+
+## 1.8 Interface plan
+
+### Layout principles
+
+1. **Voice first, screen second.** Every screen works with the eyes closed. The screen exists for partial sight, captions, and tap fallbacks.
+2. **Same place, every screen.** Low-vision users navigate by position. Three things never move:
+   - **Top right:** the accessibility button (decision 12).
+   - **Top, below the header:** the caption bar (what the agent last said).
+   - **Bottom:** the half-moon dock with the round **Talk** button in the center.
+3. **One primary action per screen**, full width, directly above the dock, within thumb reach.
+4. **No tabs, no small icons.** Navigation is a stack. Every screen has a large labeled Back button top left, and "go to cart", "checkout" and similar spoken commands navigate too.
+5. **Nothing scrolls horizontally, nothing has a fixed height.** Text wraps at 200%; long screens scroll vertically.
+
+### Persistent frame (every screen)
+
+```
+┌────────────────────────────────────┐
+│ [‹ Back]      Screen title    [⚙ A]│  header: Back 56pt, accessibility button 56pt
+├────────────────────────────────────┤
+│ 🔊 "I see Advil, ibuprofen 200mg,   │  caption bar: last spoken line, live region
+│    $12.99. HSA eligible..."         │
+├────────────────────────────────────┤
+│                                    │
+│          screen content            │
+│                                    │
+│ [      PRIMARY ACTION (72pt)     ] │
+│    ╭──────────────────────────╮    │
+│   ╱   [Cart]   ( TALK )  [Scan] ╲  │  half-moon dock, navy; Talk is a 104pt amber circle
+└────────────────────────────────────┘
+```
+
+**Talk button behavior:** tap = agent asks "How may I help you today?" and listens (push-to-talk window); hold = push-to-talk while held. While the agent speaks, a tap interrupts it (barge-in). State is shown with text under the button ("Tap to talk", "Listening…", "Speaking…", "Looking…"), never by color alone.
+
+**Accessibility button:** short tap repeats the last prompt with a haptic pulse; long press opens Settings. VoiceOver label: "Accessibility. Tap to repeat the last message. Double tap and hold for settings."
+
+### Screens
+
+**Home (`/`)**
+```
+│ Rewind                         [A] │
+│ caption: "How may I help you today?"│
+│ ┌───────────────┐┌───────────────┐ │
+│ │  📷 Scan item  ││ 🛒 Cart · 2   │ │  two 120pt tiles
+│ └───────────────┘└───────────────┘ │
+│ HSA card   $340.00                  │  balances, large type
+│ Visa credit $5,000.00               │
+│ "Simulated payments · mock data"    │  always visible, required by 0.1 #1
+│            dock                     │
+```
+
+**Scan (`/scan`)**: the camera fills the content area. Tapping anywhere on the preview captures (tap-anywhere for tremor). The barcode reader runs continuously and attaches the digits to the next capture. After a scan, a result card slides over the lower half of the preview:
+
+```
+│ ┌────────────────────────────────┐ │
+│ │ Advil Ibuprofen 200mg          │ │  name, 28pt bold
+│ │ $12.99                         │ │  price, 44pt
+│ │ [✓ HSA eligible · high conf.]  │ │  badge: icon + text + color
+│ │ Pays with: HSA card ($340.00)  │ │
+│ │ [ ✓ Add to cart ] [ ✕ Skip ]   │ │  72pt, tap equivalents of "add that"/"skip it"
+│ └────────────────────────────────┘ │
+```
+
+A badge is always icon + words: ✓ "HSA eligible", ✕ "Not HSA eligible", ? "Could not confirm eligibility". When `decision == ask_user`, the card shows one large button per card in `card_options`. A `partial` result says "Price not found" in place of a price, never a guessed number. Permission denied shows a full-screen explanation, an "Open settings" button, and a "Say the product name" fallback.
+
+**Cart (`/cart`)**: one block per card group: card nickname and balance, items (name and price, one per row), subtotal. Footer line "Total $23.47 before tax". Primary action: **Checkout**. Secondary: "Remove last item" and "Clear cart" (the second asks again, by voice and a second tap).
+
+**Checkout (`/checkout`)**: the preview split read aloud and shown as the same groups, plus any `issues` (reroute proposals) in a bordered warning block with a ⚠ icon and the amounts written out. Primary action: **Confirm payment**. After success: a large ✓ "Payment complete", new balances, "This was a simulated payment". A low-balance alert renders as a bordered alert block and is announced with priority.
+
+**Settings (`/settings`)**: grouped, each option a full-width row with a 56pt control: Display (Standard / Dark / High contrast; Text size 100–200% in 25% steps with live preview), Captions (on/off), Voice (speech rate slow/normal/fast; volume), Input (push-to-talk vs. continuous), Motion (reduce motion), Cards (read-only list from `/v1/cards`, labeled mock). Changes apply instantly and persist in AsyncStorage.
+
+**Health banner**: if `/v1/health` reports any upstream `down`, a bordered banner under the caption bar names it in words ("Voice service is down. Using phone voice.").
+
+## 1.9 Design system and color (WCAG 2.2 AA)
+
+### Brand direction
+
+Calm, trustworthy, signage-like. **Deep navy** for structure and trust, **amber** for the one thing you must find (the Talk button), warm off-white so the screen does not glare in store lighting. Navy and amber are a blue/orange pair, which stays distinct for red-green and blue-yellow colour vision deficiencies.
+
+Status colors are chosen from a colour-blind-safe set (teal-green, vermillion, indigo), and **every status also carries an icon and words** (1.4.1). Color is never the only signal.
+
+### Tokens and measured contrast
+
+Ratios computed with the WCAG 2.2 relative luminance formula. AA needs 4.5:1 for text and 3:1 for UI component boundaries (1.4.11). Every text pair below also meets AAA (7:1) except where noted.
+
+**Standard (light)**
+
+| Token | Hex | Pair | Ratio |
+|---|---|---|---|
+| `bg` | `#F7F5F0` | `text` on `bg` | 16.3 |
+| `surface` | `#FFFFFF` | `text` on `surface` | 17.8 |
+| `text` | `#14181F` | | |
+| `textMuted` | `#4A5260` | on `surface` | 7.9 |
+| `primary` (navy) | `#123E6B` | white on `primary` | 10.9 |
+| `accent` (amber) | `#F2A900` | `text` on `accent` | 8.9 |
+| | | `accent` on `primary` (Talk button on dock) | 5.4 |
+| `border` | `#6B7280` | on `surface` | 4.8 |
+| `eligible` / `eligibleBg` | `#0B6E4F` / `#E3F4EC` | | 5.5 (AA) |
+| `notEligible` / `notEligibleBg` | `#B23A0E` / `#FCEBE3` | | 5.2 (AA) |
+| `unconfirmed` / `unconfirmedBg` | `#4C4F9A` / `#ECECF8` | | 6.2 (AA) |
+| `danger` | `#B3261E` | on `surface` | 6.5 (AA) |
+
+Amber on the light background is only 1.8:1, so **amber never sits directly on `bg`**. It appears only on the navy dock, or with a 3px `text`-colored ring.
+
+**Dark**
+
+| Token | Hex | Ratio |
+|---|---|---|
+| `bg` / `surface` | `#0E141B` / `#1A232E` | |
+| `text` | `#F3F4F6` | 16.8 on `bg` |
+| `textMuted` | `#B8C0CC` | 8.7 on `surface` |
+| `primary` | `#8CC4FF` | 10.1 on `bg` |
+| `accent` | `#FFC233` | 9.8 on `surface` |
+| `eligible` / `notEligible` / `unconfirmed` | `#5BD6A6` / `#FF9B73` / `#B7B9FF` | 7.6 to 8.8 on their tinted backgrounds |
+
+**High contrast** (targets AAA 1.4.6): pure black `#000000`, white text and 2px white borders on every control, yellow `#FFE000` for primary and accent (15.9:1), status colors `#7CFFB2` / `#FFB38A` / `#C9CBFF` (12 to 17:1). Tinted status backgrounds are dropped; status chips become black with a colored 2px border.
+
+### Type scale
+
+System font (San Francisco / Roboto). Sizes are at 100%; the in-app text size setting multiplies them (100–200%), on top of the OS Dynamic Type setting.
+
+| Role | Size / weight | Use |
+|---|---|---|
+| `display` | 44 / 800 | Price on the result card |
+| `title` | 30 / 700 | Screen titles, product name |
+| `heading` | 24 / 700 | Group headings |
+| `body` | 20 / 400 | Default text (larger than platform default, for older eyes) |
+| `label` | 20 / 700 | Button labels |
+| `caption` | 22 / 500 | Caption bar |
+| `small` | 17 / 500 | Footnotes ("simulated", "before tax"); never smaller |
+
+Line height 1.35×. Never all-caps for meaning; never italic for meaning.
+
+### Size and spacing
+
+| Element | Size | WCAG minimum |
+|---|---|---|
+| Any tappable control | ≥ 56 × 56 pt | 24 × 24 (2.5.8 AA) |
+| Primary action button | 72 pt tall, full width | |
+| Talk button | 104 pt circle | |
+| Spacing between targets | ≥ 12 pt | |
+| Focus indicator | 3 pt ring in `focus` color | 2.4.7 (AA), 2.4.13 (AAA) guidance |
+
+Spacing scale 4 / 8 / 12 / 16 / 24 / 32 / 48. Corner radius 16 for cards, full round for the Talk button.
+
+### Motion
+
+Result card slides in over 200 ms; with Reduce Motion (OS or in-app) it appears instantly. Nothing flashes (2.3.1). The listening indicator is a static ring plus text, not a pulse, when Reduce Motion is on.
+
+### Implementation notes (deviations to agree)
+
+- **Camera frames:** `expo-camera` `takePictureAsync` writes the capture to the app cache, and the resize step writes another. The app deletes both files immediately after upload, so frames are not kept, but strictly they touch disk for under a second. Decision 14 should read "never retained" unless the team wants to research an in-memory path.
+- **Contract gaps in 0.6 (need Atharv's agreement, not changed here):**
+  1. The shape of a cart item inside `groups[].items` is not defined. The app assumes `{id, scan_id, display_name, amount_cents, eligibility_label}`, taken from the `cart_items` table.
+  2. `/v1/command` returns `action` but the values are not listed. The app handles `add_item`, `skip`, `repeat`, `read_cart`, `checkout_preview`, `checkout_confirmed`, `remove_last`, `confirm_clear_cart`, `cart_cleared`, `open_settings`, `unknown`, and treats anything else as "just speak the voice".
+  3. Saying "yes" at checkout: 3.8 lists "yes" only for a live `confirm_add` prompt. The app sends "yes" with a live `confirm_checkout` or `confirm_clear_cart` prompt to `/v1/command` too, and expects `checkout_confirmed` / `cart_cleared` back.
+  4. Checkout `issues[]` items are not defined. The app assumes `{rule, message}` and shows `message` verbatim.
+- **Mock backend:** `lib/api.ts` has a `USE_MOCK` switch that serves the run 1 / run 2 demo script from `lib/mock-backend.ts` so the app can be built and tested before the backend is up. All wording in the mock is copied from 4.4; the real backend's `compose.py` remains the only source of spoken wording in production.
 
 ---
 
