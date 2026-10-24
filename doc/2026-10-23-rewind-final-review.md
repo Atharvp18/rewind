@@ -8,6 +8,8 @@
 - **(estimate):** a planning figure, not a measurement
 - **(secondary source):** confirmed only through a third-party page
 
+**Terminology rule:** where this document says HSA alone, the feature must work for both HSA and FSA
+
 ---
 
 ## 1. Overview
@@ -95,6 +97,7 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 | Apify | Selected | Offline catalog only. Bright Data and Context.dev are not used |
 | Fetch.ai | Integrated | Necessary |
 | Meta | Stretch | Community feature only |
+| Bitdeer, Atlassian, Wajo, Greptile | Not planned | Not on the demo path |
 
 **Anthropic judging criteria**
 
@@ -156,9 +159,9 @@ Sponsor details come from sponsor announcements. Full track briefs were not read
 
 1. The user points the phone at a product
 2. Claude vision returns product name, price, category, and confidence
-3. The app classifies the item as "may be HSA eligible" or "not likely HSA eligible"
+3. The app classifies the item as "HSA eligible" or "is not HSA eligible" and displays the confidence with it. The confidence display is required because HSA/FSA eligible items are marked publicly (team assumption: posters and tags on Walmart and Amazon listings). Sources to back this assumption are still needed (unverified)
 4. If the item is a medication, the app checks the selected insurer profile
-5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation
+5. The agent speaks item, price, eligibility, and card balance, then asks for confirmation. For a medication with a plan copay, the agent also states the copay and the remaining charge after the copay, and suggests that the remaining charge go to the HSA/FSA. The team's basis is that an item covered through insurance is HSA/FSA eligible (unverified)
 6. The user confirms by voice, and the item joins a cart grouped by payment method
 
 **Medication wording** (all estimates; always end with a pharmacist check)
@@ -185,16 +188,53 @@ Prescriptions are scanned from the pill bottle label, then the agent reads the d
 |---|---|---|
 | Item too large | One item exceeds a card's balance | Suggest another card for that item |
 | Group too large | A card's total exceeds its balance | Suggest moving items or adding a second card; say the amounts aloud |
-| Nothing covers it | No card has sufficient balance | Say so clearly; do not choose for the user |
+| Nothing covers it | No card has sufficient balance | Say so clearly and say "Please use a credit card for this item" |
 
 - The user confirms every change by voice
 - After a purchase, speak an alert when any balance crosses a threshold
 
-### 6.5 Voice Commands
+### 6.5 Interface and Voice Interaction
 
-Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "remove last item"
+This section groups the interface details by screen element so design and build share one reference. Phases and owners are proposed and need confirmation (see section 17).
 
-"Repeat that" helps users with memory difficulties.
+**A. Home screen**
+
+- A large circular button sits in a half-moon drawer near the bottom of the screen
+- When the user taps the button, the agent greets them by voice: "How may I help you today?"
+- A backup button sits at the bottom of the interface. When tapped, the device vibrates and the agent asks its questions again
+
+**B. Scan result presentation** (see section 6.2)
+
+- The screen and the voice both give item, price, eligibility with confidence, and card balance
+- For a medication with a plan copay, they also give the copay and the remaining charge after the copay
+- "HSA eligible" and "is not HSA eligible" are the two labels, each shown with confidence
+
+**C. Voice commands**
+
+- Core: "add that", "skip it", "read it again", "what's in my cart", "checkout", "remove last item"
+- "Repeat that" helps users with memory difficulties
+- Eligibility lookup uses Moss only. Apify is not used for eligibility
+
+**D. Memory support**
+
+- If the agent is speaking to the user about a prescription and the user pauses for 5 to 10 seconds, the agent asks "Would you like to purchase anything?" The purpose is to help the user remember and return to the previous conversation
+
+**E. Purchase history pop-up** (depends on the payment history in section 6.6)
+
+- If the user says "I want to buy Tylenol," a pop-up shows how many times the user has bought it in the previous week, month, and year, and where
+- When a payment is made, the invoice records the address of the store
+
+| Element | Group | Proposed phase | Proposed owner |
+|---|---|---|---|
+| Half-moon drawer and circular button | A | Should | Nak |
+| Greeting by voice | A | Should | Nak |
+| Backup button with vibration and repeated questions | A | Should | Nak |
+| Scan result labels with confidence | B | Must | Tiea (classification), Nak (screen) |
+| Copay and remaining charge speech | B | Should | Tiea (copay logic), Nak (voice) |
+| Voice commands | C | Must | Nak |
+| Pause prompt | D | Should | Nak |
+| Purchase history pop-up | E | Stretch | Atharv (data), Nak (screen) |
+| Invoice store address | E | Stretch | Atharv |
 
 ### 6.6 Payment History and Reimbursement Packet (stretch)
 
@@ -470,7 +510,14 @@ The earlier draft referenced this section but did not include it. The items belo
 8. **Accessibility button scope and owner.** Which setting groups in section 6.7 are Should versus Stretch, and whether Nak owns the build (provisional, follows screens and shared components). The cut order in section 13 does not yet place this feature
 9. **Settings storage.** On device or in the database (Atharv). Not decided
 10. **Apify scope.** Apify is now the selected scraper track (Tiea). Section 5 still lists the Apify catalog as cut from the requirements, with about 30 hand-built products as the default. Confirm whether Apify stays optional or moves to Should
-11. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
+11. **Interface phases and owners.** The table in section 6.5 assigns phases and owners that you did not state. Confirm or change them
+12. **Store address versus the no-tracking rule.** Section 6.5 group E records the store address on the invoice and shows where past purchases were made. Section 6.6 says no tracked locations, and section 12 says no automatic store assignment from scan history. Decide how store address is entered (for example chosen by the user or taken from seeded mock data) so it does not conflict
+13. **Eligibility wording.** Section 6.2 now uses "HSA eligible" and "is not HSA eligible" with confidence. Section 6.2 medication wording, section 8 (demo script), and section 10 (failure modes) still use "may be eligible, check your plan." Decide whether to align them
+14. **Two buttons.** Section 6.7 describes the accessibility button. Section 6.5 group A describes a backup button with vibration. Confirm whether they are the same button or separate
+15. **Insurance and HSA/FSA eligibility.** The team basis that an insured item is HSA/FSA eligible is unverified. It needs a source before it is stated to judges
+16. **Nothing covers it.** Section 6.4 no longer says "do not choose for the user." Confirm that the credit card suggestion still requires voice confirmation, as the section states for every change
+17. **Public eligibility sources.** The assumption about posters and tags on Walmart and Amazon listings needs cited sources
+18. **Figma track.** Section 4 rates Figma as plausible (wireframes and design system). Confirm that the team can still cover the design system work
 
 ---
 
