@@ -288,13 +288,12 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
 }
 
 /** What the caller is listening for, so the mock (which cannot hear) can answer sensibly. */
-export type SttHint = 'name' | 'yes_no' | 'card_type';
+export type SttHint = 'yes_no' | 'card_type';
 
 export async function stt(hint?: SttHint): Promise<SttResponse> {
-  // No real speech recognition offline: answer with a fixed demo name, "yes"
-  // to a live question, otherwise ask about the cart.
+  // No real speech recognition offline: "yes" to a live question, a card type
+  // when asked, otherwise ask about the cart.
   await wait(400);
-  if (hint === 'name') return { transcript: 'Alex Rivera', confidence: 0.93 };
   if (hint === 'yes_no') return { transcript: 'yes', confidence: 0.95 };
   if (hint === 'card_type') return { transcript: 'credit card', confidence: 0.95 };
   return { transcript: livePrompt() ? 'yes' : "what's in my cart", confidence: 0.95 };

@@ -20,10 +20,10 @@ import { useAgent } from '@/state/agent';
 type Step =
   | 'perm_camera'
   | 'perm_mic'
-  | 'name'
-  | 'name_confirm'
   | 'phone'
   | 'insurance'
+  | 'name_confirm'
+  | 'name_type'
   | 'insurance_confirm'
   | 'payment'
   | 'payment_type'
@@ -57,9 +57,8 @@ function nicknameFor(type: Card['type'], network: CardNetwork | null, kind?: 'cr
   return `${brand} ${kind ?? 'credit'}`;
 }
 
-function splitName(transcript: string): { first: string; last: string } | null {
-  const words = transcript
-    .replace(/^(my name is|i am|i'm|it's|this is)\s+/i, '')
+function splitName(typed: string): { first: string; last: string } | null {
+  const words = typed
     .replace(/[^A-Za-z\u00C0-\u024F\s'-]/g, '') // letters incl. accents; no \p{} (Hermes)
     .trim()
     .split(/\s+/)
@@ -73,6 +72,10 @@ function splitName(transcript: string): { first: string; last: string } | null {
  * Frame 1: voice-guided first launch. Every step is spoken, captioned, and has
  * tap buttons, so it works by voice, by touch, or with a screen reader.
  * The camera stays live underneath so cards can be framed.
+ *
+ * Rewind never asks for the user's name. It reads the name from the insurance
+ * card and clarifies it in a pop-up ("Your name is Alex Rivera. Is that
+ * right?"); a wrong name can be fixed by scanning again or typing it.
  */
 export function OnboardingFlow({
   camera,
@@ -100,7 +103,6 @@ export function OnboardingFlow({
   // During onboarding the first card asked for is the HSA/FSA card; when adding later it can be any card.
   const firstCard = !startAt;
   const [name, setName] = useState<{ first: string; last: string } | null>(null);
-  const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
   const [insurance, setInsurance] = useState<Insurance | null>(null);
   const [payment, setPayment] = useState<Payment | null>(null);
@@ -112,7 +114,7 @@ export function OnboardingFlow({
   // Skip the mic step when already granted.
   useEffect(() => {
     if (step !== 'perm_mic') return;
-    getRecordingPermissionsAsync().then((p) => p.granted && setStep('name'));
+    getRecordingPermissionsAsync().then((p) => p.granted && setStep('phone'));
   }, [step]);
 
   // Speak each step as it appears.
@@ -126,17 +128,12 @@ export function OnboardingFlow({
     const line: Partial<Record<Step, string>> = {
       perm_camera: Say.cameraWhy,
       perm_mic: Say.micWhy,
-      name: Say.askName,
-      name_confirm: name ? Say.confirmName(`${name.first} ${name.last}`.trim()) : undefined,
       phone: DEMO_MODE ? Say.phoneDemo(DEMO_PHONE) : undefined,
+      name_confirm: name ? Say.confirmCardName(`${name.first} ${name.last}`.trim()) : undefined,
+      name_type: Say.typeName,
       insurance: Say.askInsurance,
       insurance_confirm: insurance
-        ? Say.confirmInsurance(
-            insurance.insurer_name,
-            insurance.plan_name,
-            [insurance.member_first_name, insurance.member_last_name].filter(Boolean).join(' ') || null,
-            !!insurance.rx,
-          )
+        ? Say.confirmInsurance(insurance.insurer_name, insurance.plan_name, !!insurance.rx)
         : undefined,
       payment: Say.askPayment(cardsAdded === 0 && firstCard),
       payment_type: Say.askCardType,
@@ -155,8 +152,7 @@ export function OnboardingFlow({
     const yesNo = (onYes: () => void, onNo: () => void) => (t: string) =>
       YES.test(t) ? onYes() : NO.test(t) ? onNo() : sayLocal("Please say yes or no.");
     const handlers: Partial<Record<Step, [api.SttHint | undefined, (t: string) => void]>> = {
-      name: ['name', (t) => onName(t)],
-      name_confirm: ['yes_no', yesNo(confirmName, () => setStep('name'))],
+      name_confirm: ['yes_no', yesNo(() => saveName(name), () => setStep('name_type'))],
       phone: ['yes_no', () => setStep('insurance')],
       insurance_confirm: ['yes_no', yesNo(confirmInsurance, () => setStep('insurance'))],
       payment_type: [
@@ -185,24 +181,23 @@ export function OnboardingFlow({
 
   // --- step actions ---------------------------------------------------------
 
-  function onName(t: string) {
-    const n = splitName(t);
-    if (!n) {
-      sayLocal(Say.nameAgain);
-      return;
-    }
+  /** Save the confirmed (or typed) name, thank the user by name, then show the rest of the card. */
+  function saveName(n: { first: string; last: string } | null) {
+    if (!n) return;
     setName(n);
-    setTyping(false);
-    setStep('name_confirm');
+    update({ firstName: n.first, lastName: n.last });
+    sayLocal(Say.greet(n.first));
+    setStep(insurance ? 'insurance_confirm' : 'payment');
   }
 
-  function confirmName() {
-    if (!name) return;
-    update({ firstName: name.first, lastName: name.last });
-    // Say the user's name out loud the first time they onboard.
-    sayLocal(Say.greet(name.first));
+  function onTypedName() {
+    const n = splitName(typed);
+    if (n) saveName(n);
+  }
+
+  function verifyPhone() {
     if (DEMO_MODE) update({ phone: DEMO_PHONE, phoneVerified: true });
-    setStep('phone');
+    setStep('insurance');
   }
 
   async function takeCard() {
@@ -221,7 +216,14 @@ export function OnboardingFlow({
       }
       if (kind === 'insurance' && res.insurance) {
         setInsurance(res.insurance);
-        setStep('insurance_confirm');
+        const first = res.insurance.member_first_name?.trim();
+        if (first) {
+          setName({ first, last: res.insurance.member_last_name?.trim() ?? '' });
+          setStep('name_confirm');
+        } else {
+          // No name printed or readable: let the user type it (optional).
+          setStep('name_type');
+        }
       } else if (kind === 'payment' && res.payment) {
         setPayment(res.payment);
         setDebitOrCredit(res.payment.funding ?? undefined);
@@ -287,7 +289,7 @@ export function OnboardingFlow({
     </View>
   );
 
-  const step1of = (n: number) => <PanelText kind="small" muted>{`Step ${n} of 5`}</PanelText>;
+  const step1of = (n: number) => <PanelText kind="small" muted>{`Step ${n} of 4`}</PanelText>;
 
   switch (step) {
     case 'perm_camera':
@@ -326,66 +328,78 @@ export function OnboardingFlow({
             size="primary"
             onPress={async () => {
               await requestRecordingPermissionsAsync();
-              setStep('name');
+              setStep('phone');
             }}
           />
-          <BigButton label="Use buttons only" onPress={() => setStep('name')} />
-        </InfoPanel>
-      );
-
-    case 'name':
-      return (
-        <InfoPanel title="Welcome to Rewind">
-          {step1of(1)}
-          <PanelText>What’s your first and last name? Tap the round Talk button below and say it.</PanelText>
-          {typing ? (
-            <>
-              <NameInput value={typed} onChange={setTyped} onSubmit={() => onName(typed)} />
-              <BigButton label="Done" variant="primary" size="primary" onPress={() => onName(typed)} disabled={!typed.trim()} />
-            </>
-          ) : (
-            <BigButton label="Type my name instead" icon="keyboard" onPress={() => setTyping(true)} />
-          )}
-        </InfoPanel>
-      );
-
-    case 'name_confirm':
-      return (
-        <InfoPanel title="Is this your name?">
-          {step1of(1)}
-          <PanelText kind="display">{`${name?.first ?? ''} ${name?.last ?? ''}`.trim()}</PanelText>
-          {yesNoButtons(confirmName, () => setStep('name'))}
+          <BigButton label="Use buttons only" onPress={() => setStep('phone')} />
         </InfoPanel>
       );
 
     case 'phone':
       return (
-        <InfoPanel title={`Nice to meet you, ${profile.firstName || name?.first || ''}`}>
-          {step1of(2)}
+        <InfoPanel title="Welcome to Rewind">
+          {step1of(1)}
           <Notice icon="verified" color="eligible" kind="label">
             This phone is verified.
           </Notice>
           <PanelText kind="small" muted>
             {`Prototype: verified with the demo number ${DEMO_PHONE}. No text message is sent.`}
           </PanelText>
-          <BigButton label="Continue" icon="next" variant="primary" size="primary" onPress={() => setStep('insurance')} />
+          <BigButton label="Continue" icon="next" variant="primary" size="primary" onPress={verifyPhone} />
         </InfoPanel>
       );
 
     case 'insurance':
       return (
         <InfoPanel title="Your insurance card">
-          {step1of(3)}
+          {step1of(2)}
           <PanelText>Hold your insurance card flat, about a hand length from the phone. Then tap anywhere on the screen.</PanelText>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton label="Skip for now" onPress={() => setStep('payment')} />
         </InfoPanel>
       );
 
+    case 'name_confirm':
+      // Same compact pop-up as the prescription read-back, pointing at the card.
+      return (
+        <InfoPanel anchored label="Name from your insurance card">
+          <PanelText kind="small" muted>
+            From your insurance card · is this your name?
+          </PanelText>
+          <PanelText kind="title">{`${name?.first ?? ''} ${name?.last ?? ''}`.trim()}</PanelText>
+          <View style={styles.row}>
+            <View style={styles.grow}>
+              <BigButton label="Yes" icon="check" variant="primary" onPress={() => saveName(name)} />
+            </View>
+            <View style={styles.grow}>
+              <BigButton label="No" icon="close" onPress={() => setStep('name_type')} />
+            </View>
+          </View>
+        </InfoPanel>
+      );
+
+    case 'name_type':
+      return (
+        <InfoPanel anchored title="What’s your name?">
+          <PanelText kind="small" muted>
+            Type it, or scan the card again.
+          </PanelText>
+          <NameInput value={typed} onChange={setTyped} onSubmit={onTypedName} />
+          <View style={styles.row}>
+            <View style={styles.grow}>
+              <BigButton label="Save" icon="check" variant="primary" onPress={onTypedName} disabled={!typed.trim()} />
+            </View>
+            <View style={styles.grow}>
+              <BigButton label="Scan again" icon="retry" onPress={() => setStep('insurance')} />
+            </View>
+          </View>
+        </InfoPanel>
+      );
+
     case 'insurance_confirm':
       return (
-        <InfoPanel title="Is this your insurance?">
-          {step1of(3)}
+        <InfoPanel anchored title="Is this your insurance?">
+          {step1of(2)}
           {insurance ? <InsuranceSummary card={insurance} /> : null}
           {yesNoButtons(confirmInsurance, () => setStep('insurance'))}
         </InfoPanel>
@@ -394,7 +408,7 @@ export function OnboardingFlow({
     case 'payment':
       return (
         <InfoPanel title={cardsAdded === 0 && firstCard ? 'Your HSA or FSA card' : 'Your next card'}>
-          {startAt ? null : step1of(4)}
+          {startAt ? null : step1of(3)}
           <PanelText>
             {cardsAdded === 0 && firstCard
               ? 'Hold your HSA or FSA card flat, about a hand length from the phone. Then tap anywhere on the screen.'
@@ -410,8 +424,8 @@ export function OnboardingFlow({
 
     case 'payment_type':
       return (
-        <InfoPanel title="What kind of card is this?">
-          {step1of(4)}
+        <InfoPanel anchored title="What kind of card is this?">
+          {step1of(3)}
           <View style={styles.buttons}>
             <BigButton label="HSA card" variant="primary" onPress={() => chooseType('hsa')} />
             <BigButton label="FSA card" variant="primary" onPress={() => chooseType('fsa')} />
@@ -423,8 +437,8 @@ export function OnboardingFlow({
 
     case 'payment_confirm':
       return (
-        <InfoPanel title="Is this your card?">
-          {step1of(4)}
+        <InfoPanel anchored title="Is this your card?">
+          {step1of(3)}
           <PanelText kind="heading">
             {payment?.card_type ? nicknameFor(payment.card_type, payment.network, debitOrCredit) : ''}
           </PanelText>
@@ -439,7 +453,7 @@ export function OnboardingFlow({
     case 'payment_more':
       return (
         <InfoPanel title="Card added">
-          {step1of(4)}
+          {step1of(3)}
           <PanelText>Do you want to add another card?</PanelText>
           <View style={styles.buttons}>
             <BigButton label="Add another card" icon="add" variant="primary" size="primary" onPress={() => setStep('payment')} />
@@ -451,7 +465,7 @@ export function OnboardingFlow({
     case 'done':
       return (
         <InfoPanel title={`You're all set, ${profile.firstName || name?.first || ''}`}>
-          {step1of(5)}
+          {step1of(4)}
           <PanelText>Point your phone at a product and tap anywhere to scan. Your cards and settings are under the round button at the top right.</PanelText>
           <BigButton label="Start shopping" icon="next" variant="primary" size="primary" onPress={finish} />
         </InfoPanel>
@@ -484,6 +498,8 @@ function NameInput({ value, onChange, onSubmit }: { value: string; onChange: (s:
 
 const styles = StyleSheet.create({
   buttons: { gap: Spacing.md },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  grow: { flexGrow: 1, flexBasis: 110 },
   input: {
     minHeight: Target.min,
     borderWidth: 2,

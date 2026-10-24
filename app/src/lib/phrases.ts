@@ -34,19 +34,15 @@ export const Onboarding = {
     'Rewind uses your camera to read product labels, prices, and your cards. Photos are not saved. Tap Allow camera, then choose Allow.',
   micWhy:
     'Rewind uses your microphone so you can talk to it. It only listens while you tap or hold the round button. Tap Allow microphone, then choose Allow.',
-  askName:
-    "Hi, I'm Rewind. I tell you what a product is, what it costs, and which card to pay with. What's your first and last name? Tap the round button at the bottom and say your name.",
-  confirmName: (full: string) => `I heard ${full}. Is that right?`,
-  nameAgain: "Let's try again. Tap the round button and say your first and last name.",
-  greet: (first: string) => `Nice to meet you, ${first}.`,
+  confirmCardName: (full: string) => `Your name is ${full}. Is that right?`,
+  typeName: "I couldn't confirm your name from the card. Please type it, or scan the card again.",
+  greet: (first: string) => `Thank you, ${first}.`,
   phoneDemo: (phone: string) =>
-    `This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
+    `Hi, I'm Rewind. I tell you what a product is, what it costs, and which card to pay with. This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
   askInsurance:
     'Now your insurance card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
-  confirmInsurance: (insurer: string, plan: string | null, member: string | null, hasRx: boolean) =>
-    `I see ${insurer}${plan ? `, ${plan}` : ''}${member ? `, for ${member}` : ''}.${
-      hasRx ? ' It shows prescription benefits.' : ''
-    } Is that right?`,
+  confirmInsurance: (insurer: string, plan: string | null, hasRx: boolean) =>
+    `Your insurance is ${insurer}${plan ? `, ${plan}` : ''}.${hasRx ? ' It shows prescription benefits.' : ''} Is that right?`,
   askPayment: (first: boolean) =>
     first
       ? 'Now your HSA or FSA card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'

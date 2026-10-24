@@ -650,10 +650,14 @@ Follows the team's 3-frame wireframe. One camera screen replaces the Home / Scan
 
 **Onboarding (frame 1):**
 1. Plain-language reason, then the phone's camera and microphone permission prompts.
-2. Name by voice (or typed), read back, then greeted aloud by first name.
-3. Demo phone verification with one preset mock number (`DEMO_MODE`, `+1 (415) 555-0100`; 555-01xx numbers reach no one).
-4. Insurance card by camera.
-5. HSA/FSA and Visa cards by camera.
+2. Demo phone verification with one preset mock number (`DEMO_MODE`, `+1 (415) 555-0100`; 555-01xx numbers reach no one).
+3. Insurance card by camera (card-shaped focus corners).
+4. **Name clarification.** Rewind never asks for the name. A pop-up pointing at the card shows the member name read from it. Rewind says "Your name is Alex Rivera. Is that right?"
+   - **Yes:** saves it and thanks the user by first name.
+   - **No:** type the name, or scan again.
+   - **No readable name on the card:** the user can type it.
+5. Insurance and prescription-benefit read-back.
+6. HSA/FSA and Visa cards by camera.
 
 The name and insurance are stored on the phone only.
 
@@ -669,7 +673,7 @@ Measured contrast for every new element: `app/ACCESSIBILITY.md`.
 
 1. **Decision 12 changed.** The persistent top-right button now opens Profile. "Tap to repeat" moved to tapping the caption pill. Long press is no longer used.
 2. **Real insurance and payment cards are scanned** to test text extraction. This conflicts with business spec 6.1 ("no real insurance card is scanned") and the mock-only rule in 0.1 #1. Mitigations: only the last 4 digits ever reach the app, images are deleted after upload, and nothing is logged. The image still reaches the backend and its vision model.
-3. **Name and phone collected at onboarding.** They are not in the specs. The phone number is a fixed mock number; the name stays on the phone.
+3. **Name and phone at onboarding.** Not in the specs. The name comes only from the insurance card and is clarified, never asked for; the phone number is a fixed mock number; both stay on the phone.
 4. **Onboarding wording is app-side** (`lib/phrases.ts`). No endpoint or `compose.py` wording exists for it.
 
 ### What is extracted from cards (team decision 2026-10-24)

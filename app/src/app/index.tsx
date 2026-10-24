@@ -145,8 +145,10 @@ export default function Home() {
   } else if (barcode?.box && !scanShowing) {
     itemBox = inflate(barcode.box, 2.4, { width, height });
   }
-  const guideW = Math.min(width * (cardCapture ? 0.82 : 0.62), MaxContentWidth);
-  const guideH = cardCapture ? guideW / CARD_RATIO : guideW * 1.1;
+  // Onboarding and add-a-card frame a payment-card shape; the pop-ups point at it.
+  const cardMode = onboarding || addingCard || cardCapture;
+  const guideW = Math.min(width * (cardMode ? 0.82 : 0.62), MaxContentWidth);
+  const guideH = cardMode ? guideW / CARD_RATIO : guideW * 1.1;
   const guide: Rect = {
     x: (width - guideW) / 2,
     y: area.y + Math.max(0, (area.h - guideH) / 2),
@@ -154,8 +156,7 @@ export default function Home() {
     h: Math.min(guideH, area.h),
   };
   const showFrame =
-    granted &&
-    (cardCapture || (!onboarding && !addingCard && state.view === 'camera' && !state.declined && !state.receipt));
+    granted && (cardMode || (state.view === 'camera' && !state.declined && !state.receipt));
 
   const hint = autoReady ? (available ? 'Hold steady on an item' : 'Tap the screen to scan') : null;
 
@@ -178,7 +179,7 @@ export default function Home() {
 
       {showFrame ? <FocusFrame box={itemBox ?? guide} tone={itemBox ? tone : 'guide'} /> : null}
 
-      <StageContext.Provider value={{ itemBox: scanShowing ? itemBox : null, area }}>
+      <StageContext.Provider value={{ itemBox: cardMode ? guide : scanShowing ? itemBox : null, area }}>
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           {onboarding ? (
             <OnboardingFlow
