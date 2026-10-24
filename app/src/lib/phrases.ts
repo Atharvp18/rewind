@@ -20,6 +20,8 @@ export const Phrases = {
   micDenied:
     'Microphone access is off. You can still use every button on screen. To talk, allow the microphone in your phone settings.',
   nothingToRepeat: "I haven't said anything yet. Tap Talk to start.",
+  /** The cart review went unanswered: the cart closes. */
+  readyToCheckout: "Okay. Let me know when you're ready to checkout.",
   declinedTitle: 'Payment declined',
   /** The camera could not take a photo (busy, or no camera, as in the simulator). */
   captureFailed: "I couldn't take a photo. Hold the phone steady and tap the screen to try again.",

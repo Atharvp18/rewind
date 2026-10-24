@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { AlertBlock } from '@/components/alert-block';
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
-import { ButtonPair, ButtonRow } from '@/components/button-pair';
+import { ButtonPair } from '@/components/button-pair';
 import { CardArt } from '@/components/card-art';
 import { CardGroupView } from '@/components/card-group';
 import { EligibilityBadge } from '@/components/eligibility-badge';
@@ -278,9 +278,9 @@ function TotalRow({ cents }: { cents: number }) {
 }
 
 function CartPanel() {
-  const { state, startCheckout, removeLast, askClearCart, confirmClearCart, answer, dismiss } = useAgent();
+  const { state, startCheckout, reviewItem, answer, dismiss } = useAgent();
   const { cart } = state;
-  const clearPending = state.livePrompt?.scope === 'confirm_clear_cart';
+  const scope = state.livePrompt?.scope;
 
   if (!cart.groups.length) {
     return (
@@ -291,29 +291,30 @@ function CartPanel() {
   }
   return (
     <InfoPanel title="Your cart" onClose={dismiss}>
+      <PanelText kind="small" muted>
+        Tap an item to hear it again and choose whether to remove it.
+      </PanelText>
       {cart.groups.map((g) => (
-        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} />
+        <CardGroupView key={g.card_id} group={g} card={cardById(state.cards, g.card_id)} onItemPress={reviewItem} />
       ))}
-      {clearPending ? (
-        // Destructive: a second step, bound to the live confirm_clear_cart question.
-        <ButtonPair
-          yes="Clear all"
-          yesA11y="Yes, clear everything"
-          no="Keep"
-          noA11y="No, keep my items"
-          yesVariant="danger"
-          onYes={confirmClearCart}
-          onNo={() => answer('no')}
-        />
-      ) : (
-        <ButtonRow>
-          <BigButton label="Remove last" accessibilityLabel="Remove last item" icon="undo" variant="secondary" stretch onPress={removeLast} />
-          <BigButton label="Clear cart" icon="trash" variant="danger" stretch onPress={askClearCart} />
-        </ButtonRow>
-      )}
       <PanelActions>
         <TotalRow cents={cart.total_cents} />
-        <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
+        {scope === 'confirm_remove_item' ? (
+          // The agent just read an item back: remove it, or keep it.
+          <ButtonPair
+            yes="Remove"
+            yesA11y="Yes, remove it"
+            no="Keep"
+            noA11y="No, keep it"
+            yesVariant="danger"
+            onYes={() => answer('yes')}
+            onNo={() => answer('no')}
+          />
+        ) : scope === 'confirm_review_rest' ? (
+          <ButtonPair yesA11y="Yes, check the rest" noA11y="No, I'm done" onYes={() => answer('yes')} onNo={() => answer('no')} />
+        ) : (
+          <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
+        )}
       </PanelActions>
     </InfoPanel>
   );

@@ -122,7 +122,7 @@ const RX = { name: 'Omeprazole', strength: '20 mg', spoken: 'Omeprazole, 20 mill
 // ---------------------------------------------------------------------------
 
 type StoredItem = CartItem & { card_id: string; seq: number };
-type Prompt = { scope: ResponseScope; scan_id: string | null; expiresAt: number; consumed: boolean };
+type Prompt = { scope: ResponseScope; scan_id: string | null; item_id?: string; expiresAt: number; consumed: boolean };
 type ProposedSplit = { item_id: string; card_id: string }[];
 
 const state = {
@@ -134,6 +134,8 @@ const state = {
   prompts: new Map<string, Prompt>(),
   payments: new Map<string, CheckoutResult>(),
   proposedSplit: null as ProposedSplit | null,
+  /** Items already looked at in the current cart review (tap an item, or answer "look at the rest"). */
+  reviewed: new Set<string>(),
   lastVoice: null as VoiceRequest | null,
 };
 
@@ -153,7 +155,7 @@ const short = (c: Card) => c.nickname.replace(/ card$/, '');
 
 function voice(
   text: string,
-  opts: { prompt?: { scope: ResponseScope; scan_id?: string | null }; priority?: 'alert' | 'normal' } = {},
+  opts: { prompt?: { scope: ResponseScope; scan_id?: string | null; item_id?: string }; priority?: 'alert' | 'normal' } = {},
 ): VoiceRequest {
   let prompt_id: string | null = null;
   if (opts.prompt) {
@@ -161,6 +163,7 @@ function voice(
     state.prompts.set(prompt_id, {
       scope: opts.prompt.scope,
       scan_id: opts.prompt.scan_id ?? null,
+      item_id: opts.prompt.item_id,
       expiresAt: Date.now() + promptTtlMs,
       consumed: false,
     });
@@ -489,6 +492,45 @@ export async function removeLastCartItem(): Promise<CartResponse> {
   return { cart, voice: voice(last ? `Removed ${last.display_name}.` : 'Your cart is empty.') };
 }
 
+/** "You also have two other items." (with the reviewed ones left out). */
+const otherItems = () => state.items.filter((it) => !state.reviewed.has(it.id));
+
+/** Read one item back and ask whether to remove it. */
+export async function reviewCartItem(itemId: string): Promise<CartResponse> {
+  state.reviewed.clear(); // a tap starts a fresh review
+  return reviewNext(itemId);
+}
+
+async function reviewNext(itemId: string): Promise<CartResponse> {
+  await wait(200);
+  const it = state.items.find((i) => i.id === itemId);
+  if (!it) return { cart: buildCart(), voice: voice('That item is no longer in your cart.') };
+  state.reviewed.add(it.id);
+  return {
+    cart: buildCart(),
+    voice: voice(`${it.display_name}, ${spokenBalance(it.amount_cents)}. Do you want to remove it from your cart?`, {
+      prompt: { scope: 'confirm_remove_item', item_id: it.id },
+    }),
+  };
+}
+
+/** After an item is settled: offer the rest, or close the review. */
+function afterReview(prefix: string): CommandResponse {
+  const rest = otherItems();
+  if (!rest.length) {
+    state.reviewed.clear();
+    return { action: 'review_done', result: buildCart(), voice: voice(`${prefix} Let me know when you're ready to checkout.`.trim()) };
+  }
+  const n = rest.length;
+  const word = ['no', 'one', 'two', 'three', 'four', 'five'][n] ?? String(n);
+  const text = `${prefix} You also have ${word} other ${n === 1 ? 'item' : 'items'}. Would you like to check ${n === 1 ? 'it' : 'them'} too?`;
+  return {
+    action: 'review_item',
+    result: buildCart(),
+    voice: voice(text.trim(), { prompt: { scope: 'confirm_review_rest' } }),
+  };
+}
+
 export async function clearCart(promptId: string): Promise<CartResponse> {
   await wait(300);
   consumePrompt(promptId, 'confirm_clear_cart');
@@ -606,6 +648,7 @@ export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart
   state.cards = seedCards(run);
   state.lastVoice = null; // a reset is a fresh start: "repeat that" must not replay the last session
   state.items = [];
+  state.reviewed.clear();
   state.scanIndex = 0;
   state.scans.clear();
   state.prompts.clear();
@@ -644,6 +687,28 @@ export async function command(transcript: string, promptId: string | null): Prom
         `Thank you. ${RX.spoken}. Mock Plan A shows a ${formatCents(RX.copayCents)} copay for this prescription. Please confirm the copay with the pharmacist.`,
       ),
     };
+  }
+  if (live?.scope === 'confirm_remove_item' && has(t, 'yes', 'no', 'keep', 'remove')) {
+    const p = consumePrompt(liveId!, 'confirm_remove_item');
+    const it = state.items.find((i) => i.id === p.item_id);
+    if (has(t, 'yes', 'remove') && it) {
+      state.items = state.items.filter((i) => i.id !== it.id);
+      state.proposedSplit = null;
+      return afterReview(`Removed ${it.display_name}.`);
+    }
+    return afterReview(it ? `Keeping ${it.display_name}.` : '');
+  }
+  if (live?.scope === 'confirm_review_rest' && has(t, 'yes', 'no')) {
+    consumePrompt(liveId!, 'confirm_review_rest');
+    if (has(t, 'yes')) {
+      const next = otherItems()[0];
+      if (next) {
+        const res = await reviewNext(next.id);
+        return { action: 'review_item', result: res.cart, voice: res.voice };
+      }
+    }
+    state.reviewed.clear();
+    return { action: 'review_done', result: buildCart(), voice: voice("Okay. Let me know when you're ready to checkout.") };
   }
   if (has(t, 'yes', 'add that', 'add it')) {
     if (live?.scope === 'confirm_add' && live.scan_id) {

@@ -631,3 +631,51 @@ describe('cards and onboarding data (business spec 6.1, tech spec 3.3)', () => {
     expect(cards.find((c) => c.id === FSA)!.last4).toBe('9999');
   });
 });
+
+// Proposed (approved by Nak 2026-10-24, not in the spec yet): tap a cart item to review it.
+describe('cart item review', () => {
+  const threeItems = async () => {
+    let cart: Cart = { groups: [], total_cents: 0 };
+    for (let i = 0; i < 3; i++) cart = (await scanAndAdd()).cart.cart;
+    return cart;
+  };
+  const items = (c: Cart) => c.groups.flatMap((g) => g.items);
+
+  it('reads the item back and asks; yes removes it, then offers the other items', async () => {
+    const cart = await threeItems();
+    const first = items(cart)[0];
+    const ask = await m.reviewCartItem(first.id);
+    expect(ask.voice.response_scope).toBe('confirm_remove_item');
+    expect(ask.voice.text).toContain(first.display_name);
+    const res = await m.command('yes', ask.voice.prompt_id);
+    expect(items(res.result as Cart)).toHaveLength(2);
+    expect(res.voice.response_scope).toBe('confirm_review_rest');
+    expect(res.voice.text).toMatch(/two other items/);
+  });
+
+  it('no keeps the item; answering no to the rest closes with the checkout line', async () => {
+    const cart = await threeItems();
+    const ask = await m.reviewCartItem(items(cart)[0].id);
+    const kept = await m.command('no', ask.voice.prompt_id);
+    expect(items(kept.result as Cart)).toHaveLength(3);
+    const done = await m.command('no', kept.voice.prompt_id);
+    expect(done.action).toBe('review_done');
+    expect(done.voice.text).toMatch(/ready to checkout/i);
+  });
+
+  it('yes to the rest reviews the next unreviewed item', async () => {
+    const cart = await threeItems();
+    const ask = await m.reviewCartItem(items(cart)[0].id);
+    const kept = await m.command('no', ask.voice.prompt_id);
+    const next = await m.command('yes', kept.voice.prompt_id);
+    expect(next.voice.response_scope).toBe('confirm_remove_item');
+    expect(next.voice.text).not.toContain(items(cart)[0].display_name);
+  });
+
+  it('an answer after the prompt expires is E_PROMPT_EXPIRED', async () => {
+    const cart = await threeItems();
+    const ask = await m.reviewCartItem(items(cart)[0].id);
+    clock = 31_000;
+    await expect(m.command('yes', ask.voice.prompt_id)).rejects.toMatchObject({ code: 'E_PROMPT_EXPIRED' });
+  });
+});

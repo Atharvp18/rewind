@@ -110,6 +110,8 @@ export type ResponseScope =
   | 'choose_card'
   | 'confirm_checkout'
   | 'confirm_clear_cart'
+  | 'confirm_remove_item'
+  | 'confirm_review_rest'
   | 'confirm_strength'
   | 'none';
 
@@ -211,6 +213,8 @@ export type CommandAction =
   | 'checkout_preview'
   | 'checkout_confirmed'
   | 'remove_last'
+  | 'review_item'
+  | 'review_done'
   | 'confirm_clear_cart'
   | 'cart_cleared'
   | 'open_settings'
@@ -427,6 +431,15 @@ export function addCartItem(scanId: string, cardId: string, promptId: string): P
 export function removeLastCartItem(): Promise<CartResponse> {
   if (isMock()) return mock.removeLastCartItem();
   return request('/v1/cart/items/last', { method: 'DELETE' });
+}
+
+/**
+ * PROPOSED (not in the tech spec yet): tap a cart item and the agent reads it back and asks
+ * whether to remove it (scope confirm_remove_item). The yes / no answer goes through /v1/command.
+ */
+export function reviewCartItem(itemId: string): Promise<CartResponse> {
+  if (isMock()) return mock.reviewCartItem(itemId);
+  return request(`/v1/cart/items/${encodeURIComponent(itemId)}/review`, { method: 'POST' });
 }
 
 export function clearCart(promptId: string): Promise<CartResponse> {

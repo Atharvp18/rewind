@@ -242,6 +242,8 @@ export interface AgentApi {
   skip: () => Promise<void>;
   refreshCart: () => Promise<void>;
   refreshCards: () => Promise<void>;
+  /** Tap an item in the cart: the agent reads it back and asks whether to remove it. */
+  reviewItem: (itemId: string) => Promise<void>;
   removeLast: () => Promise<void>;
   askClearCart: () => Promise<void>;
   confirmClearCart: () => Promise<void>;
@@ -303,6 +305,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     silenceTimer.current = null;
   };
 
+  const sayRef = useRef<(v: VoiceRequest) => void>(() => {});
+
   const say = useCallback(
     (voice: VoiceRequest, remember = true, interim = false) => {
       clearSilence();
@@ -313,7 +317,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         silencePrompts.current = 0;
         if (promptTimer.current) clearTimeout(promptTimer.current);
         const id = voice.prompt_id;
-        promptTimer.current = setTimeout(() => dispatch({ type: 'prompt_expired', id }), settings.answerSeconds * 1000);
+        promptTimer.current = setTimeout(() => {
+          // An ignored cart review closes the cart and says how to come back.
+          const open = stateRef.current.livePrompt;
+          const ignoredReview =
+            open?.id === id && (open.scope === 'confirm_remove_item' || open.scope === 'confirm_review_rest');
+          dispatch({ type: 'prompt_expired', id });
+          if (ignoredReview) {
+            dispatch({ type: 'view', view: 'camera' });
+            sayRef.current(localVoice(Phrases.readyToCheckout));
+          }
+        }, settings.answerSeconds * 1000);
       }
       // Orange level buzz for alerts (low balance, reroute); declines buzz red in handleError.
       if (voice.priority === 'alert' && !voice.request_id.startsWith('declined-')) haptic.warning();
@@ -327,6 +341,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     },
     [screenReaderOn, settings.answerSeconds],
   );
+
+  useEffect(() => {
+    sayRef.current = say;
+  });
 
   const sayLocal = useCallback(
     (text: string, priority: 'alert' | 'normal' = 'normal') => say(localVoice(text, priority)),
@@ -420,6 +438,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         case 'cart_cleared':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
           if (res.action === 'add_item') dispatch({ type: 'clear_scan' });
+          break;
+        case 'review_item':
+          if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
+          break;
+        case 'review_done':
+          // The review is over (or the cart emptied): close the cart and leave the camera clear.
+          if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
+          dispatch({ type: 'view', view: 'camera' });
           break;
         case 'read_cart':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
@@ -697,6 +723,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, [say, handleError]);
 
+  const reviewItem = useCallback(
+    async (itemId: string) => {
+      dispatch({ type: 'submit' });
+      try {
+        const res = await api.reviewCartItem(itemId);
+        dispatch({ type: 'cart', cart: res.cart });
+        say(res.voice);
+      } catch (e) {
+        handleError(e);
+      }
+    },
+    [say, handleError],
+  );
+
   const confirmClearCart = useCallback(async () => {
     const p = stateRef.current.livePrompt;
     if (p?.scope !== 'confirm_clear_cart') return;
@@ -796,6 +836,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       skip,
       refreshCart,
       refreshCards,
+      reviewItem,
       removeLast,
       askClearCart,
       confirmClearCart,
@@ -806,7 +847,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
-      refreshCart, refreshCards, removeLast, askClearCart, confirmClearCart, startCheckout,
+      refreshCart, refreshCards, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
       confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
     ],
   );
