@@ -25,7 +25,7 @@ function Navigator() {
     return () => clearTimeout(t);
   }, []);
 
-  // One camera screen plus Profile (top-right button). No tabs.
+  // One camera screen; Profile opens as a pop-up on it (top-right button). No tabs.
   return (
     <>
       <StatusBar style={themeName === 'standard' ? 'dark' : 'light'} />
@@ -36,10 +36,6 @@ function Navigator() {
           animation: reduceMotion ? 'none' : 'slide_from_right',
         }}>
         <Stack.Screen name="index" />
-        <Stack.Screen
-          name="profile"
-          options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }}
-        />
       </Stack>
     </>
   );
