@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
@@ -9,7 +9,7 @@ import { Icon } from '@/components/icon';
 import { InvoiceDetail } from '@/components/invoice-view';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { useDomeHeight } from '@/components/voice-orb';
-import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
+import { Elevation, Layout, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
 import { shareReimbursementPacketPdf } from '@/lib/invoice-pdf';
@@ -82,7 +82,9 @@ export function HistorySheet() {
 
   return (
     <Animated.View
-      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(Motion.panel * 1.6).springify().damping(22)}
+      // One smooth slide from the bottom edge to the top: no spring, no bounce, no scaling.
+      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(420).easing(Easing.out(Easing.cubic))}
+      exiting={reduceMotion ? FadeOut.duration(0) : SlideOutDown.duration(320).easing(Easing.in(Easing.cubic))}
       accessibilityViewIsModal
       style={[
         styles.sheet,

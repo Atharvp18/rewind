@@ -503,8 +503,8 @@ function ReceiptPanel() {
       dismiss();
       return;
     }
-    y.value = withTiming(height * 0.7, { duration: 520, easing: Easing.in(Easing.cubic) });
-    k.value = withTiming(0, { duration: 520, easing: Easing.in(Easing.cubic) }, (done) => {
+    y.value = withTiming(height * 0.5, { duration: 450, easing: Easing.inOut(Easing.cubic) });
+    k.value = withTiming(0, { duration: 450, easing: Easing.inOut(Easing.cubic) }, (done) => {
       if (done) runOnJS(dismiss)();
     });
   }, [leaving, reduceMotion, height, y, k, dismiss]);
@@ -518,8 +518,8 @@ function ReceiptPanel() {
   }, [quiet, leave]);
 
   const fly = useAnimatedStyle(() => ({
-    opacity: 0.2 + 0.8 * k.value,
-    transform: [{ translateY: y.value }, { scale: 0.25 + 0.75 * k.value }],
+    opacity: k.value,
+    transform: [{ translateY: y.value }],
   }));
 
   return (
