@@ -8,6 +8,7 @@ import { CameraStage, type CameraStageHandle } from '@/components/camera-stage';
 import { HealthBanner } from '@/components/health-banner';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { ProfileButton } from '@/components/profile-button';
+import { TranscriptPill } from '@/components/transcript-pill';
 import { VoiceDock, type DockAction } from '@/components/voice-dock';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -83,8 +84,11 @@ export default function Home() {
 
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.overlay} pointerEvents="box-none">
         <View style={styles.topRow} pointerEvents="box-none">
-          <View style={styles.flex} pointerEvents="box-none" />
-          <ProfileButton />
+          <TranscriptPill />
+          {/* On top of the pill's right end, so the pill grows out of it (wireframe frame 2). */}
+          <View style={styles.profile}>
+            <ProfileButton />
+          </View>
         </View>
 
         <View style={styles.panelArea} pointerEvents="box-none">
@@ -107,15 +111,13 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  flex: { flex: 1 },
   overlay: { flex: 1 },
   topRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
   },
+  profile: { position: 'absolute', top: Spacing.sm, right: Spacing.lg },
   panelArea: {
     flex: 1,
     paddingHorizontal: Spacing.lg,
