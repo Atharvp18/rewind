@@ -133,3 +133,10 @@ Rewind prepares the paperwork. It never files a claim. Administrator decides.
 - No "Save to history" button: every invoice is saved automatically. The checkout widget shows the **same invoice card** as the history list (store, date, total, address, items with eligibility, tax estimate, paid-with, PDF download).
 - Wording softened (plain, polite, no commands): "Thank you. Your payment went through. Please remember to take your items with you. Your FSA balance is now $6.52. Your receipt is saved in History." The low-balance block now says "Balance running low: Your FSA card balance is now $6.52." Source note: a web search found general guidance (conversational voice models, short confirmations that restate the result, shallow menus) but no tested confirmation wording, so the phrasing is a design choice to confirm with real users.
 - While checked in, the invoice widget and the alert stay until the phone leaves the store (the app watches position in the foreground, judged on the device against the seeded store at 250 m, nothing stored). Then the widget slides to History and the alert caption clears. ✕ still closes it any time. With no check-in, it leaves 10 s after the agent stops speaking. Demo: Profile → Demo → "Pretend I left the store". Same spec conflict as check-in (see section 8).
+
+## 10. Balances are never shamed (2026-10-24)
+- When a card cannot cover an item, the app moves on to the next card in order (FSA, HSA, everyday Visa) without mentioning the balance. The agent says only "Want to use your HSA card?"; at checkout the cart simply shows where each item goes.
+- No low-balance alert, orange block, or warning buzz after payment. The spec's plain balance read-back stays ("Your FSA balance is now $6.52").
+- Cards that are not used for an item show "Not used for this item", never "Balance too low".
+- The old "No, keep my cards" decline is gone. For the decline demo: Profile → Demo → "Decline the next payment".
+- Spec follow-up: business spec 6.5 and tech spec 3.5 describe "warn the user" on insufficient balance; this replaces that, so the specs need updating.

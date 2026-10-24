@@ -48,7 +48,6 @@ let promptTtlMs = 30_000;
 export function setPromptTtl(seconds: number): void {
   promptTtlMs = seconds * 1000;
 }
-const LOW_BALANCE_CENTS = 2000;
 
 const wait = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
 
@@ -218,6 +217,8 @@ const state = {
   reviewed: new Set<string>(),
   /** The store the user confirmed they are at (check-in). */
   checkedInStoreId: null as string | null,
+  /** Presenter demo: the next checkout is declined once (spec 3.6 simulated decline). */
+  forceDecline: false,
   lastVoice: null as VoiceRequest | null,
 };
 
@@ -346,21 +347,26 @@ function route(scanId: string, item: DemoItem): PaymentRecommendation {
     return { ...base, decision: 'route_to_hsa', card_id: first.id, reason_code: 'eligible_sufficient_balance',
       balance_before_cents: first.balance_cents, balance_after_cents: first.balance_cents - amount };
   }
-  // First choice can't cover it: suggest the next card in order (HSA, then the everyday Visa).
+  // The first card cannot cover it: go straight to the next card in order (FSA, HSA, then the
+  // everyday Visa). Nothing is said about the balance; the user still confirms the card.
   const next = health.slice(1).find((c) => c.balance_cents >= amount) ?? (visa().balance_cents >= amount ? visa() : null);
   if (!next) {
     return { ...base, decision: 'blocked', card_id: null, reason_code: 'no_card_covers',
       balance_before_cents: first.balance_cents, balance_after_cents: null };
   }
-  return { ...base, decision: 'ask_user', card_id: null, reason_code: 'eligible_insufficient_balance',
-    balance_before_cents: first.balance_cents, balance_after_cents: null,
-    reroute: { from_card_id: first.id, to_card_id: next.id, reason: 'insufficient_balance' },
-    card_options: [next.id] };
+  return { ...base, decision: next.type === 'general' ? 'route_to_general' : 'route_to_hsa', card_id: next.id,
+    reason_code: 'routed_to_next_card', balance_before_cents: next.balance_cents,
+    balance_after_cents: next.balance_cents - amount };
 }
 
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
+
+/** Presenter demo: decline the next payment once. */
+export function demoForceDecline(): void {
+  state.forceDecline = true;
+}
 
 export async function getHealth(): Promise<Health> {
   return {
@@ -424,16 +430,14 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
   state.scans.set(scanId, { item, rec });
   const price = formatCents(item.product.amount_cents!);
   const suggested = rec.card_id ? card(rec.card_id) : null;
-  const from = rec.reroute ? card(rec.reroute.from_card_id) : null;
-  const to = rec.reroute ? card(rec.reroute.to_card_id) : null;
   const text =
     item.eligibility.label !== 'eligible'
       ? `${item.spokenName}, ${price}. Not HSA eligible, high confidence. I'll put this on your Visa credit card.`
-      : from && to
-        ? `I see ${item.spokenName}, ${price}. HSA eligible. Your ${short(from)} balance of ${spokenBalance(from.balance_cents)} doesn't cover it. Want to use your ${to.nickname} instead?`
+      : suggested && rec.reason_code === 'routed_to_next_card'
+        ? `I see ${item.spokenName}, ${price}. HSA eligible. Want to use your ${suggested.nickname}?`
         : suggested
           ? `I see ${item.spokenName}, ${price}. HSA eligible. Your ${short(suggested)} balance is ${spokenBalance(suggested.balance_cents)}. Want to use your ${suggested.nickname}?`
-          : `I see ${item.spokenName}, ${price}. HSA eligible. No card can cover this. Please use another card.`;
+          : `I see ${item.spokenName}, ${price}. HSA eligible. I couldn't find a card for this one yet. Would you like to add another card?`;
 
   return {
     scan: {
@@ -691,30 +695,28 @@ export async function checkoutPreview(): Promise<CheckoutPreview> {
     if (total <= c.balance_cents) continue;
     let left = c.balance_cents;
     room.set(c.id, c.balance_cents);
-    const kept: string[] = [];
-    const moved = new Map<string, string[]>();
     for (const it of [...items].sort((x, y) => y.amount_cents - x.amount_cents)) {
       if (it.amount_cents <= left) {
         left -= it.amount_cents;
-        kept.push(it.display_name.split(' ')[0]);
         continue;
       }
       const dest = order.slice(i + 1).find((d) => (room.get(d.id) ?? 0) >= it.amount_cents) ?? visa();
       room.set(dest.id, (room.get(dest.id) ?? 0) - it.amount_cents);
       split.push({ item_id: it.id, card_id: dest.id });
-      moved.set(dest.nickname, [...(moved.get(dest.nickname) ?? []), it.display_name.toLowerCase()]);
     }
-    message ??= `Your ${short(c)} balance is only ${formatCents(c.balance_cents)}, which doesn't cover ${formatCents(total)}. Want me to ${
-      kept.length ? `keep the ${kept.join(' and the ')} on your ${short(c)} and ` : ''
-    }${[...moved].map(([to, names]) => `move the ${names.join(' and the ')} to your ${to}`).join(', and ')}?`;
+    message ??= 'redirected';
   }
   if (message) {
+    // Redirected to the next card in order, with no talk of balances: the cart simply shows where each item goes.
     state.proposedSplit = split;
     const cart = buildCart(split);
+    const parts = cart.groups.map(
+      (g) => `${countWord(g.items.length)} totaling ${formatCents(g.subtotal_cents)} on your ${g.nickname}.`,
+    );
     return {
       ...cart,
-      issues: [{ rule: 'group_too_large', message }],
-      voice: voice(message, { prompt: { scope: 'confirm_checkout' }, priority: 'alert' }),
+      issues: [],
+      voice: voice(`${parts.join(' ')} Ready to check out?`, { prompt: { scope: 'confirm_checkout' } }),
     };
   }
   state.proposedSplit = null;
@@ -743,7 +745,10 @@ export async function checkoutConfirm(
 
   // Simulated decline: a group larger than its card's balance is refused,
   // all or nothing, and nothing is charged (3.6).
-  const over = cart.groups.find((g) => g.subtotal_cents > card(g.card_id).balance_cents);
+  const over = state.forceDecline
+    ? cart.groups[0]
+    : cart.groups.find((g) => g.subtotal_cents > card(g.card_id).balance_cents);
+  state.forceDecline = false;
   if (over) {
     const c = card(over.card_id);
     const nickname = c.nickname;
@@ -759,10 +764,9 @@ export async function checkoutConfirm(
   state.items = [];
   state.proposedSplit = null;
 
-  // Read back every HSA/FSA card that was charged; alert if one is now low.
+  // Read back every HSA/FSA card that was charged. A small balance is never flagged or shamed.
   const charged = cart.groups.map((g) => card(g.card_id)).filter((c) => c.type !== 'general');
   const lines = charged.map((c) => `Your ${short(c)} balance is now ${formatCents(c.balance_cents)}.`);
-  const low = charged.some((c) => c.balance_cents < LOW_BALANCE_CENTS);
   const paymentId = randomUUID();
   const invoice = invoiceFromGroups(paymentId, new Date().toISOString(), cart.groups);
   const result: CheckoutResult = {
@@ -772,7 +776,7 @@ export async function checkoutConfirm(
     new_balances: state.cards.map((c) => ({ card_id: c.id, balance_cents: c.balance_cents })),
     voice: voice(
       `Thank you. Your payment went through. Please remember to take your items with you. ${lines.join(' ')} Your receipt is saved in History.`.replace(/\s+/g, ' '),
-      { priority: low ? 'alert' : 'normal' },
+      { priority: 'normal' },
     ),
   };
   state.payments.set(idempotencyKey, result);
@@ -883,11 +887,6 @@ export async function command(transcript: string, promptId: string | null): Prom
       const res = await clearCart(liveId!);
       return { action: 'cart_cleared', result: res.cart, voice: res.voice };
     }
-  }
-  if (live?.scope === 'confirm_checkout' && state.proposedSplit && has(t, 'no', 'keep')) {
-    // The user turned down the reroute: charge the original cards, which declines.
-    const res = await checkoutConfirm(randomUUID(), liveId!, false);
-    return { action: 'checkout_confirmed', result: res, voice: res.voice };
   }
   if (has(t, 'skip', 'no')) {
     if (liveId && live) live.consumed = true;

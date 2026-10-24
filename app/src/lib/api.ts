@@ -561,6 +561,11 @@ export function stillAtStore(storeId: string, coords: { lat: number; lng: number
   return request<{ at_store: boolean }>('/v1/checkin/still-here', json({ store_id: storeId, ...coords })).then((r) => r.at_store);
 }
 
+/** Presenter demo (mock only): the next checkout is declined once, to show the declined-payment screen. */
+export function demoForceDecline(): void {
+  if (isMock()) mock.demoForceDecline();
+}
+
 export function reissuePrompt(
   scanId: string,
   scope: ResponseScope,

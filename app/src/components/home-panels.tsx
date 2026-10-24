@@ -271,13 +271,8 @@ function Recommendation({ rec, cards }: { rec: PaymentRecommendation; cards: Car
     );
   }
   if (rec.reroute) {
-    const from = cardById(cards, rec.reroute.from_card_id);
     return (
-      <AlertBlock level="warning" title="Balance too low">
-        {`Your ${from?.nickname ?? 'HSA card'} balance${
-          rec.balance_before_cents != null ? ` of ${formatCents(rec.balance_before_cents)}` : ''
-        } does not cover this item.`}
-      </AlertBlock>
+      <PanelText>{`This one goes on your ${cardById(cards, rec.reroute.to_card_id)?.nickname ?? 'next card'}.`}</PanelText>
     );
   }
   return <PanelText>Which card would you like to use?</PanelText>;
@@ -316,9 +311,9 @@ function CardChooser({
           c.status !== 'active'
             ? `Card is ${c.status}`
             : health && !eligible
-              ? 'This item is not HSA/FSA eligible'
+              ? 'Not used for this item'
               : c.balance_cents < priceCents
-                ? 'Balance too low'
+                ? 'Not used for this item'
                 : null;
         const isSuggested = c.id === suggested && !reason;
         return (
@@ -490,11 +485,6 @@ function ReceiptPanel() {
   const { reduceMotion } = useA11y();
   const { height } = useWindowDimensions();
   const receipt = state.receipt!;
-  const lowBalance = receipt.voice.priority === 'alert';
-  // Health cards that ended below the low-balance line (mirrors the backend's $20.00 rule).
-  const low = receipt.new_balances.filter(
-    (b) => cardById(state.cards, b.card_id)?.type !== 'general' && b.balance_cents < 2000,
-  );
   const y = useSharedValue(0);
   const k = useSharedValue(1);
   const [leaving, setLeaving] = useState(false);
@@ -536,17 +526,12 @@ function ReceiptPanel() {
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, fly]} pointerEvents={leaving ? 'none' : 'box-none'}>
-      <InfoPanel title="Payment complete" tone={lowBalance ? 'warning' : 'normal'} onClose={leave}>
+      <InfoPanel title="Payment complete" onClose={leave}>
         <Notice icon="eligible" color="eligible" kind="body">
           You paid for your items. Please take them with you.
         </Notice>
         {/* The same card as the purchase history, always open. It is saved there automatically. */}
         {receipt.invoice ? <InvoiceCard invoice={receipt.invoice} open /> : null}
-        {lowBalance ? (
-          <AlertBlock level="warning" title="Balance running low">
-            {low.map((b) => `Your ${cardById(state.cards, b.card_id)?.nickname ?? 'card'} balance is now ${formatCents(b.balance_cents)}.`).join(' ')}
-          </AlertBlock>
-        ) : null}
         <PanelText kind="label">New balances</PanelText>
         {receipt.new_balances.map((b) => {
           const card = cardById(state.cards, b.card_id);

@@ -151,31 +151,23 @@ describe('routing for eligible items: FSA first, then HSA, then Visa (spec 3.5 +
     expect((await scanN(1)).recommendation).toMatchObject({ decision: 'route_to_hsa', card_id: FSA, balance_after_cents: 0 });
   });
 
-  it('one cent short: asks, and proposes the HSA (spec 3.5 "insufficient")', async () => {
+  it('one cent short: goes straight to the HSA, and never talks about the shortfall (Nak 2026-10-24)', async () => {
     m.__testing.setBalance(FSA, 1298);
     const r = await scanN(1);
-    expect(r.recommendation).toMatchObject({
-      decision: 'ask_user',
-      reason_code: 'eligible_insufficient_balance',
-      reroute: { from_card_id: FSA, to_card_id: HSA, reason: 'insufficient_balance' },
-      card_options: [HSA],
-    });
-    expect(r.voice.text).toContain("Your FSA balance of $12.98 doesn't cover it. Want to use your HSA card instead?");
+    expect(r.recommendation).toMatchObject({ decision: 'route_to_hsa', card_id: HSA, reason_code: 'routed_to_next_card', reroute: null });
+    expect(r.voice.text).toContain('Want to use your HSA card?');
+    expect(r.voice.text).not.toMatch(/balance|cover|short|low/i);
   });
 
   it('a zero balance counts as insufficient (spec 20.6)', async () => {
     m.__testing.setBalance(FSA, 0);
-    expect((await scanN(1)).recommendation).toMatchObject({ decision: 'ask_user', reroute: { to_card_id: HSA } });
+    expect((await scanN(1)).recommendation).toMatchObject({ decision: 'route_to_hsa', card_id: HSA });
   });
 
   it('FSA and HSA both too small: proposes the everyday Visa', async () => {
     m.__testing.setBalance(FSA, 100);
     m.__testing.setBalance(HSA, 100);
-    expect((await scanN(1)).recommendation).toMatchObject({
-      decision: 'ask_user',
-      reroute: { from_card_id: FSA, to_card_id: VISA },
-      card_options: [VISA],
-    });
+    expect((await scanN(1)).recommendation).toMatchObject({ decision: 'route_to_general', card_id: VISA });
   });
 
   it('nothing covers it: blocked with no_card_covers (spec 3.5 step 5)', async () => {
@@ -332,7 +324,7 @@ describe('cart (spec 3.8, 4.4, 20.7)', () => {
 // ---- checkout ---------------------------------------------------------------
 
 describe('checkout run 1 (spec 4.4, FSA-first seed)', () => {
-  it('reads the split, then pays: FSA ends at $6.52 and the low balance is an alert', async () => {
+  it('reads the split, then pays: FSA ends at $6.52, read back plainly with no alert', async () => {
     await scanAndAdd();
     await scanAndAdd();
     await scanAndAdd();
@@ -345,7 +337,7 @@ describe('checkout run 1 (spec 4.4, FSA-first seed)', () => {
     const paid = await m.checkoutConfirm('run1', preview.voice.prompt_id!);
     // Wording softened (2026-10-24): thanks, take your items, receipt is in History. The balance line stays.
     expect(paid.voice.text).toMatch(/^Thank you\. Your payment went through\. Please remember to take your items with you\. Your FSA balance is now \$6.52\. Your receipt is saved in History\.$/);
-    expect(paid.voice.priority).toBe('alert'); // $6.52 is under the $20 low-balance level
+    expect(paid.voice.priority).toBe('normal'); // a small balance is never flagged or shamed
     expect(paid.new_balances).toEqual([
       { card_id: FSA, balance_cents: 652 },
       { card_id: HSA, balance_cents: 34000 },
@@ -388,12 +380,10 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
 
   it('keeps the largest item on the FSA and moves the rest to the Visa when the HSA is too small too', async () => {
     const preview = await m.checkoutPreview();
-    expect(preview.issues).toHaveLength(1);
-    expect(preview.issues[0].rule).toBe('group_too_large');
-    expect(preview.voice.text).toBe(
-      "Your FSA balance is only $15.00, which doesn't cover $18.48. Want me to keep the Advil on your FSA and move the bandages to your Visa credit?",
-    );
-    expect(preview.voice.priority).toBe('alert');
+    expect(preview.issues).toHaveLength(0); // redirected without a warning
+    expect(preview.voice.text).toBe('One item totaling $12.99 on your FSA card. Two items totaling $10.48 on your Visa credit. Ready to check out?');
+    expect(preview.voice.text).not.toMatch(/balance|cover|only/i);
+    expect(preview.voice.priority).toBe('normal');
     expect(preview.groups.map((g) => [g.card_id, g.subtotal_cents])).toEqual([
       [FSA, 1299],
       [VISA, 549 + 499],
@@ -403,7 +393,7 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
   it('moves the overflow to the HSA when the HSA has room', async () => {
     m.__testing.setBalance(HSA, 34000);
     const preview = await m.checkoutPreview();
-    expect(preview.voice.text).toContain('move the bandages to your HSA card?');
+    expect(preview.voice.text).toContain('on your HSA card');
     expect(preview.groups.map((g) => [g.card_id, g.subtotal_cents])).toEqual([
       [FSA, 1299],
       [HSA, 549],
@@ -421,10 +411,11 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
     expect(total).toBe(1299 + 549 + 499);
   });
 
-  it('"no, keep my cards" is a simulated decline: all or nothing, nothing charged (spec 3.6)', async () => {
+  it('the presenter decline is all or nothing, nothing charged (spec 3.6)', async () => {
     const before = await m.getCards();
     const preview = await m.checkoutPreview();
-    const err = await m.checkoutConfirm('k', preview.voice.prompt_id!, false).catch((e) => e);
+    m.demoForceDecline();
+    const err = await m.checkoutConfirm('k', preview.voice.prompt_id!, true).catch((e) => e);
     expect(err.code).toBe('E_CARD_DECLINED');
     expect(err.retryable).toBe(false);
     expect(err.speech).toContain('declined');
@@ -435,7 +426,8 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
 
   it('after a decline the old question is spent; a fresh preview can be paid (spec 20.7 double confirm)', async () => {
     const preview = await m.checkoutPreview();
-    await m.checkoutConfirm('d1', preview.voice.prompt_id!, false).catch(() => {});
+    m.demoForceDecline();
+    await m.checkoutConfirm('d1', preview.voice.prompt_id!, true).catch(() => {});
     await expect(m.checkoutConfirm('d2', preview.voice.prompt_id!, true)).rejects.toMatchObject({ code: 'E_PROMPT_EXPIRED' });
     const again = await m.checkoutPreview();
     await expect(m.checkoutConfirm('d3', again.voice.prompt_id!, true)).resolves.toBeTruthy();
@@ -443,12 +435,13 @@ describe('checkout run 2: the card that cannot cover its group (spec 3.5 group r
 });
 
 describe('a balance that changed between the scan and checkout (spec 3.6, 20.6)', () => {
-  it('is caught at preview: routing is re-run against the fresh balance and the move is proposed', async () => {
+  it('is caught at preview: routing is re-run against the fresh balance and the move happens quietly', async () => {
     await scanAndAdd(); // Advil on the FSA (balance $25.00 at scan time)
     m.__testing.setBalance(FSA, 500); // the balance dropped before checkout
     const preview = await m.checkoutPreview();
-    expect(preview.issues[0]?.rule).toBe('group_too_large');
-    expect(preview.voice.text).toContain("Your FSA balance is only $5.00, which doesn't cover $12.99");
+    expect(preview.issues).toHaveLength(0);
+    expect(preview.groups.map((g) => g.card_id)).toContain(HSA); // moved on, quietly
+    expect(preview.voice.text).not.toMatch(/balance|cover|only/i);
     expect(preview.voice.expects_response).toBe(true); // re-confirmation required
   });
 });

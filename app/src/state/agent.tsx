@@ -262,6 +262,8 @@ export interface AgentApi {
   refreshCards: () => Promise<void>;
   /** Ask "Are you at <store>?" (position used once, on the device, never stored). `simulateStoreId` skips GPS for the demo. */
   startCheckin: (simulateStoreId?: string) => Promise<void>;
+  /** Presenter demo: the next payment is declined once. */
+  demoDecline: () => void;
   /** The user left the store (or the demo says so): the checkout alert and invoice go to History. */
   leaveStore: () => void;
   /** Tap an item in the cart: the agent reads it back and asks whether to remove it. */
@@ -951,6 +953,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       refreshCart,
       refreshCards,
       startCheckin,
+      demoDecline: api.demoForceDecline,
       leaveStore,
       reviewItem,
       removeLast,

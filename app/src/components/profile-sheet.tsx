@@ -31,7 +31,7 @@ const TYPE_LABEL: Record<Card['type'], string> = {
 export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
   const { profile, reset } = useProfile();
-  const { state, resetDemo, sayLocal, showView, startCheckin, leaveStore } = useAgent();
+  const { state, resetDemo, sayLocal, showView, startCheckin, leaveStore, demoDecline } = useAgent();
   const { area } = useStage();
   const cue = useScrollCue();
 
@@ -194,6 +194,14 @@ export function ProfileSheet() {
             icon="next"
             onPress={() => {
               leaveStore();
+              showView('camera');
+            }}
+          />
+          <BigButton
+            label="Decline the next payment"
+            icon="danger"
+            onPress={() => {
+              demoDecline();
               showView('camera');
             }}
           />
