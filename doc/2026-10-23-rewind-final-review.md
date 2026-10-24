@@ -346,9 +346,9 @@ All payments use simulated data and mock accounts only.
 
 ---
 
-## 11. Team Roles (proposed, pending team agreement)
+## 11. Team Roles
 
-The team has discussed several splits. Informal preferences were: Nak on Cartesia and Figma, Aesha on Moss, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item.
+The team has discussed several splits. Informal preferences were: Nak on Cartesia and Figma, Atharv on Visa and Nessie, and Tiea on Fetch.ai. That version leaves Claude vision, the Expo shell, the database, and cart routing without an owner, and puts Fetch.ai (optional) ahead of the Anthropic work. The split below covers every Must item.
 
 | Person | Owns |
 |---|---|
@@ -368,9 +368,7 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 
 ## 12. Community Feature (stretch)
 
-- Idea: opt-in voice messages tied to a store, played when the app opens
-- Parked until the voice loop and shelf scan are reliable (checkpoint: ~hour 16)
-- Cheap version: pre-recorded demo messages for one fake store; user picks the store, opt-in, captions, and a spoken "report this message" command
+- Invoices of previous store visit: name, address, amount, tax-estimation based on state. 
 - Not planned: automatic store assignment from scan history, because it tracks where vulnerable users shop
 
 ---
@@ -423,28 +421,10 @@ The team has discussed several splits. Informal preferences were: Nak on Cartesi
 
 1. Partner with organizations serving blind and low-vision people and recruit beta testers
 2. Reach caregivers through aging-services groups and senior centers
-3. Offer one local pharmacy a pilot in exchange for feedback
+3. Offer one local pharmacy a pilot in exchange for feedback, partner with CVS/Walmart Pharmacy or big companies later.
 4. Link real accounts through the user's provider or an aggregator, with consent and subject to provider support
-5. Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim
+5. Use that link so eligible purchases made on another card can be reimbursed without the user preparing the claim on HSA/FSA User Portal
 6. True AR and a store community are future use cases
-
----
-
-## 17. Open Decisions
-
-| # | Decision |
-|---|---|
-| 1 | Final role split (section 11), and who owns Claude vision, the Expo shell, the database, and cart routing |
-| 2 | Atharv's confirmation that he is joining |
-| 3 | Final project name (Rewind, Tally, or Clearcart as alternatives), and a collision search |
-| 4 | Whether the Supabase + SQLite backup is worth the upkeep, or SQLite alone |
-| 5 | Who talks to a blind or low-vision shopper |
-| 6 | Whether every teammate can commit to the 3-week Commit Fellowship sprint before opting in |
-| 7 | Whether Mana's prize applies to a project built in our own repo |
-| 8 | Whether Claude credits are available to every team |
-| 9 | Which eligible-item source to use |
-| 10 | The submission deadline and any rule on code written before kickoff |
-| 11 | Submission checklist: Devpost entry, demo video, opt-in checkbox and supplemental form for Commit Fellowship |
 
 ---
 
