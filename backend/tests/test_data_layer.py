@@ -258,3 +258,20 @@ def test_get_cart_groups_by_card_with_subtotals(sb):
     assert [(g["card_id"], g["subtotal_cents"]) for g in cart["groups"]] == [
         ("card_hsa_1", 1848), ("card_visa_1", 499)]
     assert cart["total_cents"] == 2347
+
+
+# --- additions for the Fetch.ai payment agent (agents/store.py) ----------------------------
+
+def test_add_cart_item_keeps_a_caller_supplied_id(sb):
+    sb.data = []                                    # the cart read after the insert
+    db.add_cart_item("scan1", "upc:1", "Advil", 1299, "shelf_price", "card_hsa_1", "eligible",
+                     item_id="item-abc")
+    insert = next(c for c in sb.calls if c[0] == "insert")
+    assert insert[1][0]["id"] == "item-abc"
+
+
+def test_reassign_cart_item_moves_one_row_and_marks_override(sb):
+    db.reassign_cart_item("item-abc", "card_visa_1")
+    update = next(c for c in sb.calls if c[0] == "update")
+    assert update[1][0] == {"assigned_card_id": "card_visa_1", "user_overrode_card": True}
+    assert ("eq", ("id", "item-abc"), {}) in sb.calls
