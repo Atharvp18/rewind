@@ -84,17 +84,17 @@ export function InfoPanel({
     <Animated.View
       entering={reduceMotion ? undefined : FadeIn.duration(Motion.panel)}
       onLayout={(e) => setStackH(e.nativeEvent.layout.height)}
-      style={[
-        styles.stack,
-        // Hidden for the one frame before its height is known, so it never jumps.
-        { width, left, top, maxHeight: area.h, opacity: stackH ? 1 : 0 },
-      ]}>
+      // The layout animation owns this view's opacity, so the
+      // hide-until-measured opacity lives on the inner card (Reanimated rule).
+      style={[styles.stack, { width, left, top, maxHeight: area.h }]}>
       <View
         accessibilityLabel={label}
         style={[
           styles.card,
           Elevation.floating,
           {
+            // Hidden for the one frame before its height is known, so it never jumps.
+            opacity: stackH ? 1 : 0,
             maxHeight: cardMaxH,
             backgroundColor: palette.surface,
             borderColor: edge,
