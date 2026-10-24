@@ -57,14 +57,15 @@ export default function Home() {
     onboardingCapture.current = fn;
   }, []);
 
-  const left: DockAction | undefined = onboarding
+  const addingCard = state.view === 'add_card';
+  const left: DockAction | undefined = onboarding || addingCard
     ? undefined
-    : { label: 'Cart', icon: '🛒', hint: 'Shows your cart, grouped by card.', onPress: () => showView('cart') };
-  const right: DockAction | undefined = onboarding
+    : { label: 'Cart', icon: 'cart', hint: 'Shows your cart, grouped by card.', onPress: () => showView('cart') };
+  const right: DockAction | undefined = onboarding || addingCard
     ? undefined
     : {
         label: busy ? 'Looking…' : 'Scan',
-        icon: '📷',
+        icon: 'scan',
         hint: 'Takes a photo of the item in front of the phone.',
         onPress: () => void scan(),
         disabled: busy,
@@ -100,6 +101,16 @@ export default function Home() {
               requestCamera={requestCamera}
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
+            />
+          ) : state.view === 'add_card' ? (
+            // Business spec 6.4 / 20.6: link another card, reusing the onboarding card steps.
+            <OnboardingFlow
+              camera={camera}
+              requestCamera={requestCamera}
+              registerCapture={registerCapture}
+              capture={async () => (await stage.current?.capture()) ?? null}
+              startAt="payment"
+              onDone={() => showView('camera')}
             />
           ) : (
             <HomePanels />

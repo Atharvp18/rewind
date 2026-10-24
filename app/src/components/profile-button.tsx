@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { Icon } from '@/components/icon';
 import { Elevation, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { initials, useProfile } from '@/lib/profile';
@@ -32,9 +33,13 @@ export function ProfileButton() {
           opacity: pressed ? 0.85 : 1,
         },
       ]}>
-      <AppText color="onProfile" accessible={false} style={styles.initial}>
-        {initials(profile) === '?' ? '👤' : initials(profile)}
-      </AppText>
+      {initials(profile) === '?' ? (
+        <Icon name="user" size={30} color="onProfile" />
+      ) : (
+        <AppText color="onProfile" accessible={false} style={styles.initial}>
+          {initials(profile)}
+        </AppText>
+      )}
     </Pressable>
   );
 }

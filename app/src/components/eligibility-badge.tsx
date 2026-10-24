@@ -1,17 +1,18 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { Icon, type IconName } from '@/components/icon';
 import { Radius, Spacing } from '@/constants/theme';
 import type { EligibilityLabel, EligibilityResult } from '@/lib/api';
 import { useA11y } from '@/lib/a11y';
 
 const LOOK: Record<
   EligibilityLabel,
-  { icon: string; text: string; fg: 'eligible' | 'notEligible' | 'unconfirmed'; bg: 'eligibleBg' | 'notEligibleBg' | 'unconfirmedBg' }
+  { icon: IconName; text: string; fg: 'eligible' | 'notEligible' | 'unconfirmed'; bg: 'eligibleBg' | 'notEligibleBg' | 'unconfirmedBg' }
 > = {
-  eligible: { icon: '✓', text: 'HSA eligible', fg: 'eligible', bg: 'eligibleBg' },
-  not_eligible: { icon: '✕', text: 'Not HSA eligible', fg: 'notEligible', bg: 'notEligibleBg' },
-  could_not_confirm: { icon: '?', text: 'Could not confirm eligibility', fg: 'unconfirmed', bg: 'unconfirmedBg' },
+  eligible: { icon: 'eligible', text: 'HSA eligible', fg: 'eligible', bg: 'eligibleBg' },
+  not_eligible: { icon: 'notEligible', text: 'Not HSA eligible', fg: 'notEligible', bg: 'notEligibleBg' },
+  could_not_confirm: { icon: 'unconfirmed', text: 'Could not confirm eligibility', fg: 'unconfirmed', bg: 'unconfirmedBg' },
 };
 
 /**
@@ -50,11 +51,7 @@ export function EligibilityBadge({
         compact && styles.compact,
         { backgroundColor: palette[look.bg], borderColor: palette[look.fg] },
       ]}>
-      <View style={[styles.icon, { backgroundColor: palette[look.fg] }]}>
-        <AppText kind="label" color="surface" style={styles.iconText}>
-          {look.icon}
-        </AppText>
-      </View>
+      <Icon name={look.icon} size={compact ? 22 : 28} color={look.fg} strokeWidth={2.5} />
       <AppText kind={compact ? 'small' : 'label'} color={look.fg} style={styles.text}>
         {text}
       </AppText>
@@ -75,7 +72,5 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   compact: { paddingVertical: Spacing.xs, gap: Spacing.sm },
-  icon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  iconText: { fontSize: 20, lineHeight: 24 },
   text: { flexShrink: 1 },
 });

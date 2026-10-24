@@ -1,8 +1,16 @@
 /**
- * Rewind design tokens (tech spec 1.9). Every text pair here is checked against
- * WCAG 2.2 AA (4.5:1 text, 3:1 UI boundaries); the ratios are listed in the spec.
- * Rule: amber `accent` never sits directly on the light `bg` (1.8:1). It only
- * appears on the navy dock or inside a `text`-colored ring.
+ * Rewind design tokens (tech spec 1.9): "Mint Teal".
+ *
+ * Mint for calm (health), deep teal for trust (money). Light mint where the
+ * eye rests, one deep teal control to find (Talk), and a mint-tinted off-white
+ * instead of pure white to cut glare under store lights. The brand teal is
+ * deliberately not the "HSA eligible" green, so brand never reads as status.
+ *
+ * Alerts have two levels, each with its own color, icon, and title word:
+ * red = danger (declined, error), orange = warning / suggestion.
+ *
+ * Every pair is measured (WCAG 2.2 AA, most AAA) by scripts/contrast-audit.mjs,
+ * including overlays against pure white and pure black camera scenes.
  */
 
 export type ThemeName = 'standard' | 'dark' | 'highContrast';
@@ -14,131 +22,138 @@ export type Palette = {
   text: string;
   textMuted: string;
   border: string;
+  focus: string;
   primary: string;
   onPrimary: string;
+  /** Mint action button. */
   accent: string;
   onAccent: string;
-  dock: string;
+  /** Half-circle dock: light-to-mint gradient, with an edge line so it shows on a bright scene. */
+  dockTop: string;
+  dockBottom: string;
+  dockEdge: string;
   onDock: string;
-  focus: string;
+  /** Talk button gradient, its icon color, and ring. */
+  talkTop: string;
+  talkBottom: string;
+  onTalk: string;
+  talkRing: string;
+  /** Caption pill (frame 2). Border covers whichever scene the fill can't contrast with. */
+  pill: string;
+  onPill: string;
+  pillBorder: string;
+  /** See-through window (frame 3): two-tone edge, one light and one dark, visible on any scene. */
+  frameOuter: string;
+  frameInner: string;
+  /** Edge of the solid info cards inside the window. */
+  cardEdge: string;
+  /** Top-right profile button: disc and ring of opposite lightness. */
+  profileBg: string;
+  onProfile: string;
+  profileRing: string;
   eligible: string;
   eligibleBg: string;
   notEligible: string;
   notEligibleBg: string;
   unconfirmed: string;
   unconfirmedBg: string;
+  /** Red alert level: declined payment, errors, frozen cards, service down. */
   danger: string;
   dangerBg: string;
-  scrim: string;
-  /** Half-circle dock gradient, top to bottom (amber Talk sits on it: ≥5.4:1). */
-  dockTop: string;
-  dockBottom: string;
-  /** Talk button gradient and its ring. */
-  talkTop: string;
-  talkBottom: string;
-  talkRing: string;
-  /** Caption pill (frame 2). */
-  pill: string;
-  onPill: string;
-  /** 2px pill edge: one fill can't contrast with both a white and a black scene; the edge covers the other. */
-  pillBorder: string;
-  /** Info panel base color (frame 3). Drawn at the user's panel opacity, 0.75 to 0.95. */
-  panel: string;
-  onPanel: string;
-  onPanelMuted: string;
-  /** Decline panel edge; dark red is invisible on the brown panel (1.06:1), so a light red. */
-  panelDanger: string;
-  /** Edge of cards drawn inside the panel. */
-  panelCardBorder: string;
-  /** Top-right profile button: dark disc with a light ring so it stands out on any camera image. */
-  profileBg: string;
-  onProfile: string;
-  profileRing: string;
+  dangerEdge: string;
+  /** Orange alert level: low balance, reroute and add-a-card suggestions, timeouts. */
+  warning: string;
+  warningBg: string;
+  warningEdge: string;
   /** Width of control borders. High contrast draws a visible edge on everything. */
   controlBorderWidth: number;
 };
 
 export const Palettes: Record<ThemeName, Palette> = {
   standard: {
-    bg: '#F7F5F0',
+    bg: '#F2FAF6', // mint mist
     surface: '#FFFFFF',
-    surfaceAlt: '#EEEBE4',
-    text: '#14181F',
-    textMuted: '#4A5260',
-    border: '#6B7280',
-    primary: '#123E6B',
+    surfaceAlt: '#E4F4EE',
+    text: '#0B2427', // ink teal
+    textMuted: '#3E5A5E',
+    border: '#5C7A7E',
+    focus: '#0E5A63',
+    primary: '#0E5A63', // deep teal
     onPrimary: '#FFFFFF',
-    accent: '#F2A900',
-    onAccent: '#14181F',
-    dock: '#123E6B',
-    onDock: '#FFFFFF',
-    focus: '#123E6B',
-    eligible: '#0B6E4F',
-    eligibleBg: '#E3F4EC',
-    notEligible: '#B23A0E',
-    notEligibleBg: '#FCEBE3',
+    accent: '#5EDDB4', // mint
+    onAccent: '#0B2427',
+    dockTop: '#E4F8EF',
+    dockBottom: '#8FE3C2',
+    dockEdge: '#0E5A63',
+    onDock: '#0B2427',
+    talkTop: '#137A84',
+    talkBottom: '#0A434A',
+    onTalk: '#FFFFFF',
+    talkRing: '#FFFFFF',
+    pill: '#E4F8EF',
+    onPill: '#0B2427',
+    pillBorder: '#0B2427',
+    frameOuter: '#FFFFFF',
+    frameInner: '#0E5A63',
+    cardEdge: '#0B2427',
+    profileBg: '#0B2427',
+    onProfile: '#FFFFFF',
+    profileRing: '#FFFFFF',
+    eligible: '#0A6B4F',
+    eligibleBg: '#E2F5EC',
+    notEligible: '#4F5B66', // slate: informational, not an alert
+    notEligibleBg: '#EEF1F4',
     unconfirmed: '#4C4F9A',
     unconfirmedBg: '#ECECF8',
     danger: '#B3261E',
-    dangerBg: '#FCE8E6',
-    scrim: 'rgba(20,24,31,0.55)',
-    dockTop: '#123E6B',
-    dockBottom: '#0A2540',
-    talkTop: '#FFC233',
-    talkBottom: '#F2A900',
-    talkRing: '#14181F',
-    pill: '#E6E3DD',
-    onPill: '#14181F',
-    pillBorder: '#14181F',
-    panel: '#2B211D',
-    onPanel: '#FFFFFF',
-    onPanelMuted: '#E8E2DE',
-    panelDanger: '#FFB4AB',
-    panelCardBorder: '#6B7280',
-    profileBg: '#14181F',
-    onProfile: '#FFFFFF',
-    profileRing: '#FFFFFF',
+    dangerBg: '#FDECEA',
+    dangerEdge: '#B3261E',
+    warning: '#8A4B00',
+    warningBg: '#FFF3E2',
+    warningEdge: '#C46A00',
     controlBorderWidth: 0,
   },
   dark: {
-    bg: '#0E141B',
-    surface: '#1A232E',
-    surfaceAlt: '#243040',
-    text: '#F3F4F6',
-    textMuted: '#B8C0CC',
-    border: '#8A94A3',
-    primary: '#8CC4FF',
-    onPrimary: '#0E141B',
-    accent: '#FFC233',
-    onAccent: '#14181F',
-    dock: '#1A232E',
-    onDock: '#F3F4F6',
-    focus: '#FFC233',
-    eligible: '#5BD6A6',
-    eligibleBg: '#0F2E24',
-    notEligible: '#FF9B73',
-    notEligibleBg: '#3A1B10',
+    bg: '#0A1715',
+    surface: '#12241F',
+    surfaceAlt: '#1A3029',
+    text: '#E8F5F0',
+    textMuted: '#A7C3BA',
+    border: '#7E9C94',
+    focus: '#5EDDB4',
+    primary: '#5EDDB4',
+    onPrimary: '#0A1715',
+    accent: '#5EDDB4',
+    onAccent: '#0A1715',
+    dockTop: '#12302B',
+    dockBottom: '#1E5A4C',
+    dockEdge: '#5EDDB4',
+    onDock: '#E8F5F0',
+    talkTop: '#8FF0C8',
+    talkBottom: '#5EDDB4',
+    onTalk: '#0A1715',
+    talkRing: '#0A1715',
+    pill: '#1A3029',
+    onPill: '#E8F5F0',
+    pillBorder: '#E8F5F0',
+    frameOuter: '#0A1715',
+    frameInner: '#5EDDB4',
+    cardEdge: '#A7C3BA',
+    profileBg: '#0B2427',
+    onProfile: '#FFFFFF',
+    profileRing: '#FFFFFF',
+    eligible: '#6BE3B5',
+    eligibleBg: '#0E2E25',
+    notEligible: '#B8C4CE',
+    notEligibleBg: '#1E262C',
     unconfirmed: '#B7B9FF',
     unconfirmedBg: '#24264A',
     danger: '#FF8A80',
     dangerBg: '#3A1614',
-    scrim: 'rgba(0,0,0,0.6)',
-    dockTop: '#1A232E',
-    dockBottom: '#0A2540',
-    talkTop: '#FFC233',
-    talkBottom: '#F2A900',
-    talkRing: '#14181F',
-    pill: '#2A3646',
-    onPill: '#F3F4F6',
-    pillBorder: '#F3F4F6',
-    panel: '#2B211D',
-    onPanel: '#FFFFFF',
-    onPanelMuted: '#E8E2DE',
-    panelDanger: '#FFB4AB',
-    panelCardBorder: '#B8C0CC',
-    profileBg: '#14181F',
-    onProfile: '#FFFFFF',
-    profileRing: '#FFFFFF',
+    dangerEdge: '#FF8A80',
+    warning: '#FFB86B',
+    warningBg: '#2E1E0A',
+    warningEdge: '#FFB86B',
     controlBorderWidth: 0,
   },
   highContrast: {
@@ -148,38 +163,40 @@ export const Palettes: Record<ThemeName, Palette> = {
     text: '#FFFFFF',
     textMuted: '#FFFFFF',
     border: '#FFFFFF',
-    primary: '#FFE000',
+    focus: '#6BFFC4',
+    primary: '#6BFFC4',
     onPrimary: '#000000',
-    accent: '#FFE000',
+    accent: '#6BFFC4',
     onAccent: '#000000',
-    dock: '#000000',
+    dockTop: '#000000',
+    dockBottom: '#000000',
+    dockEdge: '#FFFFFF',
     onDock: '#FFFFFF',
-    focus: '#FFE000',
-    eligible: '#7CFFB2',
+    talkTop: '#6BFFC4',
+    talkBottom: '#6BFFC4',
+    onTalk: '#000000',
+    talkRing: '#FFFFFF',
+    pill: '#000000',
+    onPill: '#FFFFFF',
+    pillBorder: '#FFFFFF',
+    frameOuter: '#000000',
+    frameInner: '#FFFFFF',
+    cardEdge: '#FFFFFF',
+    profileBg: '#000000',
+    onProfile: '#FFFFFF',
+    profileRing: '#6BFFC4',
+    eligible: '#6BFFC4',
     eligibleBg: '#000000',
-    notEligible: '#FFB38A',
+    notEligible: '#FFFFFF',
     notEligibleBg: '#000000',
     unconfirmed: '#C9CBFF',
     unconfirmedBg: '#000000',
     danger: '#FF9C94',
     dangerBg: '#000000',
-    scrim: 'rgba(0,0,0,0.85)',
-    dockTop: '#000000',
-    dockBottom: '#000000',
-    talkTop: '#FFE000',
-    talkBottom: '#FFE000',
-    talkRing: '#FFFFFF',
-    pill: '#000000',
-    onPill: '#FFFFFF',
-    pillBorder: '#FFFFFF',
-    panel: '#000000',
-    onPanel: '#FFFFFF',
-    onPanelMuted: '#FFFFFF',
-    panelDanger: '#FF9C94',
-    panelCardBorder: '#FFFFFF',
-    profileBg: '#000000',
-    onProfile: '#FFFFFF',
-    profileRing: '#FFE000',
+    dangerEdge: '#FF9C94',
+    warning: '#FFC48A',
+    warningBg: '#000000',
+    warningEdge: '#FFC48A',
     controlBorderWidth: 2,
   },
 };
@@ -225,8 +242,12 @@ export const Radius = {
 
 export const MaxContentWidth = 640;
 
-/** Info panel opacity (frame 3). Below 0.75 white text can drop under 4.5:1 over a bright scene. */
-export const PanelOpacity = { min: 0.75, default: 0.85, max: 0.95, step: 0.05 } as const;
+/**
+ * How much the camera is dimmed inside the see-through window (frame 3).
+ * 0 keeps the product fully visible; dimming helps glare and light
+ * sensitivity. Text never depends on it: text sits on solid cards.
+ */
+export const CameraDim = { options: [0, 0.25, 0.45] as const, default: 0 } as const;
 
 export const Motion = {
   /** Caption pill grow / shrink. */

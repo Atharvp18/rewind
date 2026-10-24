@@ -5,6 +5,7 @@ import { Linking, StyleSheet, TextInput, View } from 'react-native';
 
 import { BigButton } from '@/components/big-button';
 import type { Capture } from '@/components/camera-stage';
+import { Notice } from '@/components/icon';
 import { InfoPanel, PanelText } from '@/components/info-panel';
 import { Radius, Spacing, Target, Type } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -77,18 +78,26 @@ export function OnboardingFlow({
   requestCamera,
   registerCapture,
   capture,
+  startAt,
+  onDone,
 }: {
   camera: PermissionResponse | null;
   requestCamera: () => Promise<PermissionResponse>;
   /** Lets a tap anywhere on the camera take the card photo. */
   registerCapture: (fn: (() => void) | null) => void;
   capture: () => Promise<Capture | null>;
+  /** Add-a-card mode: start at card capture and call onDone instead of finishing onboarding. */
+  startAt?: 'payment';
+  onDone?: () => void;
 }) {
   const { sayLocal, setListenHandler, refreshCards } = useAgent();
   const { profile, update } = useProfile();
   const [chosen, setStep] = useState<Step | null>(null);
   // The first step depends on whether camera permission is already granted.
-  const step: Step | null = chosen ?? (camera ? (camera.granted ? 'perm_mic' : 'perm_camera') : null);
+  const step: Step | null =
+    chosen ?? startAt ?? (camera ? (camera.granted ? 'perm_mic' : 'perm_camera') : null);
+  // During onboarding the first card asked for is the HSA/FSA card; when adding later it can be any card.
+  const firstCard = !startAt;
   const [name, setName] = useState<{ first: string; last: string } | null>(null);
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
@@ -108,6 +117,10 @@ export function OnboardingFlow({
   // Speak each step as it appears.
   useEffect(() => {
     if (!step) return;
+    if (step === 'done' && onDone) {
+      onDone();
+      return;
+    }
     const first = name?.first ?? profile.firstName;
     const line: Partial<Record<Step, string>> = {
       perm_camera: Say.cameraWhy,
@@ -117,7 +130,7 @@ export function OnboardingFlow({
       phone: DEMO_MODE ? Say.phoneDemo(DEMO_PHONE) : undefined,
       insurance: Say.askInsurance,
       insurance_confirm: insurance ? Say.confirmInsurance(insurance.insurer_name, insurance.plan_name) : undefined,
-      payment: Say.askPayment(cardsAdded === 0),
+      payment: Say.askPayment(cardsAdded === 0 && firstCard),
       payment_type: Say.askCardType,
       payment_confirm: payment ? Say.confirmCard(spokenCard(payment), payment.last4) : undefined,
       done: Say.done(first),
@@ -259,8 +272,8 @@ export function OnboardingFlow({
 
   const yesNoButtons = (onYes: () => void, onNo: () => void, noLabel = 'No, try again') => (
     <View style={styles.buttons}>
-      <BigButton label="Yes, that's right" icon="✓" variant="accent" size="primary" onPress={onYes} />
-      <BigButton label={noLabel} icon="↻" onPress={onNo} />
+      <BigButton label="Yes, that's right" icon="check" variant="accent" size="primary" onPress={onYes} />
+      <BigButton label={noLabel} icon="retry" onPress={onNo} />
     </View>
   );
 
@@ -280,7 +293,7 @@ export function OnboardingFlow({
           ) : (
             <BigButton
               label="Allow camera"
-              icon="📷"
+              icon="camera"
               variant="accent"
               size="primary"
               onPress={async () => {
@@ -298,7 +311,7 @@ export function OnboardingFlow({
           <PanelText>{Say.micWhy}</PanelText>
           <BigButton
             label="Allow microphone"
-            icon="🎙"
+            icon="mic"
             variant="accent"
             size="primary"
             onPress={async () => {
@@ -321,7 +334,7 @@ export function OnboardingFlow({
               <BigButton label="Done" variant="accent" size="primary" onPress={() => onName(typed)} disabled={!typed.trim()} />
             </>
           ) : (
-            <BigButton label="Type my name instead" icon="⌨" onPress={() => setTyping(true)} />
+            <BigButton label="Type my name instead" icon="keyboard" onPress={() => setTyping(true)} />
           )}
         </InfoPanel>
       );
@@ -339,11 +352,13 @@ export function OnboardingFlow({
       return (
         <InfoPanel title={`Nice to meet you, ${profile.firstName || name?.first || ''}`}>
           {step1of(2)}
-          <PanelText>✓ This phone is verified.</PanelText>
+          <Notice icon="verified" color="eligible" kind="label">
+            This phone is verified.
+          </Notice>
           <PanelText kind="small" muted>
             {`Prototype: verified with the demo number ${DEMO_PHONE}. No text message is sent.`}
           </PanelText>
-          <BigButton label="Continue" icon="→" variant="accent" size="primary" onPress={() => setStep('insurance')} />
+          <BigButton label="Continue" icon="next" variant="accent" size="primary" onPress={() => setStep('insurance')} />
         </InfoPanel>
       );
 
@@ -352,7 +367,7 @@ export function OnboardingFlow({
         <InfoPanel title="Your insurance card">
           {step1of(3)}
           <PanelText>Hold your insurance card flat, about a hand length from the phone. Then tap anywhere on the screen.</PanelText>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="📷" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
+          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton label="Skip for now" onPress={() => setStep('payment')} />
         </InfoPanel>
       );
@@ -372,15 +387,18 @@ export function OnboardingFlow({
 
     case 'payment':
       return (
-        <InfoPanel title={cardsAdded === 0 ? 'Your HSA or FSA card' : 'Your next card'}>
-          {step1of(4)}
+        <InfoPanel title={cardsAdded === 0 && firstCard ? 'Your HSA or FSA card' : 'Your next card'}>
+          {startAt ? null : step1of(4)}
           <PanelText>
-            {cardsAdded === 0
+            {cardsAdded === 0 && firstCard
               ? 'Hold your HSA or FSA card flat, about a hand length from the phone. Then tap anywhere on the screen.'
               : 'Hold up your next card, like your Visa card. Then tap anywhere on the screen.'}
           </PanelText>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="📷" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
-          <BigButton label={cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"} onPress={() => setStep('done')} />
+          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="accent" size="primary" disabled={reading} onPress={() => void takeCard()} />
+          <BigButton
+            label={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"}
+            onPress={() => setStep('done')}
+          />
         </InfoPanel>
       );
 
@@ -418,7 +436,7 @@ export function OnboardingFlow({
           {step1of(4)}
           <PanelText>Do you want to add another card?</PanelText>
           <View style={styles.buttons}>
-            <BigButton label="Add another card" icon="+" variant="accent" size="primary" onPress={() => setStep('payment')} />
+            <BigButton label="Add another card" icon="add" variant="accent" size="primary" onPress={() => setStep('payment')} />
             <BigButton label="No, I'm done" onPress={() => setStep('done')} />
           </View>
         </InfoPanel>
@@ -429,7 +447,7 @@ export function OnboardingFlow({
         <InfoPanel title={`You're all set, ${profile.firstName || name?.first || ''}`}>
           {step1of(5)}
           <PanelText>Point your phone at a product and tap anywhere to scan. Your cards and settings are under the round button at the top right.</PanelText>
-          <BigButton label="Start shopping" icon="→" variant="accent" size="primary" onPress={finish} />
+          <BigButton label="Start shopping" icon="next" variant="accent" size="primary" onPress={finish} />
         </InfoPanel>
       );
   }

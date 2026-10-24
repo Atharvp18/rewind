@@ -12,11 +12,20 @@ export function withOpacity(hex: string, opacity: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${opacity})`;
 }
 
+export type PanelTone = 'normal' | 'warning' | 'danger';
+
 /**
- * The see-through information panel (wireframe frame 3). Semi-transparent so a
- * low-vision user can keep the item framed while reading and listening. Opacity
- * is a setting (0.75 to 0.95); at 0.75 white text still measures 6.9:1 over a
- * pure white scene behind it (tech spec 1.9).
+ * Frame 3: the see-through window (the wireframe's rectangle).
+ *
+ * The window itself is clear, so the shopper keeps seeing and framing the
+ * product, like Google Lens or Apple Live Text. Its two-tone edge (one light,
+ * one dark stroke) is visible on any shelf, and turns orange or red for the
+ * two alert levels. Information sits on a solid card at the bottom of the
+ * window, so text contrast never depends on what the camera sees.
+ *
+ * The clear area is also where the "2D visual overlay on the camera preview"
+ * stretch item (business spec §5) would pin labels onto the text the camera
+ * reads, so it is kept free of content.
  */
 export function InfoPanel({
   title,
@@ -25,60 +34,77 @@ export function InfoPanel({
   label,
 }: {
   title?: string;
-  tone?: 'normal' | 'danger';
+  tone?: PanelTone;
   children: ReactNode;
-  /** Optional screen reader label for the whole panel's purpose. */
+  /** Optional screen reader label for the panel's purpose. */
   label?: string;
 }) {
-  const { palette, settings, reduceMotion, themeName } = useA11y();
-  const danger = tone === 'danger';
+  const { palette, settings, reduceMotion } = useA11y();
+  const inner = tone === 'danger' ? palette.dangerEdge : tone === 'warning' ? palette.warningEdge : palette.frameInner;
+
   return (
     <Animated.View
-      entering={reduceMotion ? FadeIn.duration(0) : SlideInDown.duration(Motion.panel)}
-      accessibilityLabel={label}
-      style={[
-        styles.panel,
-        Elevation.floating,
-        {
-          backgroundColor: withOpacity(palette.panel, themeName === 'highContrast' ? 1 : settings.panelOpacity),
-          borderColor: danger ? palette.panelDanger : themeName === 'highContrast' ? palette.onPanel : 'transparent',
-          borderWidth: danger ? 4 : themeName === 'highContrast' ? 2 : 0,
-        },
-      ]}>
-      <ScrollView contentContainerStyle={styles.body} bounces={false}>
-        {title ? (
-          <View style={styles.titleRow}>
-            {danger ? (
-              <View style={[styles.dangerChip, { backgroundColor: palette.panelDanger }]}>
-                <AppText kind="label" color="onAccent" accessible={false}>
-                  ⚠
-                </AppText>
-              </View>
+      entering={reduceMotion ? FadeIn.duration(0) : FadeIn.duration(Motion.panel)}
+      pointerEvents="box-none"
+      style={[styles.window, { borderColor: palette.frameOuter }]}>
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.windowInner,
+          {
+            borderColor: inner,
+            backgroundColor: settings.cameraDim ? withOpacity('#000000', settings.cameraDim) : 'transparent',
+          },
+        ]}>
+        {/* Clear viewfinder: the product stays visible here. */}
+        <View style={styles.clear} pointerEvents="none" />
+
+        <Animated.View
+          entering={reduceMotion ? undefined : SlideInDown.duration(Motion.panel)}
+          accessibilityLabel={label}
+          style={[styles.card, Elevation.floating, { backgroundColor: palette.surface, borderColor: palette.cardEdge }]}>
+          <ScrollView contentContainerStyle={styles.body} bounces={false}>
+            {title ? (
+              <AppText kind="title" accessibilityRole="header">
+                {title}
+              </AppText>
             ) : null}
-            <AppText kind="title" color="onPanel" accessibilityRole="header" style={styles.flex}>
-              {title}
-            </AppText>
-          </View>
-        ) : null}
-        {children}
-      </ScrollView>
+            {children}
+          </ScrollView>
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }
 
-/** Body text inside a panel, always in the panel's text color. */
-export function PanelText({ children, muted, kind = 'body' }: { children: ReactNode; muted?: boolean; kind?: 'body' | 'label' | 'heading' | 'display' | 'small' }) {
+/** Body text inside the info card. */
+export function PanelText({
+  children,
+  muted,
+  kind = 'body',
+}: {
+  children: ReactNode;
+  muted?: boolean;
+  kind?: 'body' | 'label' | 'heading' | 'display' | 'small';
+}) {
   return (
-    <AppText kind={kind} color={muted ? 'onPanelMuted' : 'onPanel'}>
+    <AppText kind={kind} color={muted ? 'textMuted' : 'text'}>
       {children}
     </AppText>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { borderRadius: Radius.card + 8, overflow: 'hidden', flexShrink: 1 },
+  // Outer stroke + inner stroke of the opposite lightness: one always contrasts with the scene.
+  window: { flex: 1, borderWidth: 2, borderRadius: Radius.card + 10 },
+  windowInner: {
+    flex: 1,
+    borderWidth: 4,
+    borderRadius: Radius.card + 8,
+    padding: Spacing.sm,
+    justifyContent: 'flex-end',
+  },
+  clear: { flexGrow: 1, minHeight: 96 },
+  card: { borderWidth: 2, borderRadius: Radius.card, maxHeight: '78%', overflow: 'hidden' },
   body: { padding: Spacing.xl, gap: Spacing.md },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  dangerChip: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  flex: { flexShrink: 1 },
 });

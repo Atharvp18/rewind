@@ -4,13 +4,14 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { Icon, type IconName } from '@/components/icon';
 import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { useAgent, type Phase } from '@/state/agent';
 
 export type DockAction = {
   label: string;
-  icon: string;
+  icon: IconName;
   hint?: string;
   href?: Href;
   onPress?: () => void;
@@ -30,13 +31,13 @@ const STATUS: Record<Phase, string> = {
 };
 
 /**
- * Half-circle dock (wireframe, business spec 6.5 A): navy gradient, amber
+ * Half-circle dock (wireframe, business spec 6.5 A): brand gradient, accent
  * Talk button with a dark ring in the center, within thumb reach. The Talk
  * button starts and stops the voice agent. State is written under it, never
  * shown by color alone.
  */
 export function VoiceDock({ left, right }: { left?: DockAction; right?: DockAction }) {
-  const { palette, themeName } = useA11y();
+  const { palette } = useA11y();
   const { state, talkTap, talkHoldStart, talkHoldEnd } = useAgent();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -52,8 +53,10 @@ export function VoiceDock({ left, right }: { left?: DockAction; right?: DockActi
           borderTopRightRadius: width / 2,
           minHeight: width * 0.5,
           paddingBottom: Math.max(insets.bottom, Spacing.lg),
-          borderColor: palette.onDock,
-          borderWidth: themeName === 'highContrast' ? 2 : 0,
+          // Edge line along the curve: the light top of the gradient alone is 1.11:1 on a white scene.
+          borderColor: palette.dockEdge,
+          borderWidth: 3,
+          borderBottomWidth: 0,
         },
       ]}>
       <Pressable
@@ -74,10 +77,8 @@ export function VoiceDock({ left, right }: { left?: DockAction; right?: DockActi
           },
         ]}>
         <LinearGradient colors={[palette.talkTop, palette.talkBottom]} style={styles.talk}>
-          <AppText color="onAccent" accessible={false} style={styles.talkGlyph}>
-            {listening ? '■' : '🎙'}
-          </AppText>
-          <AppText color="onAccent" accessible={false} style={styles.talkLabel}>
+          <Icon name={listening ? 'stop' : 'mic'} size={34} color="onTalk" strokeWidth={2.5} />
+          <AppText color="onTalk" accessible={false} style={styles.talkLabel}>
             {listening ? 'Send' : 'Talk'}
           </AppText>
         </LinearGradient>
@@ -118,9 +119,7 @@ function DockButton({ action }: { action?: DockAction }) {
         styles.sideBtn,
         { borderColor: palette.onDock, opacity: action.disabled ? 0.5 : pressed ? 0.75 : 1 },
       ]}>
-      <AppText color="onDock" accessible={false} style={styles.sideGlyph}>
-        {action.icon}
-      </AppText>
+      <Icon name={action.icon} size={26} color="onDock" />
       <AppText kind="label" color="onDock" accessible={false} style={styles.center}>
         {action.label}
       </AppText>
@@ -144,7 +143,6 @@ const styles = StyleSheet.create({
   talk: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // Glyph and label inside the fixed circle stay fixed so they never clip;
   // the status line below scales with the text setting instead.
-  talkGlyph: { fontSize: 30, lineHeight: 36 },
   talkLabel: { fontSize: 20, lineHeight: 24, fontWeight: '800' },
   status: { textAlign: 'center' },
   sides: { flexDirection: 'row', gap: Spacing.md, alignSelf: 'stretch' },
@@ -157,6 +155,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xs,
   },
-  sideGlyph: { fontSize: 24, lineHeight: 30 },
   center: { textAlign: 'center' },
 });

@@ -68,7 +68,7 @@ export interface TranscriptLine {
 }
 
 /** Which content the info panel shows over the camera (one screen, tech spec 1.8 redesign). */
-export type PanelView = 'camera' | 'cart' | 'checkout';
+export type PanelView = 'camera' | 'cart' | 'checkout' | 'add_card';
 
 export interface AgentState {
   phase: Phase;
@@ -250,7 +250,7 @@ export interface AgentApi {
 
 const AgentContext = createContext<AgentApi | null>(null);
 
-export const isLocalVoice = (v: VoiceRequest) => v.request_id.startsWith('local-');
+export const isLocalVoice = (v: VoiceRequest) => v.request_id.startsWith('local-') || v.request_id.startsWith('declined-');
 
 const localVoice = (text: string, priority: 'alert' | 'normal' = 'normal'): VoiceRequest => ({
   request_id: `local-${Date.now()}`,
@@ -306,7 +306,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         const id = voice.prompt_id;
         promptTimer.current = setTimeout(() => dispatch({ type: 'prompt_expired', id }), PROMPT_TTL_MS);
       }
-      if (voice.priority === 'alert') haptic.error();
+      // Orange level buzz for alerts (low balance, reroute); declines buzz red in handleError.
+      if (voice.priority === 'alert' && !voice.request_id.startsWith('declined-')) haptic.warning();
       if (screenReaderOn) {
         // Decision 13: mute our own voice, send the text through the screen reader.
         announce(voice.text);
@@ -337,9 +338,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       // The envelope's speech is always safe to speak (0.6). Without one the
       // backend was unreachable, so the app supplies the line.
       const declined = e instanceof ApiError && e.code === E_CARD_DECLINED;
-      // Alerts buzz inside say(); other errors buzz here. One buzz either way.
-      if (!declined) haptic.error();
-      say(localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline, declined ? 'alert' : 'normal'));
+      haptic.error();
+      const v = localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline, declined ? 'alert' : 'normal');
+      // Mark declines so say() doesn't add the orange buzz on top of the red one.
+      say(declined ? { ...v, request_id: `declined-${v.request_id}` } : v);
     },
     [say],
   );

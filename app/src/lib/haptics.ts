@@ -20,7 +20,10 @@ export const haptic = {
   /** The agent finished a response, or the user asked for a repeat. */
   done: () =>
     enabled && void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}),
-  /** Declined payment, alert, or error envelope. */
+  /** Orange level: low balance, reroute or add-a-card suggestion. */
+  warning: () =>
+    enabled && void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}),
+  /** Red level: declined payment or error. */
   error: () =>
     enabled && void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}),
 };

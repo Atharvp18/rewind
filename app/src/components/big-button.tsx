@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View, type PressableProps } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { Icon, type IconName } from '@/components/icon';
 import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 
@@ -8,8 +9,8 @@ type Variant = 'primary' | 'secondary' | 'danger' | 'accent';
 
 export type BigButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   label: string;
-  /** A short glyph shown before the label. Decorative: the label carries the meaning. */
-  icon?: string;
+  /** Icon before the label. Decorative: the label carries the meaning. */
+  icon?: IconName;
   variant?: Variant;
   /** `primary` is 72pt tall for the one main action on a screen; `normal` is 56pt. */
   size?: 'primary' | 'normal';
@@ -26,7 +27,8 @@ export function BigButton({
   accessibilityLabel,
   ...rest
 }: BigButtonProps) {
-  const { palette } = useA11y();
+  const { palette, settings } = useA11y();
+  const iconSize = Math.round(22 * Math.min(settings.textScale, 1.5));
   const colors = {
     primary: { bg: palette.primary, fg: 'onPrimary', border: palette.primary },
     accent: { bg: palette.accent, fg: 'onAccent', border: palette.text },
@@ -55,11 +57,7 @@ export function BigButton({
       ]}
       {...rest}>
       <View style={styles.row}>
-        {icon ? (
-          <AppText kind="label" color={colors.fg} importantForAccessibility="no" accessible={false}>
-            {icon}
-          </AppText>
-        ) : null}
+        {icon ? <Icon name={icon} size={iconSize} color={colors.fg} /> : null}
         <AppText kind="label" color={colors.fg} style={styles.label}>
           {label}
         </AppText>

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { Icon } from '@/components/icon';
 import { Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 
@@ -58,9 +59,12 @@ export function Choice<T extends string | number>({
                 opacity: pressed ? 0.8 : 1,
               },
             ]}>
-            <AppText kind={selected ? 'label' : 'body'} style={styles.center} accessible={false}>
-              {selected ? `✓ ${o.label}` : o.label}
-            </AppText>
+            <View style={styles.choiceInner}>
+              {selected ? <Icon name="check" size={22} color="primary" strokeWidth={3} /> : null}
+              <AppText kind={selected ? 'label' : 'body'} style={styles.center} accessible={false}>
+                {o.label}
+              </AppText>
+            </View>
           </Pressable>
         );
       })}
@@ -138,5 +142,6 @@ const styles = StyleSheet.create({
   },
   pill: { borderWidth: 2, borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs },
   flex: { flexShrink: 1, flexGrow: 1 },
-  center: { textAlign: 'center' },
+  center: { textAlign: 'center', flexShrink: 1 },
+  choiceInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
 });

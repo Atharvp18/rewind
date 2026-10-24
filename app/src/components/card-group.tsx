@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { Icon } from '@/components/icon';
 import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Radius, Spacing } from '@/constants/theme';
 import type { Card, CartGroup } from '@/lib/api';
@@ -13,12 +14,15 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
   const count = `${group.items.length} ${group.items.length === 1 ? 'item' : 'items'}`;
   return (
     <View
-      style={[styles.group, { backgroundColor: palette.surface, borderColor: palette.panelCardBorder }]}
+      style={[styles.group, { backgroundColor: palette.surface, borderColor: palette.border }]}
       accessibilityLabel={`${group.nickname}. ${count}. Subtotal ${centsForScreenReader(group.subtotal_cents)}.`}>
       <View style={styles.head}>
-        <AppText kind="heading" accessibilityRole="header">
-          💳 {group.nickname}
-        </AppText>
+        <View style={styles.titleRow}>
+          <Icon name="card" size={24} />
+          <AppText kind="heading" accessibilityRole="header" style={styles.itemName}>
+            {group.nickname}
+          </AppText>
+        </View>
         {card ? (
           <AppText kind="small" color="textMuted">
             Balance {formatCents(card.balance_cents)}
@@ -53,6 +57,7 @@ export function CardGroupView({ group, card }: { group: CartGroup; card?: Card }
 const styles = StyleSheet.create({
   group: { borderWidth: 2, borderRadius: Radius.card, padding: Spacing.lg, gap: Spacing.md },
   head: { gap: Spacing.xs },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   item: { borderTopWidth: 1, paddingTop: Spacing.md, gap: Spacing.sm },
   itemRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.sm },
   itemName: { flexShrink: 1, flexGrow: 1 },

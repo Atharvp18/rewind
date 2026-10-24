@@ -1,9 +1,5 @@
-import { StyleSheet, View } from 'react-native';
-
-import { AppText } from '@/components/app-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { AlertBlock } from '@/components/alert-block';
 import type { Upstream } from '@/lib/api';
-import { useA11y } from '@/lib/a11y';
 import { useAgent } from '@/state/agent';
 
 const NAMES: Record<Upstream, string> = {
@@ -22,7 +18,6 @@ const EFFECT: Partial<Record<Upstream, string>> = {
 
 /** Names any upstream reported `down` by /v1/health, in words (never color alone). */
 export function HealthBanner() {
-  const { palette } = useA11y();
   const { state } = useAgent();
   const down = state.health
     ? (Object.entries(state.health.upstreams) as [Upstream, string][]).filter(([, s]) => s === 'down')
@@ -35,18 +30,8 @@ export function HealthBanner() {
     : down.map(([u]) => `${NAMES[u]} is down. ${EFFECT[u] ?? ''}`.trim());
 
   return (
-    <View
-      accessibilityRole="alert"
-      style={[styles.banner, { borderColor: palette.danger, backgroundColor: palette.dangerBg }]}>
-      {lines.map((l) => (
-        <AppText key={l} kind="small" color="danger">
-          ⚠ {l}
-        </AppText>
-      ))}
-    </View>
+    <AlertBlock level="danger" title={unreachable ? 'Offline' : 'Service down'}>
+      {lines.join(' ')}
+    </AlertBlock>
   );
 }
-
-const styles = StyleSheet.create({
-  banner: { borderWidth: 2, borderRadius: Radius.button, padding: Spacing.md, gap: Spacing.xs },
-});

@@ -5,8 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
+import { Icon, Notice } from '@/components/icon';
 import { Choice, Section, Toggle } from '@/components/settings-controls';
-import { MaxContentWidth, PanelOpacity, Radius, Spacing, Target } from '@/constants/theme';
+import { CameraDim, MaxContentWidth, Radius, Spacing, Target } from '@/constants/theme';
 import { TEXT_SCALES, THEME_LABEL, useA11y, type SpeechRate, type ThemeChoice } from '@/lib/a11y';
 import type { Card } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -27,7 +28,7 @@ const TYPE_LABEL: Record<Card['type'], string> = {
 export default function ProfileScreen() {
   const { palette, settings, update, themeName, reduceMotion } = useA11y();
   const { profile, reset } = useProfile();
-  const { state, refreshCards, resetDemo, sayLocal } = useAgent();
+  const { state, refreshCards, resetDemo, sayLocal, showView } = useAgent();
 
   useFocusEffect(
     useCallback(() => {
@@ -53,18 +54,22 @@ export default function ProfileScreen() {
         {/* Done sits where the profile button was, so the way back is in the same place. */}
         <View style={styles.header}>
           <View style={[styles.avatar, { backgroundColor: palette.profileBg, borderColor: palette.border }]}>
-            <AppText color="onProfile" style={styles.avatarText} accessible={false}>
-              {initials(profile) === '?' ? '👤' : initials(profile)}
-            </AppText>
+            {initials(profile) === '?' ? (
+              <Icon name="user" size={30} color="onProfile" />
+            ) : (
+              <AppText color="onProfile" style={styles.avatarText} accessible={false}>
+                {initials(profile)}
+              </AppText>
+            )}
           </View>
           <View style={styles.flex}>
             <AppText kind="title" accessibilityRole="header">
               {fullName || 'Your profile'}
             </AppText>
             {profile.phoneVerified ? (
-              <AppText kind="small" color="textMuted">
-                {`✓ Phone verified (demo number ${profile.phone})`}
-              </AppText>
+              <Notice icon="verified" kind="small" color="textMuted">
+                {`Phone verified (demo number ${profile.phone})`}
+              </Notice>
             ) : null}
           </View>
           <Pressable
@@ -101,6 +106,15 @@ export default function ProfileScreen() {
             ) : (
               [...health, ...everyday].map((c) => <CardRow key={c.id} card={c} />)
             )}
+            <BigButton
+              label="Add a card"
+              icon="add"
+              variant="primary"
+              onPress={() => {
+                showView('add_card');
+                router.back();
+              }}
+            />
           </Section>
 
           <Section title="Insurance">
@@ -177,14 +191,17 @@ export default function ProfileScreen() {
               value={settings.captions}
               onChange={(captions) => update({ captions })}
             />
-            <AppText kind="label">Info panel see-through</AppText>
+            <AppText kind="label">Dim the camera behind info</AppText>
+            <AppText kind="small" color="textMuted">
+              Helps with glare. Text is always on a solid card.
+            </AppText>
             <Choice<number>
-              label="Info panel opacity"
-              value={settings.panelOpacity}
-              onChange={(panelOpacity) => update({ panelOpacity })}
-              options={[PanelOpacity.min, PanelOpacity.default, PanelOpacity.max].map((v) => ({
+              label="Camera dimming"
+              value={settings.cameraDim}
+              onChange={(cameraDim) => update({ cameraDim })}
+              options={CameraDim.options.map((v) => ({
                 value: v,
-                label: v === PanelOpacity.min ? 'More see-through' : v === PanelOpacity.max ? 'More solid' : 'Middle',
+                label: v === 0 ? 'Off' : v < 0.3 ? 'Some' : 'More',
               }))}
               row
             />
@@ -231,8 +248,9 @@ function CardRow({ card }: { card: Card }) {
       }. Balance ${centsForScreenReader(card.balance_cents)}.${card.status !== 'active' ? ` ${card.status}.` : ''}`}
       style={[styles.card, { borderColor: isHealth ? palette.eligible : palette.border }]}>
       <View style={styles.cardTop}>
+        <Icon name={isHealth ? 'health' : 'card'} size={26} color={isHealth ? 'eligible' : 'text'} />
         <AppText kind="heading" accessible={false} style={styles.flex}>
-          {isHealth ? '✚' : '💳'} {card.nickname}
+          {card.nickname}
         </AppText>
         {card.last4 ? (
           <AppText kind="label" accessible={false}>
@@ -252,9 +270,9 @@ function CardRow({ card }: { card: Card }) {
         </AppText>
       </View>
       {card.status !== 'active' ? (
-        <AppText kind="label" color="danger" accessible={false}>
-          ⚠ {card.status}
-        </AppText>
+        <Notice icon="alert" kind="label" color="danger">
+          {`Card ${card.status}`}
+        </Notice>
       ) : null}
     </View>
   );

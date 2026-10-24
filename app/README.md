@@ -35,7 +35,7 @@ One camera screen (wireframe frames 1 to 3):
 - **Camera** fills the screen. Tap anywhere, or the dock's Scan button, to scan.
 - **Top right:** profile button. Opens your cards, insurance, accessibility mode, and settings.
 - **Caption pill** grows out of the profile button when Rewind speaks. Tap it to hear the line again.
-- **See-through panel** shows onboarding steps, scan results, cart, checkout, a declined payment, and the receipt.
+- **See-through window** keeps the product visible; information sits on a solid card at its bottom edge (onboarding steps, scan results, cart, checkout, red declines, orange warnings, receipt).
 - **Dock:** round Talk button (tap to talk, hold to speak, tap to interrupt), with Cart and Scan beside it.
 
 First launch walks through: permissions → name (spoken back) → demo phone check → insurance card → HSA/FSA and Visa cards.
@@ -51,6 +51,7 @@ First launch walks through: permissions → name (spoken back) → demo phone ch
 npx tsc --noEmit
 npx expo lint
 npx expo-doctor
+node scripts/contrast-audit.mjs   # WCAG contrast + color-vision check of every theme token
 ```
 
 Accessibility audit with measured contrast: [ACCESSIBILITY.md](ACCESSIBILITY.md).

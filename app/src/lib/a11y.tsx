@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, useColorScheme } from 'react-native';
 
-import { PanelOpacity, Palettes, type Palette, type ThemeName } from '@/constants/theme';
+import { CameraDim, Palettes, type Palette, type ThemeName } from '@/constants/theme';
 import { setHapticsEnabled } from '@/lib/haptics';
 
 export type ThemeChoice = 'system' | ThemeName;
@@ -25,8 +25,8 @@ export interface Settings {
   /** Push-to-talk is the default because the venue is loud (1.4). */
   continuousListening: boolean;
   reduceMotion: boolean;
-  /** Info panel opacity, PanelOpacity.min to max. */
-  panelOpacity: number;
+  /** Dimming of the camera inside the see-through window (glare / light sensitivity). */
+  cameraDim: number;
   /** Haptics are never the only feedback; this turns them off entirely. */
   haptics: boolean;
 }
@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   continuousListening: false,
   reduceMotion: false,
-  panelOpacity: PanelOpacity.default,
+  cameraDim: CameraDim.default,
   haptics: true,
 };
 

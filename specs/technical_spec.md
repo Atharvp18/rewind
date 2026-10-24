@@ -552,47 +552,47 @@ A badge is always icon + words: ✓ "HSA eligible", ✕ "Not HSA eligible", ? "C
 
 ## 1.9 Design system and color (WCAG 2.2 AA)
 
-### Brand direction
+### Brand direction: "Mint Teal"
 
-Calm, trustworthy, signage-like. **Deep navy** for structure and trust, **amber** for the one thing you must find (the Talk button), warm off-white so the screen does not glare in store lighting. Navy and amber are a blue/orange pair, which stays distinct for red-green and blue-yellow colour vision deficiencies.
+Mint for calm (health), deep teal for trust (money). Light mint where the eye rests; one deep teal control to find, the Talk button. The background is a mint-tinted off-white, not pure white, to cut glare under store lights. The brand teal is deliberately **not** the "HSA eligible" green, so brand color never reads as an eligibility claim.
 
-Status colors are chosen from a colour-blind-safe set (teal-green, vermillion, indigo), and **every status also carries an icon and words** (1.4.1). Color is never the only signal.
+**Icons:** Lucide (`lucide-react-native` + `react-native-svg`, both in Expo Go). No emoji. Icons are decorative; words carry the meaning.
 
-### Tokens and measured contrast
+### Tokens (standard theme)
 
-Ratios computed with the WCAG 2.2 relative luminance formula. AA needs 4.5:1 for text and 3:1 for UI component boundaries (1.4.11). Every text pair below also meets AAA (7:1) except where noted.
+All ratios measured by `app/scripts/contrast-audit.mjs`; full tables for all three themes are in `app/ACCESSIBILITY.md`.
 
-**Standard (light)**
-
-| Token | Hex | Pair | Ratio |
-|---|---|---|---|
-| `bg` | `#F7F5F0` | `text` on `bg` | 16.3 |
-| `surface` | `#FFFFFF` | `text` on `surface` | 17.8 |
-| `text` | `#14181F` | | |
-| `textMuted` | `#4A5260` | on `surface` | 7.9 |
-| `primary` (navy) | `#123E6B` | white on `primary` | 10.9 |
-| `accent` (amber) | `#F2A900` | `text` on `accent` | 8.9 |
-| | | `accent` on `primary` (Talk button on dock) | 5.4 |
-| `border` | `#6B7280` | on `surface` | 4.8 |
-| `eligible` / `eligibleBg` | `#0B6E4F` / `#E3F4EC` | | 5.5 (AA) |
-| `notEligible` / `notEligibleBg` | `#B23A0E` / `#FCEBE3` | | 5.2 (AA) |
-| `unconfirmed` / `unconfirmedBg` | `#4C4F9A` / `#ECECF8` | | 6.2 (AA) |
-| `danger` | `#B3261E` | on `surface` | 6.5 (AA) |
-
-Amber on the light background is only 1.8:1, so **amber never sits directly on `bg`**. It appears only on the navy dock, or with a 3px `text`-colored ring.
-
-**Dark**
-
-| Token | Hex | Ratio |
+| Token | Hex | Measured |
 |---|---|---|
-| `bg` / `surface` | `#0E141B` / `#1A232E` | |
-| `text` | `#F3F4F6` | 16.8 on `bg` |
-| `textMuted` | `#B8C0CC` | 8.7 on `surface` |
-| `primary` | `#8CC4FF` | 10.1 on `bg` |
-| `accent` | `#FFC233` | 9.8 on `surface` |
-| `eligible` / `notEligible` / `unconfirmed` | `#5BD6A6` / `#FF9B73` / `#B7B9FF` | 7.6 to 8.8 on their tinted backgrounds |
+| `bg` (mint mist) | `#F2FAF6` | ink text 15.26:1 |
+| `text` (ink teal) / `textMuted` | `#0B2427` / `#3E5A5E` | 16.21 / 7.42 on white |
+| `border` | `#5C7A7E` | 4.63 (UI 3:1) |
+| `primary` (deep teal), white label | `#0E5A63` | 7.89 |
+| `accent` (mint button), ink label | `#5EDDB4` | 9.63 |
+| Dock gradient, light mint → mint | `#E4F8EF` → `#8FE3C2` | ink text 14.64 / 10.75 |
+| Dock edge line (required: light dock is 1.11:1 on a white scene) | `#0E5A63` | 7.89 vs white |
+| Talk button gradient, white icon, white ring | `#137A84` → `#0A434A` | vs dock 4.58 / 7.28; icon 5.07 / 10.97 |
+| Caption pill, ink text, ink border | `#E4F8EF` | 14.64 |
+| See-through window: two strokes, light outer + teal inner | `#FFFFFF` + `#0E5A63` | 7.89 / 21 vs white / black scenes |
+| Info card (solid), ink edge | `#FFFFFF` | text 16.21 |
+| HSA eligible | `#0A6B4F` on `#E2F5EC` | 5.73 |
+| Not HSA eligible (slate, informational) | `#4F5B66` on `#EEF1F4` | 6.13 |
+| Could not confirm | `#4C4F9A` on `#ECECF8` | 6.20 |
 
-**High contrast** (targets AAA 1.4.6): pure black `#000000`, white text and 2px white borders on every control, yellow `#FFE000` for primary and accent (15.9:1), status colors `#7CFFB2` / `#FFB38A` / `#C9CBFF` (12 to 17:1). Tinted status backgrounds are dropped; status chips become black with a colored 2px border.
+### Alert levels
+
+| Level | Use | Colors | Icon + title |
+|---|---|---|---|
+| Red: danger | Declined payment, errors, card frozen or closed, service down | `#B3261E` on `#FDECEA` (5.72), edge `#B3261E` | Octagon, "Declined" / "Error" / "Service down" |
+| Orange: warning / suggestion | Balance too low, reroute (6.4 rule 2), low balance after payment, add another card (6.4, 20.6), price not found, question timed out | `#8A4B00` on `#FFF3E2` (6.21), edge `#C46A00` (3.88) | Triangle, "Warning" / "Suggestion" |
+
+- Red and orange are close in lightness, so the icon and title word always differ.
+- Alerts are solid blocks, so they read the same over any camera image.
+- Haptics also differ: error buzz for red, warning buzz for orange.
+
+**Dark and high contrast** follow the same roles:
+- Dark: dock `#12302B` → `#1E5A4C` with a mint Talk button.
+- High contrast: black and white with bright mint `#6BFFC4` and 2px white edges.
 
 ### Type scale
 
@@ -644,9 +644,9 @@ Follows the team's 3-frame wireframe. One camera screen replaces the Home / Scan
 |---|---|
 | Full-screen camera, all frames | Live `CameraView` behind everything. Tap anywhere, or the dock's Scan, to capture |
 | Top-right dark circle | **Profile**: name, linked HSA/FSA and Visa cards (last 4 only), insurance, the current accessibility mode, and all 1.5 settings |
-| Half-circle dock, round button | Navy gradient dock, amber gradient Talk button with a dark ring. Tap to talk, hold to speak, tap to interrupt. Cart and Scan buttons beside it |
+| Half-circle dock, round button | Light-mint-to-mint gradient dock with a teal edge line; deep teal Talk button with a white mic icon and ring. Tap to talk, hold to speak, tap to interrupt. Cart and Scan buttons beside it |
 | Frame 2: gray pill | Captions. Grows leftward out of the profile button when Rewind speaks; shows the user's last words too. Tap to repeat with a buzz. Instant with Reduce Motion |
-| Frame 3: brown panel | See-through info panel (opacity setting 0.75 to 0.95, default 0.85). Shows onboarding steps, scan result, pill-bottle drug name and strength read-back (`confirm_strength`), cart, checkout split, declined payment, receipt |
+| Frame 3: brown panel | **Transparent window** with a two-tone frame, so the product stays visible (like Google Lens / Live Text). Information sits on a solid card at the window's bottom edge, so text contrast never depends on the camera. The clear area is reserved for the 2D overlay stretch item (business spec §5). Shows onboarding steps, scan result, pill-bottle drug name and strength read-back (`confirm_strength`), cart, checkout split, declined payment, receipt |
 
 **Onboarding (frame 1):**
 1. Plain-language reason, then the phone's camera and microphone permission prompts.

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
+import { Icon } from '@/components/icon';
 import { PROFILE_SIZE } from '@/components/profile-button';
 import { Motion, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -25,6 +26,8 @@ export function TranscriptPill() {
   const lastAgent = [...state.transcript].reverse().find((l) => l.who === 'agent');
   const last = state.transcript[state.transcript.length - 1];
   const userLine = last?.who === 'user' ? last : null;
+  // Alert lines use the two levels: red for a decline, orange for warnings.
+  const level = state.declined ? 'danger' : 'warning';
   const open = settings.captions && !!(lastAgent || userLine) && rowWidth > 0;
 
   useEffect(() => {
@@ -54,7 +57,11 @@ export function TranscriptPill() {
             pillStyle,
             {
               backgroundColor: palette.pill,
-              borderColor: state.captionIsAlert ? palette.danger : palette.pillBorder,
+              borderColor: state.captionIsAlert
+                ? level === 'danger'
+                  ? palette.dangerEdge
+                  : palette.warningEdge
+                : palette.pillBorder,
               borderWidth: state.captionIsAlert ? 3 : 2,
             },
           ]}>
@@ -77,10 +84,14 @@ export function TranscriptPill() {
                 </AppText>
               ) : null}
               {lastAgent ? (
-                <AppText kind="caption" color="onPill" accessible={false}>
-                  {state.captionIsAlert ? '⚠ ' : ''}
-                  {lastAgent.text}
-                </AppText>
+                <View style={styles.line}>
+                  {state.captionIsAlert ? (
+                    <Icon name={level === 'danger' ? 'danger' : 'alert'} size={24} color={level} />
+                  ) : null}
+                  <AppText kind="caption" color="onPill" accessible={false} style={styles.lineText}>
+                    {lastAgent.text}
+                  </AppText>
+                </View>
               ) : null}
             </Animated.View>
             ) : null}
@@ -92,6 +103,8 @@ export function TranscriptPill() {
 }
 
 const styles = StyleSheet.create({
+  line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
+  lineText: { flexShrink: 1 },
   row: { flex: 1, alignItems: 'flex-end', minHeight: PROFILE_SIZE },
   pill: { minHeight: PROFILE_SIZE, borderRadius: PROFILE_SIZE / 2, overflow: 'hidden' },
   press: { flex: 1, justifyContent: 'center', alignItems: 'flex-end' },
