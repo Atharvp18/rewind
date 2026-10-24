@@ -6,3 +6,12 @@ anthropic>=0.40
 pytest>=8
 pytest-asyncio>=0.24
 python-dotenv>=1.0
+
+# Atharv's backend (technical spec 0.4 pins)
+fastapi==0.161.1
+uvicorn==0.54.0
+pydantic==2.14.1
+supabase==2.33.0
+cartesia==4.2.0
+moss==1.21.0
+python-multipart>=0.0.20

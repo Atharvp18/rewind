@@ -57,8 +57,8 @@ def sb(monkeypatch):
 def test_run_balances_and_money_are_integer_cents():
     run1 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(1)}
     run2 = {c["id"]: c["balance_cents"] for c in seed.cards_for_run(2)}
-    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 25000, "card_visa_1": 500000}
-    assert run2["card_hsa_1"] == 1500 and run2["card_fsa_1"] == 1000 and run2["card_visa_1"] == 500000
+    assert run1 == {"card_hsa_1": 34000, "card_fsa_1": 34000, "card_visa_1": 500000}
+    assert run2 == {"card_hsa_1": 1500, "card_fsa_1": 1500, "card_visa_1": 500000}
     for card in seed.CARDS:
         assert type(card["balance_cents"]) is int
     for product in seed.DEMO_PRODUCTS:
@@ -70,13 +70,13 @@ def test_demo_arithmetic_matches_the_script():
     hsa_total = prices["Advil Ibuprofen 200mg"] + prices["Bandages"]
     assert hsa_total == 1848                       # "Two items totaling $18.48"
     assert 34000 - hsa_total == 32152              # "Your HSA balance is now $321.52"
-    assert 1500 < hsa_total and 1000 < hsa_total   # run 2: neither HSA nor FSA can cover the group
+    assert 1500 < hsa_total                        # run 2: the HSA cannot cover the group
     assert prices["Kettle Corn"] == 499
 
 
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
-    assert next(c for c in seed.CARDS if c["id"] == "card_hsa_1")["balance_cents"] == 34000
+    assert [c["balance_cents"] for c in seed.CARDS] == [34000, 34000, 500000]
     for bad in (0, 3, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
@@ -90,6 +90,13 @@ def test_demo_products_and_eligibility_rows_line_up_with_tiea_key_function():
         assert p["product_key"] == normalize_key(p["brand"], p["normalized_name"], p["size"])
     labels = {e["name"]: e["eligible"] for e in seed.DEMO_ELIGIBILITY}
     assert labels == {"Advil Ibuprofen 200mg": True, "Bandages": True, "Kettle Corn": False}
+
+
+def test_the_fsa_is_the_only_default_health_card_and_the_visa_is_not_a_default():
+    defaults = [c["id"] for c in seed.CARDS if c["is_default"]]
+    assert defaults == ["card_fsa_1"]
+    assert {c["id"]: c["type"] for c in seed.CARDS} == {
+        "card_hsa_1": "hsa", "card_fsa_1": "fsa", "card_visa_1": "general"}
 
 
 def test_reset_payload_is_deterministic_and_has_two_insurers():
@@ -258,6 +265,31 @@ def test_get_cart_groups_by_card_with_subtotals(sb):
     assert [(g["card_id"], g["subtotal_cents"]) for g in cart["groups"]] == [
         ("card_hsa_1", 1848), ("card_visa_1", 499)]
     assert cart["total_cents"] == 2347
+
+
+# --- additions for the Fetch.ai payment agent (agents/store.py) ----------------------------
+
+def test_add_cart_item_keeps_a_caller_supplied_id(sb):
+    sb.data = []                                    # the cart read after the insert
+    db.add_cart_item("scan1", "upc:1", "Advil", 1299, "shelf_price", "card_hsa_1", "eligible",
+                     item_id="item-abc")
+    insert = next(c for c in sb.calls if c[0] == "insert")
+    assert insert[1][0]["id"] == "item-abc"
+
+
+def test_reassign_cart_item_moves_one_row_and_marks_override(sb):
+    db.reassign_cart_item("item-abc", "card_visa_1")
+    update = next(c for c in sb.calls if c[0] == "update")
+    assert update[1][0] == {"assigned_card_id": "card_visa_1", "user_overrode_card": True}
+    assert ("eq", ("id", "item-abc"), {}) in sb.calls
+
+
+def test_reset_clears_scan_saved_prices_but_keeps_seeded_products():
+    from pathlib import Path
+    sql = (Path(db.__file__).parent / "functions.sql").read_text()
+    reset = sql[sql.index("CREATE OR REPLACE FUNCTION reset_demo"):]
+    assert "DELETE FROM product_cache WHERE source <> 'seeded';" in reset
+    assert all(p["source"] == "seeded" for p in seed.DEMO_PRODUCTS)
 
 
 # --- additions for the Fetch.ai payment agent (agents/store.py) ----------------------------

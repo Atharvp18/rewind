@@ -3,24 +3,30 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+import time
+
+from api import voice
 from api.envelope import ERRORS, ApiError
 from data import db
 from main import create_app
 
-ENV_NAMES = ("ANTHROPIC_API_KEY", "CARTESIA_API_KEY", "MOSS_PROJECT_ID", "MOSS_PROJECT_KEY",
-             "NESSIE_API_KEY", "REWIND_STUB_VISION")
+ENV_NAMES = ("ANTHROPIC_API_KEY", "CARTESIA_API_KEY", "CARTESIA_VOICE_ID", "MOSS_PROJECT_ID",
+             "MOSS_PROJECT_KEY", "NESSIE_API_KEY", "REWIND_STUB_VISION")
 
 
 @pytest.fixture
 def clean_env(monkeypatch):
     for name in ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setitem(voice._state, "ok_at", None)       # Cartesia never warmed
+    monkeypatch.setitem(voice._state, "error", None)
     return monkeypatch
 
 
 def set_all_keys(monkeypatch):
     for name in ENV_NAMES[:-1]:
         monkeypatch.setenv(name, "x")
+    monkeypatch.setitem(voice._state, "ok_at", time.monotonic())    # Cartesia warmed just now
 
 
 def probe(monkeypatch, reachable=True, latency_ms=50):
