@@ -5,9 +5,35 @@
  * backend cannot be reached and so cannot supply wording.
  */
 
+/**
+ * What the agent is doing while it works, in plain words. Captioned (and spoken once for a scan) instead
+ * of a bare "Looking.", and chosen from what the shopper actually asked for.
+ */
+export const Working = {
+  /** Scan progress: the first line is spoken, the later ones only update the caption. */
+  scan: [
+    'Checking what this item is.',
+    'Finding its price and whether it is HSA eligible.',
+    'Almost there. Choosing the best card.',
+  ],
+  /** A line for what the shopper just said. */
+  forRequest(said: string): string {
+    const t = said.toLowerCase();
+    if (/\b(check ?out|pay|i'?m done|ready)\b/.test(t)) return 'Getting your total ready.';
+    if (/\b(history|invoices?|receipts?)\b/.test(t)) return 'Opening your purchase history.';
+    if (/\b(clear|empty)\b.*\bcart\b/.test(t)) return 'Checking before I clear your cart.';
+    if (/\bcart\b/.test(t)) return 'Opening your cart.';
+    if (/\b(remove|delete|undo)\b/.test(t)) return 'Taking that off your cart.';
+    if (/\bbalance\b/.test(t)) return 'Checking what I can tell you about that.';
+    if (/\b(repeat|again)\b/.test(t)) return 'Getting that again.';
+    if (/^\W*(no|nope|nah|skip|cancel|never ?mind)\b/.test(t)) return 'Okay, skipping that.';
+    if (/^\W*(yes|yeah|yep|sure|ok|okay|please|add)\b|\bgo ahead\b|\b(hsa|fsa|visa|credit|debit)\b/.test(t))
+      return 'Adding that for you.';
+    return 'Working on that.';
+  },
+} as const;
+
 export const Phrases = {
-  /** Spoken if /v1/scan has not answered after 1000 ms (0.7). */
-  looking: 'Looking.',
   /** Talk button tap (business spec 6.5 A). */
   greeting: 'How may I help you today?',
   /** Every launch after onboarding: say it and caption it. */

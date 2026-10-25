@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { PanResponder, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -13,6 +13,7 @@ import Animated, {
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
 import { Icon } from '@/components/icon';
+import { CloseButton } from '@/components/close-button';
 import { InvoiceCard } from '@/components/invoice-view';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { useDomeHeight } from '@/components/voice-orb';
@@ -125,14 +126,7 @@ export function HistorySheet() {
             Simulated payments · mock data
           </AppText>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close purchase history"
-          onPress={() => showView('camera')}
-          hitSlop={8}
-          style={({ pressed }) => [styles.close, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.8 : 1 }]}>
-          <Icon name="close" size={26} />
-        </Pressable>
+        <CloseButton label="Close purchase history" onPress={() => showView('camera')} />
       </View>
 
       <View style={styles.flex}>
@@ -189,7 +183,6 @@ export function HistorySheet() {
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', borderRadius: Radius.card + 4, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, borderBottomWidth: 1 },
-  close: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },

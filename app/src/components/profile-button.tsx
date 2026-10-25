@@ -2,7 +2,7 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Icon } from '@/components/icon';
-import { Elevation, Target } from '@/constants/theme';
+import { Elevation, Press, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { initials, useProfile } from '@/lib/profile';
 import { useResponsive } from '@/lib/responsive';
@@ -38,7 +38,7 @@ export function ProfileButton() {
           backgroundColor: palette.profileBg,
           borderColor: palette.controlBorderWidth ? palette.profileRing : 'rgba(255,255,255,0.35)',
           borderWidth: palette.controlBorderWidth ? 3 : 1.5,
-          opacity: pressed ? 0.85 : 1,
+          opacity: pressed ? Press.pressed : 1,
         },
       ]}>
       {initials(profile) === '?' ? (

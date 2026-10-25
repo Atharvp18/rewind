@@ -19,7 +19,7 @@ import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon, Notice } from '@/components/icon';
 import { InvoiceCard } from '@/components/invoice-view';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
-import { Radius, Spacing, Target } from '@/constants/theme';
+import { Press, Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Card, PaymentRecommendation, ScanResponse } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -327,7 +327,7 @@ function CardChooser({
                   backgroundColor: isSuggested ? palette.surface : palette.surfaceAlt,
                   borderColor: isSuggested ? palette.primary : palette.border,
                   borderWidth: isSuggested ? 2 : 1,
-                  opacity: reason ? 0.6 : pressed ? 0.85 : 1,
+                  opacity: reason ? Press.disabled : pressed ? Press.pressed : 1,
                 },
               ]}>
               <CardArt type={c.type} size="swatch" />
@@ -399,7 +399,7 @@ function CartPanel() {
         {scope === 'confirm_review_rest' ? (
           <ButtonPair yesA11y="Yes, check the rest" noA11y="No, I'm done" onYes={() => answer('yes')} onNo={() => answer('no')} />
         ) : (
-          <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
+          <BigButton label="Check out" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         )}
       </PanelActions>
     </InfoPanel>
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
   suggestedTag: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rxIcon: { width: 36, height: 36, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   // Room to breathe: the name, its strength, the question and the note each get their own block.
   rxNameBlock: { gap: Spacing.sm, marginTop: Spacing.sm },
   rxStrength: { alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },

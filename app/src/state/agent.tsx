@@ -44,7 +44,7 @@ import {
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
 import { configureAudio, speaker, useMic } from '@/lib/audio';
 import { haptic } from '@/lib/haptics';
-import { Phrases } from '@/lib/phrases';
+import { Phrases, Working } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
 
 export type Phase =
@@ -124,6 +124,7 @@ export type Action =
   | { type: 'user_said'; text: string }
   | { type: 'declined'; message: string | null }
   | { type: 'review'; id: string | null }
+  | { type: 'status'; id: string; text: string }
   | { type: 'caption_clear' }
   | { type: 'checkin'; checkin: AgentState['checkin'] }
   | { type: 'view'; view: PanelView };
@@ -209,6 +210,14 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: a.prompt };
     case 'checkin':
       return { ...s, checkin: a.checkin };
+    case 'status':
+      // What the agent is doing right now: shown as the caption, not an answer to remember or repeat.
+      return {
+        ...s,
+        caption: a.text,
+        captionIsAlert: false,
+        transcript: pushLine(s.transcript, { id: a.id, who: 'agent', text: a.text }),
+      };
     case 'caption_clear':
       return { ...s, caption: null, captionIsAlert: false };
     case 'review':
@@ -386,6 +395,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const sayLocal = useCallback(
     (text: string, priority: 'alert' | 'normal' = 'normal') => say(localVoice(text, priority)),
     [say],
+  );
+
+  /** Say what the agent is doing in the caption (and to a screen reader), without speaking or remembering it. */
+  const showStatus = useCallback(
+    (text: string) => {
+      dispatch({ type: 'status', id: `status-${Date.now()}`, text });
+      if (screenReaderOn) announce(text);
+    },
+    [screenReaderOn],
   );
 
   // Idle questions are not remembered, so "repeat" still repeats the item, not the question.
@@ -622,6 +640,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         }
       }
       dispatch({ type: 'submit' });
+      showStatus(Working.forRequest(transcript));
       try {
         const promptId = stateRef.current.lastScan ? await ensurePrompt() : stateRef.current.livePrompt?.id;
         const res = await api.command(transcript, confidence, promptId);
@@ -630,7 +649,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(e);
       }
     },
-    [applyCommand, handleError, ensurePrompt, say],
+    [applyCommand, handleError, ensurePrompt, say, showStatus],
   );
 
   // --- listening ------------------------------------------------------------
@@ -801,21 +820,27 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const scanFrame = useCallback(
     async (imageUri: string, barcode: string | null, discard: () => void, photo: { width: number; height: number }) => {
       dispatch({ type: 'scan_sent' });
-      const looking = setTimeout(() => say(localVoice(Phrases.looking), false, true), LOOKING_MS);
+      // Say what is happening: the first line is spoken, the next two only change the caption.
+      const progress = [
+        setTimeout(() => say(localVoice(Working.scan[0]), false, true), LOOKING_MS),
+        setTimeout(() => showStatus(Working.scan[1]), LOOKING_MS * 4),
+        setTimeout(() => showStatus(Working.scan[2]), LOOKING_MS * 9),
+      ];
+      const looking = { clear: () => progress.forEach(clearTimeout) };
       try {
         const res = await api.scan(imageUri, barcode, null, insurerRef.current);
-        clearTimeout(looking);
+        looking.clear();
         speaker.interrupt(); // cut "Looking." short if it is still playing
         dispatch({ type: 'scan_received', res, photo });
         say(res.voice);
       } catch (e) {
-        clearTimeout(looking);
+        looking.clear();
         handleError(e);
       } finally {
         discard(); // frames are never retained (decision 14)
       }
     },
-    [say, handleError],
+    [say, handleError, showStatus],
   );
 
   const addToCart = useCallback(

@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
@@ -7,8 +7,9 @@ import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
 import { CardArt } from '@/components/card-art';
 import { Icon } from '@/components/icon';
+import { CloseButton } from '@/components/close-button';
 import { Choice, Section, SettingRow, Stepper, Toggle } from '@/components/settings-controls';
-import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing, Target } from '@/constants/theme';
+import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
 import { ANSWER_SECONDS, TEXT_SCALES, useA11y, type SpeechRate, type ThemeChoice } from '@/lib/a11y';
 import type { Card } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -81,14 +82,7 @@ export function ProfileSheet() {
             </View>
           ) : null}
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close profile"
-          onPress={() => showView('camera')}
-          hitSlop={8}
-          style={({ pressed }) => [styles.close, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.8 : 1 }]}>
-          <Icon name="close" size={26} />
-        </Pressable>
+        <CloseButton label="Close profile" onPress={() => showView('camera')} />
       </View>
 
       <View style={styles.scrollWrap}>
@@ -253,9 +247,8 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderBottomWidth: 1,
   },
-  avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 22, lineHeight: 28, fontWeight: '800' },
-  close: { width: Target.min, height: Target.min, borderRadius: Target.min / 2, alignItems: 'center', justifyContent: 'center' },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   flex: { flex: 1 },
   scrollWrap: { flex: 1 },
