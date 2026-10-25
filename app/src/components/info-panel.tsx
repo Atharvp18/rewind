@@ -162,7 +162,7 @@ export function PanelText({
 const styles = StyleSheet.create({
   stack: { position: 'absolute' },
   card: { borderRadius: Radius.card + 4, overflow: 'hidden' },
-  body: { padding: Spacing.lg, gap: Spacing.sm },
+  body: { padding: Spacing.lg, gap: Spacing.md },
   scrollWrap: { flexShrink: 1, minHeight: 0 },
   header: {
     flexDirection: 'row',

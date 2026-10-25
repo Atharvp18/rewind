@@ -217,21 +217,23 @@ function PrescriptionPanel({
           Prescription · from the bottle label
         </AppText>
       </View>
-      <View style={styles.rxNameRow} accessible accessibilityLabel={`${name}${strength ? `, ${strength}` : ''}`}>
+      <View style={styles.rxNameBlock} accessible accessibilityLabel={`${name}${strength ? `, ${strength}` : ''}`}>
         <AppText kind="title" accessible={false}>
           {name}
         </AppText>
         {strength ? (
           <View style={[styles.rxStrength, { backgroundColor: palette.primary }]}>
             <AppText kind="label" color="onPrimary" accessible={false}>
-              {strength}
+              {`Strength: ${strength}`}
             </AppText>
           </View>
         ) : null}
       </View>
-      <PanelText>Is this the right medicine and strength?</PanelText>
+      <View style={styles.rxQuestion}>
+        <PanelText kind="label">Is this the right medicine and strength?</PanelText>
+      </View>
       <View style={[styles.rxNote, { backgroundColor: palette.surfaceAlt }]}>
-        <Icon name="health" size={20} color="textMuted" />
+        <Icon name="health" size={22} color="textMuted" />
         <AppText kind="small" color="textMuted" style={styles.name}>
           Rewind can’t give medical advice. Ask the pharmacist about dosage or safety.
         </AppText>
@@ -581,11 +583,13 @@ const styles = StyleSheet.create({
   cardInfo: { flex: 1 },
   suggestedTag: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
-  rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  rxNameRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
-  rxStrength: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-  rxNote: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, borderRadius: Radius.button, padding: Spacing.md },
+  // Room to breathe: the name, its strength, the question and the note each get their own block.
+  rxNameBlock: { gap: Spacing.sm, marginTop: Spacing.sm },
+  rxStrength: { alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+  rxQuestion: { marginTop: Spacing.sm },
+  rxNote: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, borderRadius: Radius.button, padding: Spacing.lg, marginTop: Spacing.sm },
   grow: { flexGrow: 1, flexBasis: 110 },
   grow2: { flexGrow: 2, flexBasis: 160 },
   priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.md, rowGap: Spacing.xs },
