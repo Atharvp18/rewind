@@ -18,7 +18,6 @@ from eligibility.classify import classify_eligibility
 from lookup.chain import resolve_product
 from lookup.moss_index import MossUnavailable, find_match
 from lookup.normalize import normalize_key
-from lookup import demo_items
 from lookup.web_price import find_price_online
 from models.schemas import EligibilityResult, ProductResolution, ScanResponse, ScanResult
 from payments import cart_store
@@ -58,13 +57,10 @@ async def identify(img: bytes, hint_price_cents: int | None, extract=None):
     if hint_price_cents is not None and extract.shelf_price_cents is None:
         extract = extract.model_copy(update={"shelf_price_cents": hint_price_cents})
     product = await asyncio.to_thread(resolve_product, extract)
-    retailer = demo_items.match(product)                         # the three demo products, exactly
-    checked = True
-    if retailer is None:
-        try:
-            retailer = await find_match(product)                 # closest store listing, or None
-        except MossUnavailable:
-            checked = False                                      # the index could not answer
+    try:
+        retailer, checked = await find_match(product), True     # closest store listing, or None
+    except MossUnavailable:
+        retailer, checked = None, False                          # the IRS rules decide alone
     if retailer and retailer.get("pinned") and retailer.get("price_cents"):
         # A demo item: the same price every time, not whatever the tag, cache or web shows today.
         product.amount_cents, product.price_source, product.state = retailer["price_cents"], "seeded", "resolved"

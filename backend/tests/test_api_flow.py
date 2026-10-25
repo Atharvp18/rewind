@@ -108,7 +108,7 @@ def test_an_unidentifiable_product_is_unresolved(client):
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")})
     body = r.json()
     assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
-    assert "hold the item steady" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
+    assert "tell me what it is" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
 
 
 def test_an_empty_image_is_rejected(client):
@@ -129,16 +129,8 @@ def test_a_product_not_in_our_data_is_treated_as_not_eligible_and_goes_to_the_vi
     rec = body["recommendation"]
     assert body["scan"]["eligibility"]["label"] == "not_eligible"
     assert rec["decision"] == "route_to_general" and rec["card_id"] == VISA
-    text = body["voice"]["text"]
-    # Just the name, the price and the card: nothing about eligibility or a list.
-    assert text == "Yoga Mat, $25.00. Use your Visa credit. Add it to your cart?"
-    assert body["voice"]["priority"] == "normal"
-
-
-def test_a_known_ineligible_item_is_still_flagged(client):
-    body = kettle(client)
-    text = body["voice"]["text"]
-    assert "Not HSA eligible" in text and "not an HSA or FSA card" in text and body["voice"]["priority"] == "alert"
+    assert body["voice"]["priority"] == "alert" and "Visa" in body["voice"]["text"]
+    assert "not eligible" in body["voice"]["text"]
 
 
 # --- adding to the cart ------------------------------------------------------------------------------
@@ -202,7 +194,7 @@ def test_a_scan_with_no_readable_price_uses_the_online_price_and_says_so(client,
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:tissues_far", "image/jpeg")})
     body = r.json()
     assert body["scan"]["product"]["price_source"] == "online" and body["scan"]["product"]["amount_cents"] == 349
-    assert "online" not in body["voice"]["text"].lower()          # the simulation never mentions where a price came from
+    assert "found that price online" in body["voice"]["text"]
     assert body["recommendation"]["card_id"] == VISA
 
 
@@ -227,20 +219,6 @@ def test_a_pinned_demo_item_always_gets_its_fixed_price(client, monkeypatch):
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:advil", "image/jpeg")})     # the tag reads $12.99
     product = r.json()["scan"]["product"]
     assert product["amount_cents"] == 519 and product["price_source"] == "seeded"
-
-
-def test_a_scan_of_the_allergy_demo_item_uses_its_price_without_the_index(client, monkeypatch):
-    import api.scan as scan_api
-    from models.schemas import VisionExtract
-
-    async def no_index(product):
-        raise AssertionError("the index must not be asked for a demo item")
-    monkeypatch.setattr(scan_api, "find_match", no_index)
-    monkeypatch.setattr(scan_api, "extract_product", lambda img: VisionExtract(
-        name="Allergy Relief", size="4mg, 100 tablets", category="cold_flu_allergy"))
-    body = client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}).json()
-    assert body["scan"]["product"]["amount_cents"] == 399 and body["scan"]["eligibility"]["label"] == "eligible"
-    assert "online" not in body["voice"]["text"].lower()
 
 
 def test_remove_last_item(client):
