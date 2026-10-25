@@ -32,7 +32,7 @@ def load(session: dict) -> dict:
 
 
 def strip(session: dict) -> dict:
-    out = {k: v for k, v in session.items() if k not in ("cards", "cart", "checkout_splits")}
+    out = {k: v for k, v in session.items() if k not in ("cards", "cart", "checkout_splits", "checkout_moves")}
     return out
 
 
@@ -41,6 +41,10 @@ def save(before: dict, after: dict, request_id: str):
     try:
         splits = after.get("checkout_splits")
         if splits:
+            # Items the preview moved to the next card are reassigned first: confirm_checkout records
+            # each item under the card its cart row names (purchase_items, which History reads).
+            for m in after.get("checkout_moves", []):
+                db.reassign_cart_item(m["item_id"], m["card_id"], m["user_overrode_card"])
             # Atomic in Postgres: debits every card and empties the cart, or changes nothing.
             # The request id is the idempotency key, so a retried message never charges twice.
             result = db.confirm_checkout(request_id, splits)

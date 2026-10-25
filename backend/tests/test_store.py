@@ -45,6 +45,24 @@ def test_checkout_goes_through_atomic_function_with_request_id(calls):
     assert calls == [("confirm_checkout", "req-9", [{"card_id": "card_hsa_1", "amount_cents": 549}])]
 
 
+def test_moved_items_are_reassigned_before_the_charge(calls):
+    """History reads the card from each cart row, so a move made at checkout must be saved first."""
+    s = new_session()
+    s["cards"][0]["balance_cents"] = 1500                      # the HSA can take one item, not both
+    for item in (scan("Advil", 1299), scan("Bandages", 549)):
+        _, s = payment_agent.recommend(s, item)
+        _, s = payment_agent.handle_intent(Intent(intent="confirm"), s)
+    _, s = payment_agent.handle_intent(Intent(intent="checkout"), s)
+    before = s
+    after = payment_agent.handle_intent(Intent(intent="confirm"), before)[1]
+    calls.clear()
+    store.save(before, after, "req-move")
+    assert [c[0] for c in calls] == ["reassign_cart_item", "confirm_checkout"]
+    moved = calls[0][1]
+    assert moved[1] == "card_visa_1" and moved[2] is True       # eligible item on the Visa: possible reimbursement
+    assert "checkout_moves" not in store.strip(after)
+
+
 def test_refused_checkout_says_nothing_was_charged(monkeypatch):
     def refuse(*a):
         raise db.CheckoutFailed("E_CARD_CANNOT_PAY")

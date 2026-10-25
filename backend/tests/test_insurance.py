@@ -136,13 +136,13 @@ def test_strength_must_match_exactly():
     assert "drug list" in f.template and "$" not in f.template
 
 
-def test_hsa_too_low_for_copay_suggests_visa_and_warns():
+def test_hsa_too_low_for_copay_offers_the_visa_quietly():
     s = with_plan("uhc_student")
-    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover the $15.00 copay, under the $10 alert line
+    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover the $15.00 copay
     _, s = start(s)
     f, s = go("confirm", s)
     assert s["pending"]["suggested"] == "card_visa_1"
-    assert f.alert == "low_balance" and "$9.00" not in f.template
+    assert f.alert is None and "$9.00" not in f.template and "can't cover" not in f.template
 
 
 # --- privacy -----------------------------------------------------------------------

@@ -111,24 +111,28 @@ def test_run_2_reroutes_bandages_to_visa():
         _, s = payment_agent.recommend(s, item)
         _, s = go("confirm", s)
 
+    # Shared rules (payments/routing.py): the bandages move to the Visa before the question, and only
+    # where everything goes is said, never that the HSA was short (team decision 2026-10-24).
     f, s = go("checkout", s)
-    assert {"$18.48", "Advil Ibuprofen 200mg", "Bandages", "Visa credit"} <= set(f.must_say)
-    assert "$15.00" not in f.template
-    assert "keep the Advil Ibuprofen 200mg on your HSA card and move the Bandages to your Visa credit" in f.template
+    assert {"$12.99", "$5.49", "HSA card", "Visa credit"} <= set(f.must_say)
+    assert "$12.99 on your HSA card" in f.template and "$5.49 on your Visa credit" in f.template
+    assert "$15.00" not in f.template and "can't cover" not in f.template
+    assert f.template.endswith("Ready to check out?") and s["pending"]["scope"] == "confirm_checkout"
 
     f, s = go("confirm", s)
-    by_card = {i["display_name"]: i["assigned_card_id"] for i in s["cart"]}
-    assert by_card == {"Advil Ibuprofen 200mg": "card_hsa_1", "Bandages": "card_visa_1"}
-    assert f.template.endswith("Ready to check out?")
+    assert sorted((x["card_id"], x["amount_cents"]) for x in s["checkout_splits"]) == [
+        ("card_hsa_1", 1299), ("card_visa_1", 549)]
+    assert "simulated" in f.template and "take your items with you" in f.template
 
 
-def test_insufficient_balance_asks_before_moving_single_item():
+def test_a_short_card_is_skipped_quietly_and_the_next_card_still_needs_a_yes():
     s = new_session()
-    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover $12.99, and is under the $10 alert line
+    s["cards"][0]["balance_cents"] = 900            # $9.00: cannot cover $12.99
     f, s = payment_agent.recommend(s, ADVIL())
-    assert "$9.00" not in f.template and "another card" in f.must_say
-    assert f.alert == "low_balance" and "running low" in f.template
-    assert s["pending"]["scope"] == "choose_card"
+    assert "$9.00" not in f.template and f.alert is None
+    for shaming in ("can't cover", "running low", "add funds"):
+        assert shaming not in f.template
+    assert "Visa credit" in f.template and s["pending"] == {"scope": "confirm_add", "card_id": "card_visa_1", "overrode": True}
     f, s = go("confirm", s)
     assert s["cart"][0]["assigned_card_id"] == "card_visa_1" and s["cart"][0]["user_overrode_card"] is True
 
@@ -196,15 +200,14 @@ def test_balance_query_is_refused_for_privacy():
     assert f is payment_agent.BALANCE_PRIVATE and f.fixed and "$" not in f.template
 
 
-def test_low_balance_after_checkout_beeps_and_warns():
+def test_a_low_balance_after_checkout_is_never_flagged():
     s = new_session()
-    s["cards"][0]["balance_cents"] = 2000          # $20.00 - $12.99 leaves $7.01: under the $10 alert line
+    s["cards"][0]["balance_cents"] = 2000          # $20.00 - $12.99 leaves $7.01
     _, s = payment_agent.recommend(s, ADVIL())
     _, s = go("confirm", s)
     _, s = go("checkout", s)
     f, s = go("confirm", s)
-    assert f.alert == "low_balance"
-    assert "HSA card is running low. You might want to add funds." in f.template
+    assert f.alert is None and "running low" not in f.template
     assert "$7.01" not in f.template                # the balance itself is never spoken
 
 

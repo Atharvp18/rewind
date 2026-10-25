@@ -6,7 +6,11 @@ fact sheet plus the updated session. Nothing here matches on the user's words.
 
 Cards and cart live in Supabase (Atharv's schema, via data/db.py). agents/store.py
 loads them into the session before the rules run and writes the changes back after.
-Routing is the minimal form of tech spec 3.5.
+
+One set of rules for the app and the agents: routing and the checkout split come from
+payments/routing.py, and the checkout lines from speech/compose.py, the same code behind the
+app's HTTP endpoints. A card that can't take an item is skipped quietly for the next card (FSA,
+HSA, everyday card); balances and "running low" are never spoken (team decision 2026-10-24).
 """
 from __future__ import annotations
 
@@ -27,39 +31,23 @@ from agents.common import dollars
 from agents.messages import FactsMsg, PaymentRequest, PaymentResponse, payment_protocol
 from agents.intent import REFUSALS, Intent
 from agents.insurance import COPAY_HSA, also_sold_by_prescription, coverage, describe_plan, strength_of
-from agents.session import LOW_BALANCE_CENTS, plan_profile
+from agents.session import plan_profile
 from agents.speaker import Facts, say, PRICE_RETRY
 from data.db import DBUnavailable
+from payments.routing import Move, apply_moves, plan_checkout, route_item
+from speech import compose
 
 logger = logging.getLogger(__name__)
 
 HELP = say("I can add the item you're looking at, read your cart, "
            "remove the last item, or check out. What would you like?")
 
-# Privacy rule: balances are never spoken. The agent only says whether a card
-# can cover something, and raises a beep + spoken alert when a card runs low.
+# Privacy rule: balances are never spoken, and a card being short is never the topic.
 FSA_FIRST = "Your FSA money expires at the end of the plan year, so I'll use it first."
 # Real HSA/FSA administrators, named only as examples of where a claim is filed.
 CLAIM_EXAMPLES = "Optum Financial or HealthEquity"
 
-BALANCE_PRIVATE = say("For your privacy, I don't say card balances out loud. "
-                      "I'll tell you if a card can't cover an item, and I'll alert you when a card is running low.",
-                      fixed=True)
-
-
-def low_balance_alert(card: dict) -> Facts | None:
-    if card["type"] in ("hsa", "fsa") and card["balance_cents"] < LOW_BALANCE_CENTS:
-        return say(f"Your {card['nickname']} is running low. You might want to add funds.",
-                   card["nickname"], "running low", alert="low_balance")
-    return None
-
-
-def _with_alert(facts: Facts, card: dict | None) -> Facts:
-    """Append a low-balance alert to facts if the card is low."""
-    alert = low_balance_alert(card) if card else None
-    if alert is None:
-        return facts
-    return say(facts.template + " " + alert.template, *facts.must_say, *alert.must_say, alert="low_balance")
+BALANCE_PRIVATE = say(compose.BALANCE_REFUSAL, fixed=True)    # the same words the app's backend uses
 
 
 def _card(session: dict, card_id: str) -> dict:
@@ -99,37 +87,11 @@ def _card_by_type(session: dict, kind: str | None) -> dict | None:
 
 
 def _route(session: dict, scan: dict) -> dict:
-    """Minimal spec 3.5 routing."""
-    elig = scan["eligibility"]["label"]
-    amount = scan["product"]["amount_cents"]
-    hsa, visa = _health_card(session), _general_card(session)
-    covering = _health_card(session, amount) if amount is not None else None
-    if not session["cards"]:
-        return {"decision": "blocked", "card_id": None, "reason_code": "no_card_linked", "card_options": []}
-    if elig == "could_not_confirm":
-        return {"decision": "ask_user", "card_id": None, "reason_code": "eligibility_unconfirmed",
-                "card_options": [c["id"] for c in session["cards"]]}
-    if elig == "not_eligible":
-        if visa is None:
-            return {"decision": "blocked", "card_id": None, "reason_code": "no_card_covers", "card_options": []}
-        return {"decision": "route_to_general", "card_id": visa["id"], "reason_code": "not_eligible", "card_options": []}
-    if hsa is None:
-        if visa is None:
-            return {"decision": "blocked", "card_id": None, "reason_code": "no_card_covers", "card_options": []}
-        return {"decision": "route_to_general", "card_id": visa["id"], "reason_code": "no_health_card_linked", "card_options": []}
-    if covering:
-        first = _health_card(session)               # FSA first, then HSA (the spending order)
-        if covering["type"] == "fsa":
-            code = "fsa_first"
-        elif first["type"] == "fsa" and first["id"] != covering["id"]:
-            code = "fsa_short_use_hsa"              # the FSA cannot cover it, so the HSA does
-        else:
-            code = "eligible_sufficient_balance"
-        return {"decision": "route_to_hsa", "card_id": covering["id"], "reason_code": code, "card_options": []}
-    if visa and visa["balance_cents"] >= amount:
-        return {"decision": "ask_user", "card_id": visa["id"], "reason_code": "eligible_insufficient_balance",
-                "card_options": [visa["id"]]}
-    return {"decision": "blocked", "card_id": None, "reason_code": "no_card_covers", "card_options": []}
+    """Tech spec 3.5 routing, from payments/routing.py (the same code as the app's /v1/scan)."""
+    rec = route_item(scan["eligibility"]["label"], scan["product"]["amount_cents"],
+                     scan.get("amount_basis", "shelf_price"), session["cards"], scan_id=scan.get("scan_id", ""))
+    return {"decision": rec.decision, "card_id": rec.card_id, "reason_code": rec.reason_code,
+            "card_options": list(rec.card_options)}
 
 
 def _add_to_cart(session: dict, scan: dict, card_id: str, overrode: bool = False) -> Facts:
@@ -179,55 +141,31 @@ def _cart_summary(session: dict) -> Facts:
 def _balances(session: dict) -> Facts:
     if not session["cards"]:
         return say("No cards are linked yet.")
-    low = [low_balance_alert(c) for c in session["cards"]]
-    low = [a for a in low if a]
-    if not low:
-        return BALANCE_PRIVATE
-    return say(BALANCE_PRIVATE.template + " " + " ".join(a.template for a in low),
-               *[m for a in low for m in a.must_say], alert="low_balance")
+    return BALANCE_PRIVATE
 
 
-def _reroute_target(session: dict, card: dict, moved: list[dict]) -> dict | None:
-    """The next card in spending order that can take every moved item: FSA, then HSA, then the Visa.
-
-    An FSA's overflow tries the HSA first; an HSA's overflow goes to the Visa. All moved items go to
-    one card, so the question stays one question.
-    """
-    need = sum(i["amount_cents"] for i in moved)
-    order = [c for c in _health_cards(session) if c["type"] == "hsa"] if card["type"] == "fsa" else []
-    if _general_card(session):
-        order.append(_general_card(session))
-    committed = {g["card"]["id"]: g["subtotal_cents"] for g in _groups(session)}
-    return next((c for c in order if c["id"] != card["id"] and c["balance_cents"] - committed.get(c["id"], 0) >= need), None)
+def _must_for(groups, cards: list[dict]) -> list[str]:
+    """Every amount and card name in a split, so a rephrasing can't drop or change them."""
+    nick = {c["id"]: c["nickname"] for c in cards}
+    return [x for g in groups if g.subtotal_cents > 0 for x in (dollars(g.subtotal_cents), nick.get(g.card_id, ""))]
 
 
 def _checkout_preview(session: dict) -> Facts:
+    """The split from payments/routing.py. Items one card can't take are moved to the next card in
+    order before the question, and only where everything goes is said."""
     if not session["cart"]:
         return say("Your cart is empty.", "empty")
-    for g in _groups(session):
-        card = g["card"]
-        if g["subtotal_cents"] > card["balance_cents"]:
-            keep, move, remaining = [], [], card["balance_cents"]
-            for item in sorted(g["items"], key=lambda i: -i["amount_cents"]):
-                if item["amount_cents"] <= remaining:
-                    keep.append(item)
-                    remaining -= item["amount_cents"]
-                else:
-                    move.append(item)
-            sub, nick = dollars(g["subtotal_cents"]), card["nickname"]
-            target = _reroute_target(session, card, move) if move else None
-            if target is None:
-                return _with_alert(say(f"Your {nick} can't cover {sub}. Please use another card for this item.",
-                                       nick, sub, "another card"), card)
-            session["pending"] = {"scope": "confirm_reroute", "move_ids": [i["id"] for i in move], "to_card": target["id"]}
-            keep_names = " and ".join(i["display_name"] for i in keep) or "nothing"
-            move_names = " and ".join(i["display_name"] for i in move)
-            return say(f"Your {nick} can't cover all {sub}. "
-                       f"Want me to keep the {keep_names} on your {nick} and move the {move_names} to your {target['nickname']}?",
-                       nick, sub, keep_names, move_names, target["nickname"])
-    session["pending"] = {"scope": "confirm_checkout"}
-    summary = _cart_summary(session)
-    return say(summary.template + " Ready to check out?", *summary.must_say)
+    cards, items = session["cards"], session["cart"]
+    plan = plan_checkout(items, cards)
+    uncovered = [i for issue in plan.issues for i in issue.uncovered_item_ids]
+    moves = [m for issue in plan.issues for m in issue.moves]
+    final = plan_checkout(apply_moves(items, moves), cards) if moves else plan
+    if uncovered or not final.ok:
+        names = " and ".join(i["display_name"] for i in items if i["id"] in uncovered) or "items"
+        return say(f"No card can cover the {names}. {compose.USE_ANOTHER}", names, "another card")
+    session["pending"] = {"scope": "confirm_checkout", "moves": [m.model_dump() for m in moves]}
+    voice = compose.checkout_preview(final, cards, items)
+    return say(voice.text, *_must_for(final.groups, cards), "before tax")
 
 
 def claim_tip(session: dict) -> Facts | None:
@@ -248,25 +186,33 @@ def claim_tip(session: dict) -> Facts | None:
 
 
 def _checkout_confirm(session: dict) -> Facts:
-    lines, must = ["Payment complete. This was a simulated payment."], ["simulated"]
+    """Charge what the preview said. The moves it made are applied first; a card that can't take an
+    eligible item leaves it on the everyday card, which marks a possible reimbursement."""
+    general = {c["id"] for c in session["cards"] if c["type"] == "general"}
+    moves = [Move(**m) for m in (session.get("pending") or {}).get("moves", [])]
+    # The moves are saved before the charge (agents/store.py), so History records the card that paid.
+    session["checkout_moves"] = []
+    for item in apply_moves(session["cart"], moves):
+        live = next(i for i in session["cart"] if i["id"] == item["id"])
+        if live["assigned_card_id"] != item["assigned_card_id"]:
+            live["assigned_card_id"] = item["assigned_card_id"]
+            live["user_overrode_card"] = item["assigned_card_id"] in general and item["eligibility_label"] == "eligible"
+            session["checkout_moves"].append({"item_id": live["id"], "card_id": live["assigned_card_id"],
+                                              "user_overrode_card": live["user_overrode_card"]})
+    groups = plan_checkout(session["cart"], session["cards"]).groups
     # Supabase debits the cards atomically (confirm_checkout); the local math only shapes the reply.
-    session["checkout_splits"] = [{"card_id": g["card"]["id"], "amount_cents": g["subtotal_cents"]}
-                                  for g in _groups(session)]
-    for g in _groups(session):
-        card = g["card"]
-        card["balance_cents"] -= g["subtotal_cents"]
-        lines.append(f"{dollars(g['subtotal_cents'])} went on your {card['nickname']}.")
-        must += [dollars(g["subtotal_cents"]), card["nickname"]]
-    alerts = [a for a in (low_balance_alert(c) for c in session["cards"]) if a]
+    session["checkout_splits"] = [{"card_id": g.card_id, "amount_cents": g.subtotal_cents}
+                                  for g in groups if g.subtotal_cents > 0]
+    for g in groups:
+        _card(session, g.card_id)["balance_cents"] -= g.subtotal_cents
+    done = compose.checkout_result(groups, session["cards"])
+    text, must = done.text, ["simulated", *_must_for(groups, session["cards"])]
     tip = claim_tip(session)   # claim guidance is spoken word for word, never rephrased
     if tip:
-        lines.append(tip.template)
+        text += " " + tip.template
         must += tip.must_say
     session["cart"], session["pending"] = [], None
-    for a in alerts:
-        lines.append(a.template)
-        must += a.must_say
-    return say(" ".join(lines), *must, fixed=tip is not None, alert="low_balance" if alerts else None)
+    return say(text, *must, fixed=tip is not None)
 
 
 def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
@@ -278,28 +224,24 @@ def _speak_recommendation(session: dict, scan: dict, rec: dict) -> Facts:
     if d == "route_to_hsa":
         card = _card(session, rec["card_id"])
         session["pending"] = {"scope": "confirm_add", "card_id": card["id"]}
-        if code == "fsa_first":
+        if card["type"] == "fsa":
             return say(f"{name}, {shown}. HSA eligible. {FSA_FIRST} Want to use your {card['nickname']}?",
                        name, price, "HSA eligible", "expires", card["nickname"])
-        if code == "fsa_short_use_hsa":      # never the balance: only that the FSA cannot cover it
-            fsa = _health_card(session)
-            return say(f"{name}, {shown}. HSA eligible. Your {fsa['nickname']} can't cover it, so I'd use your "
-                       f"{card['nickname']}. Want to use your {card['nickname']}?",
-                       name, price, "HSA eligible", fsa["nickname"], "can't cover", card["nickname"])
+        # also when the FSA was skipped for the HSA: the card being short is never said
         return say(f"{name}, {shown}. HSA eligible. Want to use your {card['nickname']}?",
                    name, price, "HSA eligible", card["nickname"])
     if d == "route_to_general":
         card = _card(session, rec["card_id"])
+        if code == "routed_to_next_card":
+            # Eligible, but the health cards can't take it: offer the everyday card quietly. Paying an
+            # eligible item this way is a possible reimbursement, so the claim tip follows at checkout.
+            session["pending"] = {"scope": "confirm_add", "card_id": card["id"], "overrode": True}
+            return say(f"{name}, {shown}. HSA eligible. Want to use your {card['nickname']}?",
+                       name, price, "HSA eligible", card["nickname"])
         session["pending"] = {"scope": "confirm_add", "card_id": card["id"]}
         why = "Not HSA eligible." if code == "not_eligible" else "No HSA card is linked."
         return say(f"{name}, {shown}. {why} I'll put this on your {card['nickname']}. Okay?",
                    name, price, why.rstrip("."), card["nickname"])
-    if d == "ask_user" and code == "eligible_insufficient_balance":
-        hsa, visa = _health_card(session), _card(session, rec["card_id"])
-        session["pending"] = {"scope": "choose_card", "card_options": [visa["id"]], "overrode": True}
-        return _with_alert(say(f"{name}, {shown}. HSA eligible, but your {hsa['nickname']} can't cover it. "
-                               f"Please use another card. Want to put it on your {visa['nickname']}?",
-                               name, price, "HSA eligible", hsa["nickname"], "another card", visa["nickname"]), hsa)
     if d == "ask_user" and code == "eligibility_unconfirmed" and _general_card(session):
         # Not listed in the store catalog and no rule says yes: say so, and be proactive about the Visa.
         visa = _general_card(session)
@@ -369,11 +311,9 @@ def _rx_coverage(session: dict) -> Facts:
         return say(f"{facts.template} {COPAY_HSA} Want to use your {hsa['nickname']}?",
                    *facts.must_say, COPAY_HSA, hsa["nickname"])
     if visa:
+        # The health card can't take it: offer the everyday card without saying why.
         session["pending"] = {"scope": "choose_card", "card_options": options, "overrode": bool(hsa), "suggested": visa["id"]}
-        extra = f" Your {hsa['nickname']} can't cover it. Please use another card." if hsa else ""
-        out = say(f"{facts.template}{extra} Want to put it on your {visa['nickname']}?",
-                  *facts.must_say, visa["nickname"], *(["another card"] if hsa else []))
-        return _with_alert(out, hsa) if hsa else out
+        return say(f"{facts.template} Want to put it on your {visa['nickname']}?", *facts.must_say, visa["nickname"])
     _forget_drug(session)
     return say(f"{facts.template} None of your linked cards can cover it. Please use another card.",
                *facts.must_say, "another card")
@@ -411,7 +351,7 @@ def _resolve_pending(session: dict, intent: Intent) -> Facts | None:
         if name == "add_to_cart" and intent.entities.card:
             return None  # user named a card: let the explicit-card rules decide
         if yes or name == "add_to_cart":
-            return _add_to_cart(session, session["last_scan"], pending["card_id"])
+            return _add_to_cart(session, session["last_scan"], pending["card_id"], overrode=pending.get("overrode", False))
         if no:
             session["pending"], session["last_scan"] = None, None
             return say("Okay, skipped.", "skipped")
@@ -435,19 +375,6 @@ def _resolve_pending(session: dict, intent: Intent) -> Facts | None:
         if no:
             session["pending"] = None
             return say("Okay, checkout cancelled.", "cancelled")
-    elif scope == "confirm_reroute":
-        if yes:
-            to_card = _card(session, pending["to_card"])
-            for item in session["cart"]:
-                if item["id"] in pending["move_ids"]:
-                    # the flag marks an eligible item put on the Visa (a possible reimbursement), not FSA -> HSA
-                    item["assigned_card_id"], item["user_overrode_card"] = to_card["id"], to_card["type"] == "general"
-            session["pending"] = None
-            preview = _checkout_preview(session)
-            return say("Done. " + preview.template, *preview.must_say)
-        if no:
-            session["pending"] = None
-            return say("Okay. Your cart is unchanged.", "unchanged")
     elif scope == "confirm_clear":
         if yes:
             session["cart"], session["pending"] = [], None
@@ -470,10 +397,6 @@ def pending_reminder(session: dict) -> Facts | None:
                    p["name"], price)
     if scope == "confirm_checkout":
         return say("You were about to check out. Ready, or would you like to keep shopping?", "check out")
-    if scope == "confirm_reroute":
-        target = next((c for c in session.get("cards", []) if c["id"] == pending.get("to_card")), None)
-        where = target["nickname"] if target else "another card"
-        return say(f"I asked about moving an item to your {where}. Shall I?", where)
     if scope == "confirm_clear":
         return say("Do you still want to clear your cart?", "clear")
     if scope == "confirm_rx" and scan:
