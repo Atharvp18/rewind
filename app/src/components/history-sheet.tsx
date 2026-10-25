@@ -22,7 +22,6 @@ import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
 import { shareReimbursementPacketPdf } from '@/lib/invoice-pdf';
 import { centsForScreenReader, formatCents } from '@/lib/money';
-import { Screens } from '@/lib/phrases';
 import { useAgent } from '@/state/agent';
 
 /**
@@ -35,7 +34,7 @@ import { useAgent } from '@/state/agent';
  */
 export function HistorySheet() {
   const { palette, reduceMotion, settings } = useA11y();
-  const { showView, state, sayLocal } = useAgent();
+  const { showView, state } = useAgent();
   const cue = useScrollCue();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
@@ -171,11 +170,7 @@ export function HistorySheet() {
               key={inv.invoice_id}
               invoice={inv}
               open={open === inv.invoice_id}
-              onToggle={() => {
-                const opening = open !== inv.invoice_id;
-                setOpen(opening ? inv.invoice_id : null);
-                if (opening) sayLocal(Screens.invoice(inv)); // read the receipt that just opened
-              }}
+              onToggle={() => setOpen(open === inv.invoice_id ? null : inv.invoice_id)}
             />
           ))}
         </ScrollView>

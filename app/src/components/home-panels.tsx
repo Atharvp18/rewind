@@ -129,12 +129,6 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // An item that is simply not in our data is just named and priced: no eligibility badge, no mention of a list.
   const showBadge = !(eligibility.label === 'not_eligible' && (eligibility.basis === 'no_match' || eligibility.basis === 'index_unavailable'));
 
-  // The card shows what the agent says: its side notes and its question, in the same words.
-  const sentences = res.voice.sentences.length ? res.voice.sentences : [res.voice.text];
-  const notes = sentences.filter((t) => /already have one|may belong to another item/i.test(t));
-  const last = sentences[sentences.length - 1] ?? '';
-  const question = last.endsWith('?') ? last : null;
-
   // Nothing readable: the agent says so ("hold the item steady"); there is no card and no rescan button.
   if (res.scan.state === 'unresolved') return null;
 
@@ -159,20 +153,14 @@ function ScanPanel({ res }: { res: ScanResponse }) {
       ) : null}
       {product.amount_cents == null ? (
         <AlertBlock level="warning" title="Price not found">
-          Please move closer to the price tag.
+          Point at the shelf tag, or say the price.
         </AlertBlock>
       ) : null}
       {product.amount_cents == null && showBadge ? (
         <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
       ) : null}
-      {notes.map((n) => (
-        <PanelText key={n} kind="small" muted>
-          {n}
-        </PanelText>
-      ))}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
-      {question ? <PanelText kind="label">{question}</PanelText> : null}
       {rec && rec.decision !== 'blocked' ? (
         <CardChooser
           rec={rec}
@@ -566,8 +554,8 @@ function ReceiptPanel() {
 function DeclinedPanel({ message }: { message: string }) {
   const { startCheckout, showView } = useAgent();
   return (
-    <InfoPanel title={Phrases.declinedTitle} tone="warning" onClose={() => showView('cart')}>
-      <AlertBlock level="warning" title="Nothing was charged">
+    <InfoPanel title={Phrases.declinedTitle} tone="danger" onClose={() => showView('cart')}>
+      <AlertBlock level="danger" title="Declined">
         {message}
       </AlertBlock>
       <PanelActions>

@@ -580,11 +580,6 @@ describe('reset_demo (spec 3.4, 3.12)', () => {
     expect(bal(two.cards)).toEqual({ [FSA]: 1500, [HSA]: 500, [VISA]: 500000 });
   });
 
-  it('run 3 is the two-account setup: HSA ($5.00) and Visa, no FSA card', async () => {
-    const three = await m.resetDemo(3);
-    expect(Object.fromEntries(three.cards.map((c) => [c.id, c.balance_cents]))).toEqual({ [HSA]: 500, [VISA]: 500000 });
-  });
-
   it('empties the cart, restarts the shelf, and spends every open question', async () => {
     const r = await scanN(1);
     await m.addCartItem(r.scan.scan_id, FSA, r.voice.prompt_id!);

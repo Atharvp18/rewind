@@ -76,22 +76,6 @@ def test_rest_preview_and_confirm_use_the_app_shapes(client):
     assert paid["new_balances"][0].keys() == {"card_id", "balance_cents"}
 
 
-def test_a_card_that_does_not_go_through_comes_back_to_the_app_as_a_new_checkout_question(client):
-    s = scan(client)
-    say(client, "yes", s["voice"]["prompt_id"])          # Advil on the FSA
-    client.post("/v1/demo/decline-next")
-    pre = client.post("/v1/checkout/preview", headers=APP).json()
-    offer = client.post("/v1/checkout/confirm", headers=APP,
-                        json={"idempotency_key": "k", "prompt_id": pre["voice"]["prompt_id"]}).json()
-    assert offer["payment_id"] is None and offer["issues"] == []
-    assert offer["groups"][0]["card_id"] == "card_hsa_1"
-    assert offer["groups"][0]["items"][0]["display_name"] == "Advil Ibuprofen 200mg"
-    assert offer["voice"]["text"].startswith("Please use another card.") and offer["voice"]["prompt_id"]
-    paid = client.post("/v1/checkout/confirm", headers=APP,
-                       json={"idempotency_key": "k2", "prompt_id": offer["voice"]["prompt_id"]}).json()
-    assert paid["payment_id"] and paid["invoice"]["payments"][0]["card_id"] == "card_hsa_1"
-
-
 def test_review_answer_puts_item_id_at_the_top(client):
     for args in (("Advil Ibuprofen 200mg", 1299, True, "pain_relief"), ("Bandages", 549, False, "first_aid")):
         s = scan(client, *args)

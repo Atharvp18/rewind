@@ -40,7 +40,7 @@ def test_a_demo_reset_empties_the_moss_memory_too(client, fake, monkeypatch):
     monkeypatch.setattr(purchase_memory, "clear_in_background", lambda: cleared.append(True))
     assert client.post("/v1/demo/reset", json={"run": 1}).status_code == 200
     assert cleared == [True]
-    client.post("/v1/demo/reset", json={"run": 4})            # a bad run is rejected before anything is cleared
+    client.post("/v1/demo/reset", json={"run": 3})            # a bad run is rejected before anything is cleared
     assert cleared == [True]
 
 

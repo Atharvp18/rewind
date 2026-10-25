@@ -133,20 +133,9 @@ def _card_line(rec: PaymentRecommendation, cards: dict[str, Card], unlisted: boo
     return USE_ANOTHER
 
 
-def product_unresolved(request_id: str | None = None, warnings: Iterable[str] = ()) -> VoiceRequest:
-    """Nothing usable was found. Say what to do about it: one item, more light, less glare, or hold still."""
-    w = set(warnings)
-    if "E_MULTIPLE_PRODUCTS" in w:
-        text = "I see more than one item. Please hold up just one item in front of the camera."
-    elif "E_TOO_DARK" in w:
-        text = "It is too dark to read this. I'll turn on the light. Please hold the item steady."
-    elif "E_GLARE" in w:
-        text = "There is glare on the label. Tilt the item a little and hold it steady."
-    elif "E_BLURRY" in w:
-        text = "The picture is blurry. Please hold the item still for a moment."
-    else:
-        text = "I do not see an item in the frame. Please hold the item steady in front of the camera."
-    return _request(text, request_id=request_id)
+def product_unresolved(request_id: str | None = None) -> VoiceRequest:
+    return _request("I do not see an item in the frame. Please hold the item steady in front of the camera.",
+                    request_id=request_id)
 
 
 def compose_speech(
@@ -156,7 +145,6 @@ def compose_speech(
     cards: Iterable[Card | dict[str, Any]] | None = None,
     prompt_id: str | None = None,
     request_id: str | None = None,
-    already_in_cart: bool = False,
 ) -> VoiceRequest:
     """The line spoken after a scan: product, price, eligibility, then the card to pay with."""
     if product.amount_cents is None:
@@ -167,15 +155,10 @@ def compose_speech(
     by_id = _cards_by_id(cards)
     unlisted = is_unlisted(elig)
     parts = [f"{product.name}, {money(product.amount_cents)}."]
-    if "E_TAG_NEIGHBOUR" in product.warnings:
-        parts.append("The shelf tag may belong to another item, so this is a typical price.")
-    if already_in_cart:
-        parts.append("You already have one in your cart.")
     if line := eligibility_line(product, elig):
         parts.append(line)
     if rec is not None:
-        line = _card_line(rec, by_id, unlisted)
-        parts.append(line.replace("Add it to your cart?", "Add another one?") if already_in_cart else line)
+        parts.append(_card_line(rec, by_id, unlisted))
     scope = scope_for(rec)
     # Not HSA/FSA eligible is an alert: the shopper should not put it on a health card.
     priority = "alert" if elig.label == "not_eligible" and not unlisted else "normal"
@@ -319,17 +302,6 @@ def checkout_result(
                     "Please remember to take your items with you. Your receipt is saved in History.")
 
 
-def use_another_card(moved_to: Iterable[str], plan: Any, cards: Iterable[Card | dict[str, Any]],
-                     prompt_id: str | None = None) -> VoiceRequest:
-    """A card did not go through. The tech spec's line, then the next card and the new split, then the
-    same question as before. Never a reason or a balance (no-shame rule)."""
-    by_id = _cards_by_id(cards)
-    to = _join(dict.fromkeys(f"your {card_name(c, by_id)}" for c in moved_to)) or "your other card"
-    return _request(f"Please use another card. I can put those items on {to} instead. "
-                    f"Your total is {_split_line(plan.total_cents, plan.groups, by_id)}. Ready to check out?",
-                    scope="confirm_checkout", prompt_id=prompt_id)
-
-
 def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> VoiceRequest:
     return _request(LOW_BALANCE.format(card=card_name(card_id, _cards_by_id(cards))), priority="alert")
 
@@ -339,8 +311,7 @@ def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> V
 def strength_question(name: str, strength: str | None, prompt_id: str | None = None) -> VoiceRequest:
     """Read the drug name and strength back. Nothing proceeds until the user confirms."""
     what = f"{name}, {strength}" if strength else name
-    return _request(f"This label says {what}. Is this the right medicine and strength?", scope="confirm_strength",
-                    prompt_id=prompt_id)
+    return _request(f"This label says {what}. Is that right?", scope="confirm_strength", prompt_id=prompt_id)
 
 
 def strength_confirmed(name: str, strength: str | None, insurer_tip: str | None = None) -> VoiceRequest:

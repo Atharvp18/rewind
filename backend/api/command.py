@@ -68,17 +68,6 @@ def named_card(text: str, cards: list[dict]) -> str | None:
     return None
 
 
-def charged_reply(done, background: BackgroundTasks) -> dict:
-    """A checkout answer. Nothing charged (another card is offered, or the cart changed) is a new
-    checkout question, not a receipt."""
-    if done.payment is None:
-        return reply("checkout_preview", done.voice, total_cents=sum(g.subtotal_cents for g in done.groups),
-                     groups=[g.model_dump() for g in done.groups], issues=[])
-    if done.ledger:
-        background.add_task(nessie.log_withdrawals, done.ledger)
-    return reply("checkout_confirm", done.voice, payment_id=done.payment["payment_id"], invoice=done.invoice)
-
-
 def reply(action: str, voice, **result: Any) -> dict:
     return {"action": action, "result": result, "voice": memory.remember(voice)}
 
@@ -106,7 +95,11 @@ def command(body: Command, background: BackgroundTasks) -> dict:
         except db.PromptExpired:
             info = None
         if info:
-            return charged_reply(checkout.charge(f"command-{body.prompt_id}", info), background)
+            done = checkout.charge(f"command-{body.prompt_id}", info)
+            if done.ledger:
+                background.add_task(nessie.log_withdrawals, done.ledger)
+            return reply("checkout_confirm", done.voice,
+                         payment_id=done.payment["payment_id"] if done.payment else None, invoice=done.invoice)
 
     if has(BALANCE, text):
         return reply("balance_refused", compose.balance_refusal())
@@ -211,7 +204,11 @@ def act_on_prompt(prompt_id: str | None, card_id: str | None, cards: list[dict],
     scope = info["scope"]
 
     if scope == "confirm_checkout":
-        return charged_reply(checkout.charge(f"command-{prompt_id}", info), background)
+        done = checkout.charge(f"command-{prompt_id}", info)
+        if done.ledger:
+            background.add_task(nessie.log_withdrawals, done.ledger)
+        return reply("checkout_confirm", done.voice,
+                     payment_id=done.payment["payment_id"] if done.payment else None, invoice=done.invoice)
     if scope == "confirm_clear_cart":
         cart_store.clear(info)
         return reply("clear_cart", compose.cart_cleared(), cart=db.get_cart())

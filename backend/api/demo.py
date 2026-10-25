@@ -15,7 +15,7 @@ router = APIRouter(prefix="/v1/demo")
 
 
 class Reset(BaseModel):
-    run: Literal[1, 2, 3]   # 3: two accounts, HSA and Visa (data/seed.py)
+    run: Literal[1, 2]
 
 
 @router.post("/decline-next")
