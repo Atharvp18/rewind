@@ -560,7 +560,7 @@ export function nearbyStore(
   simulateStoreId?: string,
 ): Promise<NearbyStore | null> {
   if (isMock()) return mock.nearbyStore(coords, simulateStoreId);
-  return request<NearbyStore | null>('/v1/checkin/nearby', json({ ...coords }));
+  return request<NearbyStore | null>('/v1/checkin/nearby', json({ ...coords, store_id: simulateStoreId }));
 }
 
 /** PROPOSED: while checked in, is the phone still at that store? (Position is sent per update and not kept.) */
@@ -571,7 +571,11 @@ export function stillAtStore(storeId: string, coords: { lat: number; lng: number
 
 /** Presenter demo (mock only): the next checkout is declined once, to show the declined-payment screen. */
 export function demoForceDecline(): void {
-  if (isMock()) mock.demoForceDecline();
+  if (isMock()) {
+    mock.demoForceDecline();
+    return;
+  }
+  void request('/v1/demo/decline-next', { method: 'POST' }).catch(() => {});
 }
 
 export function reissuePrompt(

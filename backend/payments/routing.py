@@ -147,14 +147,15 @@ def route_item(
         return rec("route_to_hsa", "eligible_sufficient_balance", card=first,
                    before=first.balance_cents, after=first.balance_cents - amount_cents)
 
-    # The first card's balance is too low (including zero or negative): suggest the next one that
-    # covers the item, still asking first. Health cards before the everyday card.
+    # The first card can't take it (including a zero or negative balance): go straight to the next
+    # card that can, in the same order, without talking about the balance (team decision 2026-10-24:
+    # never make the user feel short of money). The user still confirms the card before it is added.
     fallbacks = ordered[1:] + ([general] if general is not None else [])
     nxt = next((c for c in fallbacks if c.balance_cents >= amount_cents), None)
     if nxt is not None:
-        return rec("ask_user", "eligible_insufficient_balance", options=[nxt.id],
-                   reroute=Reroute(from_card_id=first.id, to_card_id=nxt.id, reason="insufficient_balance"),
-                   before=first.balance_cents)
+        return rec("route_to_general" if nxt.type == "general" else "route_to_hsa", "routed_to_next_card",
+                   card=nxt, reroute=Reroute(from_card_id=first.id, to_card_id=nxt.id, reason="insufficient_balance"),
+                   before=nxt.balance_cents, after=nxt.balance_cents - amount_cents)
 
     # STEP 5: nothing covers it.
     return rec("blocked", "no_card_covers", before=first.balance_cents)

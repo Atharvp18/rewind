@@ -237,7 +237,9 @@ def test_run_1_ends_at_321_52_and_speaks_no_balance(client, fake):
     assert fake.cards[FSA]["balance_cents"] == 652 and fake.cards[VISA]["balance_cents"] == 499501
     assert fake.cards[HSA]["balance_cents"] == 34000
     voice = body["voice"]
-    assert voice["priority"] == "alert" and "simulated" in voice["text"] and "$18.48" in voice["text"]   # FSA ends at $6.52, under $10
+    # FSA ends at $6.52: read back plainly, never flagged as low (team decision 2026-10-24)
+    assert voice["priority"] == "normal" and "simulated" in voice["text"] and "$18.48" in voice["text"]
+    assert "running low" not in voice["text"] and "take your items with you" in voice["text"]
     assert "$6.52" not in voice["text"] and "$340" not in voice["text"]
     assert client.get("/v1/cart").json()["groups"] == []
     assert {b["id"]: b["balance_cents"] for b in body["new_balances"]}[FSA] == 652
@@ -280,7 +282,8 @@ def test_a_balance_change_between_preview_and_confirm_charges_nothing(client, fa
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "x", "prompt_id": p["voice"]["prompt_id"]})
     body = r.json()
     assert r.status_code == 200 and body["payment_id"] is None and fake.payments == {}
-    assert body["voice"]["text"].startswith("Something changed") and "Is that okay?" in body["voice"]["text"]
+    assert body["voice"]["text"].startswith("Something changed") and "Ready to check out?" in body["voice"]["text"]
+    assert "can't cover" not in body["voice"]["text"]
     assert fake.cards[FSA]["balance_cents"] == 1500 and len(fake.items) == 3
     assert body["voice"]["prompt_id"] and body["voice"]["prompt_id"] != p["voice"]["prompt_id"]
 
@@ -293,33 +296,36 @@ def test_an_item_added_after_the_preview_forces_a_new_confirmation(client, fake)
     assert r["payment_id"] is None and fake.payments == {} and "$18.48" in r["voice"]["text"]
 
 
-def test_low_balance_after_checkout_plays_the_alert_without_the_amount(client, fake):
-    fake.set_balance(FSA, 2000)                  # $20.00 - $12.99 leaves $7.01, under the $10.00 alert line
+def test_a_low_balance_after_checkout_is_never_flagged(client, fake):
+    fake.set_balance(FSA, 2000)                  # $20.00 - $12.99 leaves $7.01
     add(client, advil(client))
     p = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "low", "prompt_id": p["voice"]["prompt_id"]}).json()
-    assert r["voice"]["priority"] == "alert"
-    assert r["voice"]["text"].endswith("Your FSA card is running low. You might want to add funds.")
+    assert r["voice"]["priority"] == "normal"
+    assert "running low" not in r["voice"]["text"] and "add funds" not in r["voice"]["text"]
     assert "$7.01" not in r["voice"]["text"]
 
 
 # --- checkout: run 2 ---------------------------------------------------------------------------------
 
-def test_run_2_offers_the_reroute_and_a_yes_pays_the_split(client, fake):
+def test_run_2_moves_items_to_the_next_card_quietly_and_a_yes_pays_the_split(client, fake):
     client.post("/v1/demo/reset", json={"run": 2})
     fake.set_balance(HSA, 500)                   # the HSA ($5.00) cannot take the $5.49 bandages, so the Visa does
     add(client, advil(client))
     add(client, bandages(client))
+    fake.items[1]["assigned_card_id"] = FSA      # both on the FSA, as if the balance changed after adding
     p = client.post("/v1/checkout/preview").json()
     text = p["voice"]["text"]
-    assert "can't cover" in text and "keep the Advil Ibuprofen 200mg on your FSA card" in text
-    assert "move the Bandages to your Visa credit" in text and "$15.00" not in text
-    assert p["issues"][0]["moves"][0]["to_card_id"] == VISA and p["voice"]["response_scope"] == "confirm_checkout"
+    # Only where things go, never that a card was short (team decision 2026-10-24)
+    assert "$12.99 on your FSA card" in text and "$5.49 on your Visa credit" in text
+    assert "can't cover" not in text and "$15.00" not in text and p["issues"] == []
+    assert {g["card_id"]: g["subtotal_cents"] for g in p["groups"]} == {FSA: 1299, VISA: 549}
+    assert p["voice"]["response_scope"] == "confirm_checkout"
 
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "run2", "prompt_id": p["voice"]["prompt_id"]})
     assert r.status_code == 200 and r.json()["payment_id"]
     assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[VISA]["balance_cents"] == 499451
-    assert "$15.00" not in r.json()["voice"]["text"] and r.json()["voice"]["priority"] == "alert"
+    assert "$15.00" not in r.json()["voice"]["text"] and r.json()["voice"]["priority"] == "normal"
 
 
 def test_run_2_with_both_health_cards_short_moves_the_bandages_to_the_visa(client, fake):
@@ -327,10 +333,10 @@ def test_run_2_with_both_health_cards_short_moves_the_bandages_to_the_visa(clien
     client.post("/v1/demo/reset", json={"run": 2})
     add(client, advil(client))
     add(client, bandages(client))
+    fake.items[1]["assigned_card_id"] = FSA      # both on the FSA, as if the balance changed after adding
     p = client.post("/v1/checkout/preview").json()
-    assert "keep the Advil Ibuprofen 200mg on your FSA card" in p["voice"]["text"]
-    assert "move the Bandages to your Visa credit" in p["voice"]["text"]
-    assert p["issues"][0]["moves"][0]["to_card_id"] == VISA
+    assert "$5.49 on your Visa credit" in p["voice"]["text"] and "can't cover" not in p["voice"]["text"]
+    assert {g["card_id"]: g["subtotal_cents"] for g in p["groups"]} == {FSA: 1299, VISA: 549}
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "run2visa", "prompt_id": p["voice"]["prompt_id"]})
     assert r.status_code == 200
     assert fake.cards[FSA]["balance_cents"] == 201 and fake.cards[HSA]["balance_cents"] == 500
@@ -405,7 +411,8 @@ def test_a_bare_yes_does_not_pick_a_card_but_asks_again(client):
 def test_yes_to_the_only_alternative_card(client, fake):
     client.post("/v1/demo/reset", json={"run": 2})
     s = scan(client, "Advil Ibuprofen 200mg", 1600, upc=None, medication=True, category="pain_relief")
-    assert s["recommendation"]["reason_code"] == "eligible_insufficient_balance"
+    assert s["recommendation"]["reason_code"] == "routed_to_next_card"
+    assert s["recommendation"]["card_id"] == VISA and "balance" not in s["voice"]["text"]
     r = say(client, "yes", s["voice"]["prompt_id"]).json()
     assert r["action"] == "add_to_cart" and "Visa credit" in r["voice"]["text"]
 

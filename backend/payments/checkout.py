@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from api.envelope import ApiError
 from data import db
 from models.schemas import VoiceRequest
 from lookup import purchase_memory
@@ -21,6 +22,15 @@ from speech import compose
 # $10.00 (team decision 2026-10-24, matching the agents and the spec): under this, the alert plays.
 # The run 1 demo ($321.52 left) stays quiet.
 LOW_BALANCE_CENTS = 1000
+
+# Presenter demo: the next charge is declined once (POST /v1/demo/decline-next). Nothing is charged.
+_decline_next = False
+
+
+def decline_next(on: bool = True) -> None:
+    global _decline_next
+    _decline_next = on
+
 
 CHANGED = "Something changed since I last checked, so let me read it again. "
 
@@ -73,6 +83,9 @@ def preview(prefix: str = "") -> Preview:
             "splits": splits_of(final.groups),
             "moves": [m.model_dump() for m in moves],
         })
+        # Items that one card can't take were moved to the next card in order. Say and show only where
+        # everything goes, never that a card was short (team decision 2026-10-24).
+        plan = final
     return Preview(plan, compose.checkout_preview(plan, cards, items, prompt_id=prompt_id, prefix=prefix), cards)
 
 
@@ -113,6 +126,10 @@ def confirm(idempotency_key: str, prompt_id: str | None) -> Confirmed:
 
 def charge(idempotency_key: str, info: dict) -> Confirmed:
     """Charge using an already consumed confirm_checkout prompt."""
+    global _decline_next
+    if _decline_next:
+        _decline_next = False
+        raise ApiError("E_CARD_DECLINED", "presenter demo decline")
     payload = info["payload"]
     cart, cards = db.get_cart(), db.get_cards()
     items = cart_store.flat_items(cart)

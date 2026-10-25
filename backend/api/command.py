@@ -47,8 +47,10 @@ CART = r"\bcart\b"
 NO = r"^(no|nope|nah|skip|cancel|stop)\b|\bskip (it|that|this)\b|\bnever ?mind\b|\bdon'?t\b|\bnot now\b"
 YES = (r"^(yes|yeah|yep|yup|sure|ok|okay|please|correct|right|confirm)\b|\badd (that|it|this)\b"
        r"|\bgo ahead\b|\bdo it\b|\bthat'?s right\b")
+CLOSE_HISTORY = r"\b(close|hide|exit)\b.*\b(history|invoices?|receipts?)\b"
+HISTORY = r"\b(history|invoices?|receipts?|past (purchases|transactions))\b"
 KEEP_OR_REMOVE = r"\b(keep|remove)\b"
-SCOPED_ANSWERS = ("confirm_remove_item", "confirm_review_rest", "confirm_checkin")
+SCOPED_ANSWERS = ("confirm_remove_item", "confirm_review_rest", "confirm_checkin", "confirm_strength")
 CARD_WORDS = {"hsa": "hsa", "fsa": "fsa", "visa": "general", "credit": "general", "general": "general"}
 
 
@@ -88,6 +90,10 @@ def command(body: Command, background: BackgroundTasks) -> dict:
     if has(REPEAT, text):
         last = memory.last()
         return reply("repeat", last or compose.nothing_to_repeat())
+    if has(CLOSE_HISTORY, text):
+        return reply("close_history", compose.history_closed())
+    if has(HISTORY, text):
+        return reply("open_history", compose.history_opened())
     if has(CLEAR, text):
         return clear_cart_prompt()
     if has(REMOVE, text):
@@ -118,6 +124,10 @@ def answer_scoped(info: dict, text: str) -> dict:
     """Answers to the PROPOSED cart-review and store check-in questions."""
     payload, scope = info["payload"], info["scope"]
     yes = has(YES, text) and not has(NO, text)
+    if scope == "confirm_strength":
+        if yes:
+            return reply("strength_confirmed", compose.strength_confirmed(payload["name"], payload.get("strength")))
+        return reply("skip", compose.strength_retry())
     if scope == "confirm_checkin":
         store = store_checkin.by_id(payload.get("store_id"))
         if yes and store:

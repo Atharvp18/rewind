@@ -38,18 +38,22 @@ def test_balance_exactly_equal_is_sufficient():
     assert r.decision == "route_to_hsa" and r.balance_after_cents == 0
 
 
-def test_run2_insufficient_balance_asks_and_proposes_the_visa_without_choosing_it():
+# Team decision 2026-10-24: a card that can't take an item is skipped silently. The item goes to the
+# next card in order (FSA, HSA, everyday card) and the user confirms that card; the balance is never
+# the topic. reroute still records which card was skipped.
+def test_run2_insufficient_balance_goes_to_the_visa_and_still_needs_a_yes():
     r = route(amount=1848, cards=[hsa(1500), visa()])
-    assert (r.decision, r.reason_code) == ("ask_user", "eligible_insufficient_balance")
-    assert r.card_id is None and r.card_options == ["card_visa_1"]
+    assert (r.decision, r.reason_code, r.card_id) == ("route_to_general", "routed_to_next_card", "card_visa_1")
+    assert r.requires_confirmation
     assert (r.reroute.from_card_id, r.reroute.to_card_id, r.reroute.reason) == (
         "card_hsa_1", "card_visa_1", "insufficient_balance")
-    assert r.balance_before_cents == 1500 and r.balance_after_cents is None
+    assert r.balance_before_cents == 500000 and r.balance_after_cents == 500000 - 1848
 
 
 @pytest.mark.parametrize("balance", [0, -500])
 def test_zero_or_negative_balance_is_insufficient(balance):
-    assert route(cards=[hsa(balance), visa()]).reason_code == "eligible_insufficient_balance"
+    r = route(cards=[hsa(balance), visa()])
+    assert (r.reason_code, r.card_id) == ("routed_to_next_card", "card_visa_1")
 
 
 def test_not_eligible_goes_to_the_general_card():
@@ -111,22 +115,22 @@ def test_no_which_health_card_question_any_more():
     assert route(cards=[hsa(), fsa(), visa()]).reason_code != "multiple_health_cards"
 
 
-def test_fsa_too_low_suggests_the_hsa_before_the_visa_and_still_asks():
+def test_fsa_too_low_goes_to_the_hsa_before_the_visa_and_still_asks():
     r = route(amount=1299, cards=[fsa(1000), hsa(20000), visa()])
-    assert (r.decision, r.card_id, r.reason_code) == ("ask_user", None, "eligible_insufficient_balance")
-    assert r.card_options == ["card_hsa_1"]
+    assert (r.decision, r.card_id, r.reason_code) == ("route_to_hsa", "card_hsa_1", "routed_to_next_card")
+    assert r.requires_confirmation
     assert (r.reroute.from_card_id, r.reroute.to_card_id, r.reroute.reason) == ("card_fsa_1", "card_hsa_1", "insufficient_balance")
 
 
-def test_fsa_and_hsa_both_too_low_suggests_the_visa():
+def test_fsa_and_hsa_both_too_low_goes_to_the_visa():
     r = route(amount=1848, cards=[fsa(1500), hsa(500), visa()])
-    assert (r.decision, r.card_options) == ("ask_user", ["card_visa_1"])
+    assert (r.decision, r.card_id) == ("route_to_general", "card_visa_1")
     assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
 
 
 def test_an_hsa_that_covers_it_is_not_blocked_just_because_there_is_no_visa():
     r = route(amount=1299, cards=[fsa(1000), hsa(20000)])
-    assert (r.decision, r.card_options, r.reroute.to_card_id) == ("ask_user", ["card_hsa_1"], "card_hsa_1")
+    assert (r.decision, r.card_id, r.reroute.to_card_id) == ("route_to_hsa", "card_hsa_1", "card_hsa_1")
     assert route(amount=1848, cards=[fsa(1000), hsa(500)]).decision == "blocked"       # nothing covers it
 
 
@@ -166,11 +170,11 @@ def test_with_the_real_seed_an_eligible_item_goes_to_the_fsa_default_without_ask
     assert r.balance_before_cents == 2500 and r.balance_after_cents == 1201
 
 
-def test_with_the_real_seed_run2_asks_to_use_the_visa_because_both_health_cards_are_short():
+def test_with_the_real_seed_run2_goes_to_the_visa_because_both_health_cards_are_short():
     from data.seed import cards_for_run
 
     r = route(amount=1848, cards=cards_for_run(2))
-    assert (r.decision, r.reason_code, r.card_id) == ("ask_user", "eligible_insufficient_balance", None)
+    assert (r.decision, r.reason_code, r.card_id) == ("route_to_general", "routed_to_next_card", "card_visa_1")
     assert (r.reroute.from_card_id, r.reroute.to_card_id) == ("card_fsa_1", "card_visa_1")
 
 
@@ -226,7 +230,7 @@ def test_a_confirmed_copay_follows_the_normal_rules_on_the_remainder_only():
     r = route(amount=1000, basis="remaining_after_copay", copay_confirmed=True)
     assert (r.decision, r.card_id, r.balance_after_cents) == ("route_to_hsa", "card_hsa_1", 33000)
     short = route(amount=2000, basis="remaining_after_copay", copay_confirmed=True, cards=[hsa(1500), visa()])
-    assert short.reason_code == "eligible_insufficient_balance"      # judged on 2000, not on the full price
+    assert short.reason_code == "routed_to_next_card"                # judged on 2000, not on the full price
 
 
 # --- invariants over every combination -----------------------------------------------------------

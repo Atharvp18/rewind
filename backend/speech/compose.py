@@ -100,7 +100,7 @@ def _card_line(rec: PaymentRecommendation, cards: dict[str, Card]) -> str:
     name = lambda cid: card_name(cid, cards)
     options = _join(f"your {name(c)}" for c in rec.card_options)
     reason = rec.reason_code
-    if reason in ("eligible_sufficient_balance", "not_eligible", "no_health_card_linked"):
+    if reason in ("eligible_sufficient_balance", "not_eligible", "no_health_card_linked", "routed_to_next_card"):
         lead = "No HSA or FSA card is linked, so " if reason == "no_health_card_linked" else ""
         return f"{lead}{'use' if lead else 'Use'} your {name(rec.card_id)}. Add it to your cart?"
     if reason == "eligible_insufficient_balance":
@@ -145,12 +145,9 @@ def compose_speech(
     parts = [f"{product.name}, {money(product.amount_cents)}.", eligibility_line(product, elig)]
     if rec is not None:
         parts.append(_card_line(rec, by_id))
-    low_balance = rec is not None and rec.reason_code == "eligible_insufficient_balance"
-    if low_balance and rec.reroute:
-        parts.append(LOW_BALANCE.format(card=f"{card_name(rec.reroute.from_card_id, by_id)}"))
     scope = scope_for(rec)
-    return _request(" ".join(parts), scope=scope, priority="alert" if low_balance else "normal",
-                    prompt_id=prompt_id if scope != "none" else None, request_id=request_id)
+    return _request(" ".join(parts), scope=scope, prompt_id=prompt_id if scope != "none" else None,
+                    request_id=request_id)
 
 
 # --- the cart --------------------------------------------------------------------------------------
@@ -280,19 +277,46 @@ def checkout_result(
     cards: Iterable[Card | dict[str, Any]],
     low_balance_card_ids: Iterable[str] = (),
 ) -> VoiceRequest:
-    """After a confirmed checkout. Which cards are low is decided by the checkout code, not here."""
+    """After a confirmed checkout. Plain and polite; a small balance is never flagged (team decision
+    2026-10-24), so low_balance_card_ids is accepted for older callers and not spoken."""
     by_id = _cards_by_id(cards)
     groups = [g for g in groups if g.subtotal_cents > 0]
     total = sum(g.subtotal_cents for g in groups)
-    text = f"Checked out, simulated. {_split_line(total, groups, by_id)}."
-    low = list(low_balance_card_ids)
-    for card_id in low:
-        text += " " + LOW_BALANCE.format(card=card_name(card_id, by_id))
-    return _request(text, priority="alert" if low else "normal")
+    return _request(f"Thank you. Your simulated payment went through: {_split_line(total, groups, by_id)}. "
+                    "Please remember to take your items with you. Your receipt is saved in History.")
 
 
 def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> VoiceRequest:
     return _request(LOW_BALANCE.format(card=card_name(card_id, _cards_by_id(cards))), priority="alert")
+
+
+# --- prescription label read-back (tech spec 2.3) -------------------------------------------------
+
+def strength_question(name: str, strength: str | None, prompt_id: str | None = None) -> VoiceRequest:
+    """Read the drug name and strength back. Nothing proceeds until the user confirms."""
+    what = f"{name}, {strength}" if strength else name
+    return _request(f"This label says {what}. Is that right?", scope="confirm_strength", prompt_id=prompt_id)
+
+
+def strength_confirmed(name: str, strength: str | None) -> VoiceRequest:
+    """No copay figure: the app has no plan data here, and the pharmacy's claim decides the amount."""
+    what = f"{name}, {strength}" if strength else name
+    return _request(f"Thank you. {what}. The pharmacist will tell you your share, and copays are usually "
+                    "HSA eligible. Please ask the pharmacist about dosage or safety.")
+
+
+def strength_retry() -> VoiceRequest:
+    return _request("Okay. Please hold the label closer to the camera and I'll read it again.")
+
+
+# --- purchase history (PROPOSED) ---------------------------------------------------------------------
+
+def history_opened() -> VoiceRequest:
+    return _request("Here is your purchase history. Scroll to see every receipt.")
+
+
+def history_closed() -> VoiceRequest:
+    return _request("Closing your purchase history.")
 
 
 # --- reviewing one cart item (PROPOSED: tap an item in the cart) -----------------------------------

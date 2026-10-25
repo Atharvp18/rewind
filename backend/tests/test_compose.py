@@ -70,12 +70,14 @@ def test_could_not_confirm_asks_which_card_and_never_picks_one():
     assert voice.response_scope == "choose_card" and rec.decision == "ask_user"
 
 
-def test_run_2_says_another_card_without_any_amount_of_the_balance():
+def test_run_2_offers_the_next_card_without_mentioning_the_balance():
+    # Team decision 2026-10-24: never talk about a card being short; just offer the next card.
     voice, _ = say(product(cents=1600), elig(), run=2)
     assert "$15.00" not in voice.text
-    assert "can't cover" in voice.text and "Visa credit" in voice.text
-    assert "running low. You might want to add funds." in voice.text
-    assert voice.priority == "alert" and voice.response_scope == "choose_card"
+    assert "Use your Visa credit" in voice.text
+    for shaming in ("can't cover", "running low", "add funds", "balance"):
+        assert shaming not in voice.text
+    assert voice.priority == "normal" and voice.response_scope == "confirm_add"
 
 
 def test_no_price_asks_for_the_price_tag():
@@ -121,7 +123,7 @@ def reason_cases():
     no_health = visa
     return {
         "eligible_sufficient_balance": ("eligible", 1299, "shelf_price", both),
-        "eligible_insufficient_balance": ("eligible", 1600, "shelf_price", cards_for_run(2)),
+        "routed_to_next_card": ("eligible", 1600, "shelf_price", cards_for_run(2)),
         "not_eligible": ("not_eligible", 499, "shelf_price", both),
         "eligibility_unconfirmed": ("could_not_confirm", 499, "shelf_price", both),
         "copay_unconfirmed": ("eligible", 500, "remaining_after_copay", both),
@@ -212,12 +214,12 @@ def test_an_uncoverable_item_is_not_offered_a_move():
     assert preview.response_scope == "none" and preview.prompt_id is None
 
 
-def test_checkout_result_adds_the_low_balance_alert():
+def test_checkout_result_never_flags_a_low_balance():
     cards = cards_for_run(1)
     items = cart(("Advil Ibuprofen 200mg", 1299, "card_fsa_1", "eligible"))
     done = compose.checkout_result(plan_checkout(items, cards).groups, cards, ["card_fsa_1"])
-    assert done.priority == "alert"
-    assert done.text.endswith("Your FSA card is running low. You might want to add funds.")
+    assert done.priority == "normal" and "running low" not in done.text
+    assert "take your items with you" in done.text
 
 
 def test_standalone_replies():

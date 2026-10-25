@@ -17,7 +17,8 @@ from data import db
 from eligibility.classify import classify_eligibility
 from lookup.chain import resolve_product
 from lookup.moss_index import MossUnavailable, find_match
-from models.schemas import ScanResponse, ScanResult
+from lookup.normalize import normalize_key
+from models.schemas import EligibilityResult, ProductResolution, ScanResponse, ScanResult
 from payments import cart_store
 from payments.routing import route_item
 from speech import compose
@@ -30,9 +31,28 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PRICE_MAX_CENTS = 50_000_000       # $500,000.00: anything above is a typo, not a shelf price
 
 
-async def identify(img: bytes, hint_price_cents: int | None):
+def save_prescription(extract) -> ScanResponse:
+    """A pharmacy label (tech spec 2.3): read the drug name and strength back and wait for a yes.
+
+    Nothing is priced, routed, or added from a label. The patient's name, Rx number, prescriber and
+    dates are never extracted (vision/prompts.py), so none of them can be stored here.
+    """
+    scan_id = str(uuid.uuid4())
+    name = extract.name or "this prescription"
+    product = ProductResolution(product_key=normalize_key(None, name, extract.size), name=name, size=extract.size,
+                                category=extract.category or "otc_medicine", is_medication=True,
+                                is_prescription_only=True, state="partial", warnings=list(extract.warnings))
+    elig = EligibilityResult(label="could_not_confirm", basis="no_match")
+    db.save_scan(scan_id, product.model_dump(), elig.model_dump())
+    prompt_id = db.create_prompt("confirm_strength", scan_id, {"name": name, "strength": extract.size})
+    scan = ScanResult(scan_id=scan_id, timestamp=datetime.now(timezone.utc).isoformat(), state=product.state,
+                      product=product, eligibility=elig, warnings=list(product.warnings))
+    return ScanResponse(scan=scan, recommendation=None, voice=compose.strength_question(name, extract.size, prompt_id))
+
+
+async def identify(img: bytes, hint_price_cents: int | None, extract=None):
     """Vision, lookup and eligibility, in the same order as the Fetch.ai product agent."""
-    extract = await asyncio.to_thread(extract_product, img)
+    extract = extract or await asyncio.to_thread(extract_product, img)
     if hint_price_cents is not None and extract.shelf_price_cents is None:
         extract = extract.model_copy(update={"shelf_price_cents": hint_price_cents})
     product = await asyncio.to_thread(resolve_product, extract)
@@ -74,7 +94,10 @@ def save_and_route(product, elig) -> ScanResponse:
 
 
 async def run_scan(img: bytes, hint_price_cents: int | None) -> ScanResponse:
-    product, elig = await identify(img, hint_price_cents)
+    extract = await asyncio.to_thread(extract_product, img)
+    if extract.image_kind == "pharmacy_label":
+        return await asyncio.to_thread(save_prescription, extract)
+    product, elig = await identify(img, hint_price_cents, extract)
     return await asyncio.to_thread(save_and_route, product, elig)
 
 

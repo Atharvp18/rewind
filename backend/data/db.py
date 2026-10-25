@@ -14,6 +14,7 @@ import os
 import re
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -28,6 +29,9 @@ DB_TIMEOUT_S = 1.5          # per attempt (spec 0.7: other Supabase reads and wr
 DB_ATTEMPTS = 2             # one retry
 BULK_CHUNK = 500
 PROMPT_TTL_SECONDS = 15
+# The app's "Time to answer" setting for this request (15, 30 or 60 s), set by main.py from the
+# X-Rewind-Prompt-TTL header. None means the default above.
+REQUEST_PROMPT_TTL: ContextVar[int | None] = ContextVar("REQUEST_PROMPT_TTL", default=None)
 
 _CACHE_COLUMNS = (
     "upc", "normalized_name", "brand", "size", "category", "shelf_price_cents",
@@ -283,8 +287,13 @@ def get_purchases(since: str | None = None, until: str | None = None,
 
 # --- prompts (15 s, single use, scope-bound) ----------------------------------------------
 
+def prompt_ttl(ttl_seconds: int | None = None) -> int:
+    return ttl_seconds or REQUEST_PROMPT_TTL.get() or PROMPT_TTL_SECONDS
+
+
 def create_prompt(scope: str, scan_id: str | None, payload: dict | None,
-                  ttl_seconds: int = PROMPT_TTL_SECONDS) -> str:
+                  ttl_seconds: int | None = None) -> str:
+    ttl_seconds = prompt_ttl(ttl_seconds)
     prompt_id = uuid.uuid4().hex
     _rpc("create_prompt", {"p_prompt_id": prompt_id, "p_scope": scope, "p_scan_id": scan_id,
                            "p_payload": payload or {}, "p_ttl_seconds": ttl_seconds})

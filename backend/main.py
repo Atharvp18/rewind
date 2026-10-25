@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from api import app_contract, cart, checkin, checkout, command, demo, health, onboarding, prompts, scan, voice
 from lookup import moss_index
 from api.envelope import register_error_handlers
+from data import db
 
 load_dotenv()
 
@@ -45,6 +46,15 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Rewind backend", lifespan=lifespan)
     register_error_handlers(app)
     app.middleware("http")(app_contract.middleware)       # Nak's app contract, only for X-Rewind-Client: app
+
+    @app.middleware("http")
+    async def time_to_answer(request, call_next):
+        """Every question asked during this request lasts the app's "Time to answer" setting."""
+        token = db.REQUEST_PROMPT_TTL.set(prompts.ttl_from_header(request.headers.get("x-rewind-prompt-ttl")))
+        try:
+            return await call_next(request)
+        finally:
+            db.REQUEST_PROMPT_TTL.reset(token)
     app.include_router(health.router)
     app.include_router(voice.router)
     for module in (scan, cart, checkout, command, demo, prompts, onboarding, checkin):

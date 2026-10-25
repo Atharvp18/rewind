@@ -42,6 +42,7 @@ class ReissueResponse(BaseModel):
 
 
 def ttl_from_header(value: str | None) -> int:
+    """15, 30 or 60 from the header; anything else is the default."""
     try:
         seconds = int(value) if value is not None else db.PROMPT_TTL_SECONDS
     except ValueError:

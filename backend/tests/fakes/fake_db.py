@@ -152,7 +152,8 @@ class FakeDB:
     def clear_cart(self):
         self.items = []
 
-    def create_prompt(self, scope, scan_id, payload, ttl_seconds=15):
+    def create_prompt(self, scope, scan_id, payload, ttl_seconds=None):
+        ttl_seconds = db.prompt_ttl(ttl_seconds)
         prompt_id = uuid.uuid4().hex
         self.prompts[prompt_id] = {"scope": scope, "scan_id": scan_id, "payload": payload or {},
                                    "expires_at": self.clock + ttl_seconds, "consumed": False}

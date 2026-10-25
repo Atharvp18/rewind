@@ -251,3 +251,69 @@ def test_demo_reset_forgets_the_check_in(client):
     say(client, "yes", asked["voice"]["prompt_id"])
     client.post("/v1/demo/reset", json={"run": 1})
     assert store_checkin.current() is None
+
+
+# --- prescription label (tech spec 2.3) ---------------------------------------------------------
+
+def label_scan(client):
+    extract = VisionExtract(image_kind="pharmacy_label", name="Omeprazole", size="20mg", is_medication=True,
+                            is_prescription_only=True, category="digestive_health")
+    client.mp.setattr(scan_api, "extract_product", lambda img: extract)
+    return client.post("/v1/scan", files={"image": ("f.jpg", b"jpeg", "image/jpeg")}).json()
+
+
+def test_a_pharmacy_label_is_read_back_and_never_priced(client):
+    s = label_scan(client)
+    assert s["voice"]["response_scope"] == "confirm_strength" and s["recommendation"] is None
+    assert "Omeprazole, 20mg" in s["voice"]["text"]
+    assert s["scan"]["product"]["is_prescription_only"] and s["scan"]["product"]["size"] == "20mg"
+
+
+def test_yes_confirms_the_strength_and_sends_to_the_pharmacist(client):
+    s = label_scan(client)
+    res = say(client, "yes", s["voice"]["prompt_id"])
+    assert res["action"] == "strength_confirmed" and "pharmacist" in res["voice"]["text"]
+    assert "$" not in res["voice"]["text"]                       # no copay figure is ever invented
+    assert client.get("/v1/cart").json()["groups"] == []        # nothing added from a label
+
+
+def test_no_to_the_strength_asks_to_read_it_again(client):
+    s = label_scan(client)
+    assert say(client, "no", s["voice"]["prompt_id"])["action"] == "skip"
+
+
+# --- history by voice --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, action", [
+    ("find invoice history", "open_history"), ("show my receipts", "open_history"),
+    ("close history", "close_history"), ("hide my invoices", "close_history")])
+def test_history_voice_commands(client, text, action):
+    assert say(client, text, None)["action"] == action
+
+
+# --- time to answer ------------------------------------------------------------------------------
+
+def test_every_question_follows_the_time_to_answer_header(client, fake):
+    extract = VisionExtract(name="Advil Ibuprofen 200mg", upc=None, shelf_price_cents=1299, is_medication=True,
+                            category="pain_relief")
+    client.mp.setattr(scan_api, "extract_product", lambda img: extract)
+    s = client.post("/v1/scan", files={"image": ("f.jpg", b"jpeg", "image/jpeg")},
+                    headers={"X-Rewind-Prompt-TTL": "60"}).json()
+    fake.advance(45)                                             # past the 15 s default, inside 60 s
+    r = client.post("/v1/cart/items", json={"scan_id": s["scan"]["scan_id"], "prompt_id": s["voice"]["prompt_id"]})
+    assert r.status_code == 200, r.text
+
+
+# --- declined payment demo -----------------------------------------------------------------------
+
+def test_decline_demo_declines_once_and_charges_nothing(client, fake):
+    fill(client)
+    before = {k: v["balance_cents"] for k, v in fake.cards.items()}
+    client.post("/v1/demo/decline-next")
+    pre = client.post("/v1/checkout/preview").json()
+    r = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]})
+    assert r.status_code == 402 and r.json()["error"]["code"] == "E_CARD_DECLINED"
+    assert {k: v["balance_cents"] for k, v in fake.cards.items()} == before and fake.payments == {}
+    again = client.post("/v1/checkout/preview").json()
+    ok = client.post("/v1/checkout/confirm", json={"idempotency_key": "d2", "prompt_id": again["voice"]["prompt_id"]})
+    assert ok.status_code == 200                                 # only the next payment was declined
