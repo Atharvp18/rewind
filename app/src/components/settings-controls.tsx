@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -71,9 +71,14 @@ export function Choice<T extends string | number>({
 
   const segW = horizontal ? (width - PAD * 2) / options.length : 0;
   const x = useSharedValue(index * segW);
+  // Slide only when the choice changes. Placing the highlight after the control is measured (or
+  // re-measured) is instant, so opening Settings never shows it sliding over from the left.
+  const lastIndex = useRef(index);
   useEffect(() => {
     const to = index * segW;
-    x.value = reduceMotion ? to : withTiming(to, { duration: SLIDE_MS });
+    const changed = lastIndex.current !== index;
+    lastIndex.current = index;
+    x.value = reduceMotion || !changed ? to : withTiming(to, { duration: SLIDE_MS });
   }, [index, segW, reduceMotion, x]);
   const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
