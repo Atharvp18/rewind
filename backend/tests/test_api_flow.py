@@ -209,6 +209,18 @@ def test_a_prescription_scan_with_an_insurer_gets_the_pharmacist_tip(client, mon
     assert "Your Aetna plan may cover part of this" in done["voice"]["text"]
 
 
+def test_a_pinned_demo_item_always_gets_its_fixed_price(client, monkeypatch):
+    import api.scan as scan_api
+
+    async def listing(product):
+        return {"eligible": True, "name": "Tylenol Extra Strength Caplets", "collected_at": None, "score": 0.9,
+                "price_cents": 519, "pinned": True}
+    monkeypatch.setattr(scan_api, "find_match", listing)
+    r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:advil", "image/jpeg")})     # the tag reads $12.99
+    product = r.json()["scan"]["product"]
+    assert product["amount_cents"] == 519 and product["price_source"] == "seeded"
+
+
 def test_remove_last_item(client):
     add(client, advil(client))
     add(client, bandages(client))

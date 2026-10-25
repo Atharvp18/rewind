@@ -54,7 +54,8 @@ async def build_index(rows: list[dict]) -> int:
         metadata={"eligible": "true" if r["eligible"] else "false", "name": r["name"],
                   "brand": r.get("brand") or "", "category": r.get("category_path") or "", "source_url": r.get("source_url") or "",
                   "collected_at": r.get("collected_at") or "",
-                  "price_cents": str(r["price_cents"]) if r.get("price_cents") is not None else ""},
+                  "price_cents": str(r["price_cents"]) if r.get("price_cents") is not None else "",
+                  "pinned": "true" if r.get("pinned") else ""},
     ) for r in rows]
     client = _get_client()
     try:
@@ -122,4 +123,5 @@ async def find_match(product) -> dict | None:
         "collected_at": meta.get("collected_at") or None,
         "score": float(best.score),
         "price_cents": int(price) if price else None,   # the store's listed price, a fallback only
+        "pinned": meta.get("pinned") == "true",         # a demo item: its price is fixed, whatever the shelf tag says
     }

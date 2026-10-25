@@ -61,6 +61,10 @@ async def identify(img: bytes, hint_price_cents: int | None, extract=None):
         retailer, checked = await find_match(product), True     # closest store listing, or None
     except MossUnavailable:
         retailer, checked = None, False                          # the IRS rules decide alone
+    if retailer and retailer.get("pinned") and retailer.get("price_cents"):
+        # A demo item: the same price every time, not whatever the tag, cache or web shows today.
+        product.amount_cents, product.price_source, product.state = retailer["price_cents"], "seeded", "resolved"
+        product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
     if (product.amount_cents is None and retailer and retailer.get("price_cents")
             and product.name != "Unknown product"):
         # no readable shelf tag: fall back to the price the store lists

@@ -263,6 +263,7 @@ def main() -> None:
     for url, cents in PRICE_FALLBACK_CENTS.items():
         if url in merged:
             merged[url]["price_cents"] = cents
+            merged[url]["pinned"] = True        # the scan uses this price every time (api/scan.py)
     rows = add_non_eligible_examples(list(merged.values()))
     rows += load_judged_rows(out_dir / "claude_judged.json")      # prefetch/extra_products.py
     save_json(rows, out_dir / "eligibility_items.json")
