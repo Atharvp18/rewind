@@ -95,18 +95,21 @@ export function ProfileSheet() {
         <CloseButton label="Close profile" onPress={() => showView('camera')} />
       </View>
 
+      {/* The tabs stay put while the page scrolls, so switching is always one tap away. */}
+      <View style={[styles.tabs, { borderBottomColor: palette.surfaceAlt }]}>
+          <Choice<'you' | 'settings' | 'demo'>
+            label="Profile section"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'you', label: 'You' },
+              { value: 'settings', label: 'Settings' },
+              { value: 'demo', label: 'Demo' },
+            ]}
+          />
+      </View>
       <View style={styles.scrollWrap}>
       <ScrollView contentContainerStyle={styles.scroll} {...cue.scrollProps}>
-        <Choice<'you' | 'settings' | 'demo'>
-          label="Profile section"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'you', label: 'You' },
-            { value: 'settings', label: 'Settings' },
-            { value: 'demo', label: 'Demo' },
-          ]}
-        />
         {tab === 'you' ? (
         <>
         <Section title="Insurance">
@@ -298,6 +301,7 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   flex: { flex: 1 },
   scrollWrap: { flex: 1 },
+  tabs: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1 },
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   block: { gap: Spacing.xs },
 });
