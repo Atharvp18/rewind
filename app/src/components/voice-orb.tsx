@@ -86,18 +86,6 @@ const STATUS: Record<Phase, string> = {
   speaking_error: 'Speaking… tap to interrupt',
 };
 
-const CONVO_STATUS: Record<Phase, string> = {
-  idle: 'Listening soon… tap to end',
-  awaiting_confirm: 'Say your answer',
-  listening: 'Listening…',
-  interrupted: 'Listening…',
-  capturing: 'Taking photo…',
-  awaiting_scan: 'Looking…',
-  submitting: 'Working…',
-  speaking_result: 'Speaking… just talk to interrupt',
-  speaking_error: 'Speaking…',
-};
-
 /**
  * The voice agent at the bottom of the screen (business spec 6.5 A, redesigned):
  * a soft mint glow that fades into the camera, and a living orb that wakes the
@@ -277,9 +265,7 @@ export function VoiceOrb({ hint, historyEnabled = false }: { hint?: string | nul
   }));
 
   const listening = state.phase === 'listening';
-  const convo = state.conversing;
-  const statusMap = convo ? CONVO_STATUS : STATUS;
-  const status = hint && state.phase === 'idle' && !convo ? hint : statusMap[state.phase];
+  const status = hint && state.phase === 'idle' ? hint : STATUS[state.phase];
 
   return (
     <View
@@ -293,8 +279,8 @@ export function VoiceOrb({ hint, historyEnabled = false }: { hint?: string | nul
         <Animated.View style={orbStyle}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={convo ? 'End conversation' : listening ? 'Stop and send' : 'Wake Rewind'}
-            accessibilityHint={convo ? 'Tap to end the hands-free conversation.' : 'Tap to talk to Rewind, or hold while you speak. Tap while Rewind is speaking to interrupt.'}
+            accessibilityLabel={listening ? 'Stop and send' : 'Wake Rewind'}
+            accessibilityHint="Tap to talk to Rewind, or hold while you speak. Tap while Rewind is speaking to interrupt."
             accessibilityState={{ busy: mode === 'thinking' }}
             onPress={talkTap}
             onLongPress={talkHoldStart}
@@ -326,7 +312,7 @@ export function VoiceOrb({ hint, historyEnabled = false }: { hint?: string | nul
             </Animated.View>
             {/* One circle: the icon sits straight on the gradient, large, with its own thin outline. */}
             <Icon
-              name={convo || listening ? 'stop' : 'mic'}
+              name={listening ? 'stop' : 'mic'}
               size={Math.round(orb * 0.46)}
               color="onTalk"
               outline={palette.talkIconOutline}

@@ -40,7 +40,7 @@ ERRORS: dict[str, tuple[int, str, bool]] = {
     "E_DB_UNAVAILABLE": (503, "I can't reach your cart right now. Let me try again", True),
     "E_PROMPT_EXPIRED": (409, "I didn't catch that in time. Shall I ask again?", True),
     "E_UPSTREAM_TIMEOUT": (504, "Sorry, that took too long. Let me try again", True),
-    "E_STT_LOW_CONFIDENCE": (422, "I didn't catch that. You can say add that, skip it, or checkout", True),
+    "E_STT_LOW_CONFIDENCE": (422, "I didn't catch that. You can say add that, skip it, or checkout.", True),
     "E_STT_UNAVAILABLE": (503, "Sorry, I couldn't hear that. Let me try again", True),
     # not retryable on purpose: the app speaks the reply with expo-speech instead (spec 3.9)
     "E_TTS_UNAVAILABLE": (503, "Sorry, my voice isn't working right now", False),

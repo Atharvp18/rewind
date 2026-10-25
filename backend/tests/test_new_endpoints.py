@@ -306,14 +306,31 @@ def test_every_question_follows_the_time_to_answer_header(client, fake):
 
 # --- declined payment demo -----------------------------------------------------------------------
 
-def test_decline_demo_declines_once_and_charges_nothing(client, fake):
-    fill(client)
-    before = {k: v["balance_cents"] for k, v in fake.cards.items()}
+def test_a_declined_card_moves_its_items_to_the_next_card_and_the_payment_goes_through(client, fake):
+    fill(client)                      # Advil + Bandages on the FSA ($18.48), Kettle Corn on the Visa
+    fsa_before = fake.cards[FSA]["balance_cents"]
     client.post("/v1/demo/decline-next")
     pre = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]})
-    assert r.status_code == 402 and r.json()["error"]["code"] == "E_CARD_DECLINED"
-    assert {k: v["balance_cents"] for k, v in fake.cards.items()} == before and fake.payments == {}
+    assert r.status_code == 200
+    text = r.json()["voice"]["text"]
+    # Said plainly, never why (no-shame rule): FSA first, so the FSA is the card that declined.
+    assert text.startswith("Your FSA card didn't go through, so I used your HSA card and your Visa credit instead.")
+    assert "balance" not in text.lower() and "enough" not in text.lower()
+    assert fake.cards[FSA]["balance_cents"] == fsa_before         # nothing charged to the declined card
+    (payment,) = fake.payments.values()
+    assert {s["card_id"]: s["amount_cents"] for s in payment["splits"]} == {HSA: 1848, VISA: 499}
+    again_fill = fill(client)
     again = client.post("/v1/checkout/preview").json()
     ok = client.post("/v1/checkout/confirm", json={"idempotency_key": "d2", "prompt_id": again["voice"]["prompt_id"]})
-    assert ok.status_code == 200                                 # only the next payment was declined
+    assert ok.status_code == 200 and "didn't go through" not in ok.json()["voice"]["text"]   # only once
+
+
+def test_a_declined_card_with_nowhere_to_go_is_still_declined(client, fake):
+    add(client, scan(client, "Kettle Corn", 499, False, "grocery"))     # only the Visa is charged
+    client.post("/v1/demo/decline-next")
+    pre = client.post("/v1/checkout/preview").json()
+    r = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]})
+    assert r.status_code == 402 and r.json()["error"]["code"] == "E_CARD_DECLINED" and fake.payments == {}
+
+

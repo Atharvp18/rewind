@@ -23,8 +23,13 @@ from speech import compose
 # The run 1 demo ($321.52 left) stays quiet.
 LOW_BALANCE_CENTS = 1000
 
-# Presenter demo: the next charge is declined once (POST /v1/demo/decline-next). Nothing is charged.
+# Presenter demo: the next charge is declined once (POST /v1/demo/decline-next). The declined card's
+# items move to the next card that can take them (redirect_declined), so the payment still goes through.
 _decline_next = False
+
+# Spending order for a declined card's items: FSA, then HSA, then the everyday card (team decision
+# 2026-10-24). An item that is not HSA/FSA eligible only ever goes to the everyday card.
+_ORDER = {"fsa": 0, "hsa": 1, "general": 2}
 
 
 def decline_next(on: bool = True) -> None:
@@ -124,12 +129,38 @@ def confirm(idempotency_key: str, prompt_id: str | None) -> Confirmed:
     return charge(idempotency_key, info)
 
 
+def declined_card(splits: list[dict], cards: list[dict]) -> str | None:
+    """The card a decline hits: the first one charged, in spending order (FSA before HSA before Visa)."""
+    charged = [c for c in cards if any(s["card_id"] == c["id"] for s in splits)]
+    return min(charged, key=lambda c: (_ORDER.get(c["type"], 3), c["id"]))["id"] if charged else None
+
+
+def redirect_declined(items: list[dict], cards: list[dict], declined_id: str) -> tuple[list[dict], list[dict]] | None:
+    """Move every item on the declined card to the next card in order that can still cover it.
+
+    Returns (the items with their new cards, the cards without the declined one), or None when some
+    item has nowhere to go (then the decline stands). No balance is ever mentioned (no-shame rule).
+    """
+    usable = [c for c in cards if c["id"] != declined_id and c["status"] == "active"]
+    order = sorted(usable, key=lambda c: (_ORDER.get(c["type"], 3), not c.get("is_default"), c["id"]))
+    spent = {c["id"]: sum(i["amount_cents"] for i in items if i["assigned_card_id"] == c["id"]) for c in usable}
+    moved = []
+    for item in items:
+        if item["assigned_card_id"] != declined_id:
+            moved.append(item)
+            continue
+        allowed = [c for c in order if c["type"] == "general" or item.get("eligibility_label") == "eligible"]
+        to = next((c for c in allowed if c["balance_cents"] - spent[c["id"]] >= item["amount_cents"]), None)
+        if to is None:
+            return None
+        spent[to["id"]] += item["amount_cents"]
+        moved.append(dict(item, assigned_card_id=to["id"]))
+    return moved, usable
+
+
 def charge(idempotency_key: str, info: dict) -> Confirmed:
     """Charge using an already consumed confirm_checkout prompt."""
     global _decline_next
-    if _decline_next:
-        _decline_next = False
-        raise ApiError("E_CARD_DECLINED", "presenter demo decline")
     payload = info["payload"]
     cart, cards = db.get_cart(), db.get_cards()
     items = cart_store.flat_items(cart)
@@ -142,9 +173,25 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
         again = preview(prefix=CHANGED if items else "")      # cart or balances moved: ask again
         return Confirmed(None, again.voice, cards=cards)
 
+    redirected_from: str | None = None
+    if _decline_next:                                         # presenter demo: a card is declined
+        _decline_next = False
+        declined = declined_card(splits, cards)
+        rerouted = redirect_declined(final_items, cards, declined) if declined else None
+        if rerouted is None:
+            raise ApiError("E_CARD_DECLINED", "presenter demo decline")
+        final_items, usable = rerouted
+        plan = plan_checkout(final_items, usable)
+        splits = splits_of(plan.groups)
+        redirected_from = declined
+
     try:
         for m in moves:                                       # the user agreed to these moves
             db.reassign_cart_item(m.item_id, m.to_card_id)
+        if redirected_from:                                   # the declined card's items, on their new cards
+            for item in final_items:
+                if item["assigned_card_id"] != next(i for i in items if i["id"] == item["id"])["assigned_card_id"]:
+                    db.reassign_cart_item(item["id"], item["assigned_card_id"], user_overrode_card=False)
         # the cart is emptied by the charge, so the paid items travel with it for the invoice
         here = store_checkin.current()
         tag = {"store": store_checkin.public(here)} if here else {}   # the store the user checked in to
@@ -158,4 +205,8 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
             raise
         again = preview(prefix=CHANGED)
         return Confirmed(None, again.voice, cards=cards)
-    return _result(payment, cards)
+    done = _result(payment, cards)
+    if redirected_from:
+        to = [s["card_id"] for s in payment["splits"] if s["card_id"] != redirected_from]
+        done.voice = compose.declined_redirect(redirected_from, to, cards, done.voice)
+    return done
