@@ -99,7 +99,8 @@ export function OnboardingFlow({
   startAt?: 'payment';
   onDone?: () => void;
 }) {
-  const { sayLocal, setListenHandler, refreshCards } = useAgent();
+  const { sayLocal, sayThen, setListenHandler, refreshCards } = useAgent();
+  const { screenReaderOn } = useA11y();
   const { profile, update } = useProfile();
   const [chosen, setStep] = useState<Step | null>(null);
   // The first step depends on whether camera permission is already granted.
@@ -146,7 +147,12 @@ export function OnboardingFlow({
       done: Say.done(first),
     };
     const text = line[step];
-    if (text) sayLocal(text);
+    if (step === 'done' && text && !screenReaderOn) {
+      // The last card says everything it has to say, then closes by itself (the same as Start shopping).
+      sayThen(text, finish);
+    } else if (text) {
+      sayLocal(text);
+    }
     // Only on step change; the data a line uses is set before the step changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
@@ -173,6 +179,9 @@ export function OnboardingFlow({
       ],
       payment_confirm: ['yes_no', yesNo(confirmPayment, () => setStep('payment'))],
       payment_more: ['yes_no', yesNo(() => setStep('payment'), () => setStep('done'))],
+      // Last card: the shopper tapped the round button to interrupt and spoke. Whatever they said
+      // (start shopping, yes, anything), the card just closes.
+      done: [undefined, () => finish()],
     };
     const h = handlers[step];
     setListenHandler(h?.[0], h?.[1] ?? null);

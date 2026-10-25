@@ -42,7 +42,8 @@ import {
   type VoiceRequest,
 } from '@/lib/api';
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
-import { configureAudio, speaker, useMic } from '@/lib/audio';
+import { configureAudio, onMicLevel, speaker, useMic } from '@/lib/audio';
+import { createPauseDetector } from '@/lib/pause-detector';
 import { haptic } from '@/lib/haptics';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
@@ -131,6 +132,8 @@ export type Action =
 const SILENCE_MS = 8_000;
 const LOOKING_MS = 1_000;
 const LISTEN_WINDOW_MS = 6_000;
+/** Once the shopper has started talking, the answer may run this long before it is cut off. */
+const MAX_ANSWER_MS = 15_000;
 
 /** Phases an interim line may finish in without ending them. */
 const BUSY: Phase[] = ['listening', 'capturing', 'awaiting_scan', 'submitting'];
@@ -282,6 +285,8 @@ export interface AgentApi {
   /** Close the current panel and return to the plain camera. */
   dismiss: () => void;
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
+  /** Say a line, then run `then` when it has been spoken to the end. An interrupted line never runs it. */
+  sayThen: (text: string, then: () => void) => void;
 }
 
 const AgentContext = createContext<AgentApi | null>(null);
@@ -319,6 +324,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAlert = useRef<VoiceRequest | null>(null);
   const listenAfterSpeech = useRef(false);
+  /** Stops the pause listener of the current answer (null when none is running). */
+  const pauseWatch = useRef<(() => void) | null>(null);
+  /** What to do when one particular spoken line has finished. */
+  const afterSpeech = useRef<{ id: string; fn: () => void } | null>(null);
   const holding = useRef(false);
   const checkoutKey = useRef<string | null>(null);
   const onDoneRef = useRef<(v: VoiceRequest) => void>(() => {});
@@ -379,6 +388,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const sayLocal = useCallback(
     (text: string, priority: 'alert' | 'normal' = 'normal') => say(localVoice(text, priority)),
+    [say],
+  );
+
+  const sayThen = useCallback(
+    (text: string, then: () => void) => {
+      const voice = localVoice(text);
+      afterSpeech.current = { id: voice.request_id, fn: then };
+      say(voice);
+    },
     [say],
   );
 
@@ -614,11 +632,28 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'listen' });
     if (autoStop) {
       if (listenTimer.current) clearTimeout(listenTimer.current);
+      // Nothing said at all: stop quietly after the window. Once the shopper speaks, a pause of
+      // about two seconds ends the answer and everything said so far is sent as one.
       listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
+      pauseWatch.current?.();
+      const detector = createPauseDetector();
+      let spokeSeen = false;
+      const off = onMicLevel((level) => {
+        const { spoke, paused } = detector.feed(level, Date.now());
+        if (spoke && !spokeSeen) {
+          spokeSeen = true;
+          if (listenTimer.current) clearTimeout(listenTimer.current);
+          listenTimer.current = setTimeout(() => void stopListening(), MAX_ANSWER_MS);
+        }
+        if (paused) void stopListening();
+      });
+      pauseWatch.current = off;
     }
   };
 
   const stopListening = async () => {
+    pauseWatch.current?.();
+    pauseWatch.current = null;
     if (listenTimer.current) clearTimeout(listenTimer.current);
     listenTimer.current = null;
     if (stateRef.current.phase !== 'listening') return;
@@ -647,6 +682,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const onSpeechDone = (voice: VoiceRequest) => {
     dispatch({ type: 'speak_done', voice });
+    const after = afterSpeech.current;
+    if (after && after.id === voice.request_id) {
+      afterSpeech.current = null;
+      after.fn();
+    }
     if (!isLocalVoice(voice)) haptic.done();
     if (pendingAlert.current && pendingAlert.current.request_id !== voice.request_id) {
       // Never drop an alert: replay it in full after the interruption (1.2).
@@ -972,11 +1012,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       confirmCheckout,
       resetDemo,
       sayLocal,
+      sayThen,
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
+      confirmCheckout, resetDemo, sayLocal, sayThen, showView, answer, dismiss,
     ],
   );
 
