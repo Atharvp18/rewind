@@ -11,3 +11,6 @@ backend/data/eligibility_data/
 
 # Personal Claude Code permissions (shared settings live in .claude/settings.json)
 .claude/settings.local.json
+
+# Metro dev-server logs
+.metro*.log

@@ -19,6 +19,7 @@
     "**/*.ts",
     "**/*.tsx",
     "__tests__/.expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    ".expo/types/**/*.ts"
   ]
 }
