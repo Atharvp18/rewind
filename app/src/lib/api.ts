@@ -5,6 +5,8 @@
  */
 
 import { ApiError, type ErrorEnvelope } from '@/lib/api-error';
+import { File as FsFile } from 'expo-file-system';
+
 import * as mock from '@/lib/mock-backend';
 
 // ---------------------------------------------------------------------------
@@ -428,6 +430,15 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false,
   throw err;
 }
 
+/**
+ * A recorded or photographed file as a multipart part. Expo's fetch (SDK 58) rejects React Native's
+ * { uri, name, type } object ("Unsupported FormDataPart implementation"); it takes a file that can
+ * give its bytes, which expo-file-system's File does (its name carries the .jpg / .wav extension).
+ */
+function filePart(uri: string): Blob {
+  return new FsFile(uri) as unknown as Blob;
+}
+
 const json = (body: unknown): RequestInit => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -451,8 +462,7 @@ export function scan(
 ): Promise<ScanResponse> {
   if (isMock()) return mock.scan(barcode ?? null);
   const form = new FormData();
-  // React Native's FormData accepts a { uri, name, type } file descriptor.
-  form.append('image', { uri: imageUri, name: 'frame.jpg', type: 'image/jpeg' } as any);
+  form.append('image', filePart(imageUri));
   if (barcode) form.append('barcode', barcode);
   if (hintPriceCents != null) form.append('hint_price_cents', String(hintPriceCents));
   return request('/v1/scan', { method: 'POST', body: form }, false, SCAN_TIMEOUT_MS);
@@ -462,7 +472,7 @@ export function scan(
 export function stt(audioUri: string, mockHint?: mock.SttHint): Promise<SttResponse> {
   if (isMock()) return mock.stt(mockHint);
   const form = new FormData();
-  form.append('audio', { uri: audioUri, name: 'speech.wav', type: 'audio/wav' } as any);
+  form.append('audio', filePart(audioUri));
   return request('/v1/stt', { method: 'POST', body: form });
 }
 
@@ -601,7 +611,7 @@ export function reissuePrompt(
 export function scanCard(imageUri: string, kind: CardScanKind): Promise<CardScanResult> {
   if (isMock()) return mock.scanCard(kind);
   const form = new FormData();
-  form.append('image', { uri: imageUri, name: 'card.jpg', type: 'image/jpeg' } as any);
+  form.append('image', filePart(imageUri));
   form.append('kind', kind);
   return request('/v1/onboarding/card-scan', { method: 'POST', body: form }, false, CARD_SCAN_TIMEOUT_MS);
 }
