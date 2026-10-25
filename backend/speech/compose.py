@@ -319,12 +319,15 @@ def checkout_result(
                     "Please remember to take your items with you. Your receipt is saved in History.")
 
 
-def declined_redirect(from_card_id: str, to_card_ids: Iterable[str], cards: Iterable[Card | dict[str, Any]],
-                      result: VoiceRequest) -> VoiceRequest:
-    """A card did not go through and its items moved on. Say it plainly, never why (no-shame rule)."""
+def use_another_card(moved_to: Iterable[str], plan: Any, cards: Iterable[Card | dict[str, Any]],
+                     prompt_id: str | None = None) -> VoiceRequest:
+    """A card did not go through. The tech spec's line, then the next card and the new split, then the
+    same question as before. Never a reason or a balance (no-shame rule)."""
     by_id = _cards_by_id(cards)
-    to = _join(dict.fromkeys(f"your {card_name(c, by_id)}" for c in to_card_ids))
-    return _request(f"Your {card_name(from_card_id, by_id)} didn't go through, so I used {to} instead. {result.text}")
+    to = _join(dict.fromkeys(f"your {card_name(c, by_id)}" for c in moved_to)) or "your other card"
+    return _request(f"Please use another card. I can put those items on {to} instead. "
+                    f"Your total is {_split_line(plan.total_cents, plan.groups, by_id)}. Ready to check out?",
+                    scope="confirm_checkout", prompt_id=prompt_id)
 
 
 def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> VoiceRequest:

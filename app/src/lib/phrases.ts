@@ -113,7 +113,8 @@ export const Phrases = {
   nothingToRepeat: "I haven't said anything yet. Tap Talk to start.",
   /** The cart review went unanswered: the cart closes. */
   readyToCheckout: "Okay. Let me know when you're ready to checkout.",
-  declinedTitle: 'Payment declined',
+  /** Never "declined" (no-shame rule): the tech spec's line instead. */
+  declinedTitle: 'Please use another card',
   /** The camera could not take a photo (busy, or no camera, as in the simulator). */
   captureFailed: "I couldn't take a photo. Hold the phone steady and tap the screen to try again.",
 } as const;

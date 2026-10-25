@@ -483,7 +483,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       // The envelope's speech is always safe to speak (0.6). Without one the
       // backend was unreachable, so the app supplies the line.
       const declined = e instanceof ApiError && e.code === E_CARD_DECLINED;
-      haptic.error();
+      // A card that cannot be used gets the gentle (orange) buzz, never the error buzz (no-shame rule).
+      if (declined) haptic.warning();
+      else haptic.error();
       const v = localVoice(e instanceof ApiError && e.speech ? e.speech : Phrases.offline, declined ? 'alert' : 'normal');
       // Mark declines so say() doesn't add the orange buzz on top of the red one.
       say(declined ? { ...v, request_id: `declined-${v.request_id}` } : v);
@@ -1118,6 +1120,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'submit' });
     try {
       const receipt = await api.checkoutConfirm(checkoutKey.current, promptId, useProposedSplit);
+      if (!receipt.payment_id) {
+        // Nothing was charged: another card is offered (or the cart changed). Show the new split and
+        // ask again, with a new payment key for the new question.
+        const again = receipt as unknown as CheckoutPreview;
+        checkoutKey.current = randomUUID();
+        dispatch({ type: 'preview', preview: again });
+        say(again.voice);
+        return;
+      }
       dispatch({ type: 'receipt', receipt });
       dispatch({ type: 'preview', preview: null });
       dispatch({ type: 'clear_prompt' });

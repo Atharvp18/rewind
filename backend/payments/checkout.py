@@ -173,25 +173,13 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
         again = preview(prefix=CHANGED if items else "")      # cart or balances moved: ask again
         return Confirmed(None, again.voice, cards=cards)
 
-    redirected_from: str | None = None
-    if _decline_next:                                         # presenter demo: a card is declined
+    if _decline_next:                                         # presenter demo: a card does not go through
         _decline_next = False
-        declined = declined_card(splits, cards)
-        rerouted = redirect_declined(final_items, cards, declined) if declined else None
-        if rerouted is None:
-            raise ApiError("E_CARD_DECLINED", "presenter demo decline")
-        final_items, usable = rerouted
-        plan = plan_checkout(final_items, usable)
-        splits = splits_of(plan.groups)
-        redirected_from = declined
+        return _offer_next_card(items, final_items, cards, splits, moves)
 
     try:
         for m in moves:                                       # the user agreed to these moves
             db.reassign_cart_item(m.item_id, m.to_card_id)
-        if redirected_from:                                   # the declined card's items, on their new cards
-            for item in final_items:
-                if item["assigned_card_id"] != next(i for i in items if i["id"] == item["id"])["assigned_card_id"]:
-                    db.reassign_cart_item(item["id"], item["assigned_card_id"], user_overrode_card=False)
         # the cart is emptied by the charge, so the paid items travel with it for the invoice
         here = store_checkin.current()
         tag = {"store": store_checkin.public(here)} if here else {}   # the store the user checked in to
@@ -205,8 +193,28 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
             raise
         again = preview(prefix=CHANGED)
         return Confirmed(None, again.voice, cards=cards)
-    done = _result(payment, cards)
-    if redirected_from:
-        to = [s["card_id"] for s in payment["splits"] if s["card_id"] != redirected_from]
-        done.voice = compose.declined_redirect(redirected_from, to, cards, done.voice)
-    return done
+    return _result(payment, cards)
+
+
+def _offer_next_card(items: list[dict], final_items: list[dict], cards: list[dict], splits: list[dict],
+                     moves: list[Move]) -> Confirmed:
+    """A card did not go through: nothing is charged. Put its items on the next card in order and ask
+    once more (tech spec: "please use another card"; a move is never charged without a yes). No reason
+    and no balance is ever given (no-shame rule)."""
+    declined = declined_card(splits, cards)
+    rerouted = redirect_declined(final_items, cards, declined) if declined else None
+    if rerouted is None:
+        raise ApiError("E_CARD_DECLINED", "presenter demo decline: no other card can take these items")
+    new_items, usable = rerouted
+    before = {i["id"]: i["assigned_card_id"] for i in items}
+    for m in moves:                                           # the moves the user already agreed to
+        db.reassign_cart_item(m.item_id, m.to_card_id)
+    for item in new_items:                                    # the declined card's items, on their next card
+        if item["assigned_card_id"] != before.get(item["id"]):
+            db.reassign_cart_item(item["id"], item["assigned_card_id"], user_overrode_card=False)
+    plan = plan_checkout(new_items, usable)
+    prompt_id = db.create_prompt("confirm_checkout", None, {"splits": splits_of(plan.groups), "moves": []})
+    moved_to = [g.card_id for g in plan.groups
+                if any(i["id"] in g.item_ids and before.get(i["id"]) == declined for i in new_items)]
+    voice = compose.use_another_card(moved_to, plan, usable, prompt_id)
+    return Confirmed(None, voice, groups=plan.groups, cards=cards)

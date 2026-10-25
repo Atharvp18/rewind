@@ -90,7 +90,14 @@ def translate(path: str, body: dict) -> dict:
         return command(body)
     if path == "/v1/checkout/preview":
         return preview(body)
-    return receipt(body.get("payment_id"), body["voice"]) or body
+    done = receipt(body.get("payment_id"), body["voice"])
+    if done:
+        return done
+    # Nothing charged (another card is offered, or the cart changed): the same shape as a checkout
+    # preview, so the app shows the new split and asks again instead of showing an empty receipt.
+    groups = body.get("groups", [])
+    return {"payment_id": None, "groups": preview_groups(groups), "issues": [], "voice": body["voice"],
+            "total_cents": sum(g.get("subtotal_cents", 0) for g in groups)}
 
 
 async def middleware(request: Request, call_next):

@@ -204,7 +204,8 @@ export interface CheckoutPreview {
 }
 
 export interface CheckoutResult {
-  payment_id: string;
+  /** null when nothing was charged: the body is then a new checkout question (CheckoutPreview's shape). */
+  payment_id: string | null;
   groups: CartGroup[];
   new_balances: { card_id: string; balance_cents: number }[];
   /** PROPOSED: the invoice for this payment (also listed by GET /v1/payments). */
