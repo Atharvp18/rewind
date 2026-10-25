@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from data import db, seed
 
 PUBLIC = (
-    "health", "get_cards", "cache_get", "cache_put", "eligibility_lookup_upc", "save_scan", "get_cart",
+    "health", "get_cards", "cache_get", "cache_put", "eligibility_lookup_upc", "save_scan", "get_scan", "get_cart",
     "add_cart_item", "reassign_cart_item", "remove_last_cart_item", "pop_last_cart_item", "clear_cart",
     "create_prompt", "consume_prompt", "get_payment", "get_payment_by_id", "confirm_checkout", "reset_demo",
 )
@@ -84,6 +84,10 @@ class FakeDB:
     def save_scan(self, scan_id, product, eligibility):
         self.scans[scan_id] = {"scan_id": scan_id, "state": product.get("state", "unresolved"),
                                "product_json": product, "eligibility_json": eligibility}
+
+    def get_scan(self, scan_id):
+        s = self.scans.get(scan_id)
+        return copy.deepcopy(s) if s else None
 
     def get_cart(self):
         groups = []

@@ -189,6 +189,12 @@ def save_scan(scan_id: str, product: dict, eligibility: dict) -> None:
     _call(lambda: _sb().table("scans").upsert(record, on_conflict="scan_id").execute())
 
 
+def get_scan(scan_id: str) -> dict | None:
+    """The saved scan: {scan_id, state, product_json, eligibility_json}, or None."""
+    rows = _call(lambda: _sb().table("scans").select("*").eq("scan_id", scan_id).limit(1).execute()).data
+    return rows[0] if rows else None
+
+
 # --- cart -----------------------------------------------------------------------------------
 
 def get_cart() -> dict:
