@@ -35,6 +35,10 @@ type Step =
 
 type Payment = NonNullable<CardScanResult['payment']>;
 
+/** The card-photo cards stay one short line, so the camera frame below them keeps its room; the agent's
+ * full sentence is spoken and captioned at the top. */
+const CARD_TIP = 'Hold it flat in the corners and keep still.';
+
 const YES = /\b(yes|yeah|yep|correct|right|sure|ok|okay|continue)\b/i;
 const NO = /\b(no|nope|wrong|not)\b/i;
 const GO = /\b(get started|start|begin|ready|yes|yeah|yep|ok|okay|sure|let'?s go|go ahead|continue|allow|shopping)\b/i;
@@ -419,8 +423,7 @@ export function OnboardingFlow({
       return (
         // Compact on purpose: the card corners need the space below it (the agent speaks the full instructions).
         <InfoPanel title="Insurance card">
-          {stepLabel}
-          {said}
+          <PanelText>{CARD_TIP}</PanelText>
           <PanelActions>
             <ButtonRow>
               <BigButton label={reading ? 'Reading…' : 'Take photo'} icon="camera" variant="primary" disabled={reading} onPress={() => void takeCard()} stretch />
@@ -484,8 +487,7 @@ export function OnboardingFlow({
         // Compact on purpose: the card corners need the space below it (the agent speaks the full instructions).
         <InfoPanel
           title={cardsAdded === 0 && firstCard ? 'HSA or FSA card' : 'Everyday card'}>
-          {stepLabel}
-          {said}
+          <PanelText>{CARD_TIP}</PanelText>
           <PanelActions>
             <ButtonRow>
               <BigButton label={reading ? 'Reading…' : 'Take photo'} icon="camera" variant="primary" disabled={reading} onPress={() => void takeCard()} stretch />

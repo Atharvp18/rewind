@@ -255,7 +255,7 @@ export default function Home() {
     w: guideFitW,
     h: guideFitH,
   };
-  const MIN_FRAME = 140;
+  const MIN_FRAME = 110; // was 140: the taller cards (spoken line, question) squeezed the corners out on smaller phones
   const fitFrame = (r: Rect): Rect | null => {
     const top = Math.max(r.y, camTop);
     const bottom = Math.min(r.y + r.h, camBottom);
