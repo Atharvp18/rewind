@@ -418,8 +418,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const refreshHealth = useCallback(async () => {
     try {
-      dispatch({ type: 'health', health: await api.getHealth() });
-    } catch {
+      const health = await api.getHealth();
+      console.log(`[backend] reachable: ${health.status}`);
+      dispatch({ type: 'health', health });
+    } catch (e) {
+      console.warn('[backend] health check failed:', e instanceof api.ApiError ? e.message : e);
       dispatch({ type: 'health', health: null });
     }
   }, []);

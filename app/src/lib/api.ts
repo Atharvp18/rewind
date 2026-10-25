@@ -383,6 +383,7 @@ export const PROMPT_TTL_HEADER = 'X-Rewind-Prompt-TTL';
 async function request<T>(path: string, init: RequestInit = {}, retried = false, timeoutMs = TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const started = Date.now();
   let res: Response;
   try {
     const headers = {
@@ -391,10 +392,14 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false,
       [PROMPT_TTL_HEADER]: String(promptTtlSeconds),
     };
     res = await fetch(`${baseUrl()}${path}`, { ...init, headers, signal: controller.signal });
-  } catch {
+  } catch (e) {
+    const ms = Date.now() - started;
+    const why = controller.signal.aborted
+      ? `timed out after ${Math.round(ms / 1000)} s`
+      : `failed after ${ms} ms: ${e instanceof Error ? e.message : String(e)}`;
     throw new ApiError({
       code: E_NETWORK,
-      message: `network failure on ${path}`,
+      message: `network failure on ${path} (${why}) to ${baseUrl()}`,
       speech: '',
       retryable: false,
     });
