@@ -20,7 +20,7 @@ from vision.payment_card_reader import read_payment_card
 router = APIRouter(prefix="/v1/onboarding")
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-READ_BUDGET_S = 8.0
+READ_BUDGET_S = 15.0            # a Claude card read takes about 8 s; onboarding is not in the aisle
 FRAMING_HINT = "I couldn't read the card. Hold it flat in good light, about a hand length from the phone."
 
 

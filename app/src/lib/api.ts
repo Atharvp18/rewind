@@ -361,6 +361,12 @@ export type { SttHint } from '@/lib/mock-backend';
 export const E_NETWORK = 'E_NETWORK';
 
 const TIMEOUT_MS = 8000;
+/**
+ * Photo reads wait longer: the upload plus a Claude vision call. A card read took about 8.5 s on
+ * Render, so the 8 s default cancelled it just before the answer (backend budgets: scan 8 s, card 15 s).
+ */
+const SCAN_TIMEOUT_MS = 12_000;
+const CARD_SCAN_TIMEOUT_MS = 20_000;
 
 /**
  * How long the user has to answer a question, from the "Time to answer"
@@ -374,9 +380,9 @@ export function setPromptTtl(seconds: number): void {
 }
 export const PROMPT_TTL_HEADER = 'X-Rewind-Prompt-TTL';
 
-async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, retried = false, timeoutMs = TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     const headers = {
@@ -413,7 +419,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   );
   // Retry once if retryable (1.6). Never retry a request that spends money:
   // checkout confirm is idempotent, so a retry with the same key is safe.
-  if (err.retryable && !retried) return request<T>(path, init, true);
+  if (err.retryable && !retried) return request<T>(path, init, true, timeoutMs);
   throw err;
 }
 
@@ -444,7 +450,7 @@ export function scan(
   form.append('image', { uri: imageUri, name: 'frame.jpg', type: 'image/jpeg' } as any);
   if (barcode) form.append('barcode', barcode);
   if (hintPriceCents != null) form.append('hint_price_cents', String(hintPriceCents));
-  return request('/v1/scan', { method: 'POST', body: form });
+  return request('/v1/scan', { method: 'POST', body: form }, false, SCAN_TIMEOUT_MS);
 }
 
 /** `mockHint` only steers the offline mock, which cannot hear; the real backend ignores it. */
@@ -592,7 +598,7 @@ export function scanCard(imageUri: string, kind: CardScanKind): Promise<CardScan
   const form = new FormData();
   form.append('image', { uri: imageUri, name: 'card.jpg', type: 'image/jpeg' } as any);
   form.append('kind', kind);
-  return request('/v1/onboarding/card-scan', { method: 'POST', body: form });
+  return request('/v1/onboarding/card-scan', { method: 'POST', body: form }, false, CARD_SCAN_TIMEOUT_MS);
 }
 
 /** PROPOSED: link a card confirmed during onboarding. */
