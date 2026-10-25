@@ -133,7 +133,9 @@ export default function Home() {
     state.view === 'camera' &&
     !state.declined &&
     !state.receipt;
-  const autoReady = watching && state.phase === 'idle' && !state.livePrompt;
+  // In conversation mode the phase is usually 'listening' (the mic stays open), so allow
+  // auto-capture there too — the scan interrupts the listen, which is fine.
+  const autoReady = watching && (state.phase === 'idle' || (state.conversing && state.phase === 'listening')) && !state.livePrompt;
   // Card steps (onboarding and Add a card): the same steadiness check takes the card photo once the
   // agent has finished the instruction and the phone is held still on the card. Tap still works.
   const cardAutoReady = cardCapture && granted && focused && state.phase === 'idle';

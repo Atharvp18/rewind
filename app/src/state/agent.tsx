@@ -934,6 +934,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const beginCapture = useCallback(() => {
     if (speaker.speaking) bargeIn();
+    // In conversation mode the mic may be open; stop it so the capture can use the camera cleanly.
+    if (stateRef.current.phase === 'listening') {
+      pauseWatch.current?.();
+      pauseWatch.current = null;
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = null;
+      void mic.stop(); // discard whatever was recorded
+    }
     haptic.capture();
     dispatch({ type: 'capture' });
   }, []);
