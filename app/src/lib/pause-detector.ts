@@ -6,8 +6,10 @@
 
 /** Mic level that counts as a voice. Room noise sits around 0.02 to 0.08; speech is 0.15 and up. */
 export const VOICE_LEVEL = 0.12;
-/** A pause this long after speaking ends the answer. */
+/** A pause this long after speaking ends the answer (push-to-talk / auto-listen). */
 export const PAUSE_MS = 2000;
+/** Shorter pause for conversation mode: feels like a natural turn boundary (~750ms). */
+export const CONVO_PAUSE_MS = 750;
 /** A voice must last this long to count as speech (a cough or a tap on the phone does not). */
 export const MIN_VOICE_MS = 150;
 

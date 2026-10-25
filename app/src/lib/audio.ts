@@ -25,8 +25,20 @@ import { useCallback, useRef } from 'react';
 import * as api from '@/lib/api';
 import type { VoiceRequest } from '@/lib/api';
 
-/** True while the mic is open; playback must not start in the recording session (quiet, receiver-like output). */
+/** True while the mic is open for STT capture; playback must not start in the recording session (quiet, receiver-like output). */
 let micOpen = false;
+
+/**
+ * Conversation mode: when true, the Speaker keeps `allowsRecording: true` during playback so the mic
+ * stream can detect barge-in via VAD. Hardware AEC on iOS/Android filters the speaker's own voice.
+ * Output may be slightly quieter than pure-playback mode.
+ */
+let conversationMode = false;
+export function setConversationMode(on: boolean) { conversationMode = on; }
+
+/** Callback when barge-in is detected during TTS (voice above threshold while the speaker is playing). */
+let bargeInCb: (() => void) | null = null;
+export function onBargeIn(fn: (() => void) | null) { bargeInCb = fn; }
 
 export async function configureAudio(): Promise<void> {
   // Default is already true; set it anyway (1.4).
@@ -108,8 +120,13 @@ class Speaker {
 
   private async play(v: VoiceRequest, token: number) {
     if (!micOpen) {
-      // Make sure the session is plain playback (the loudspeaker) before every line.
-      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false }).catch(() => {});
+      // In conversation mode keep allowsRecording on so the mic stream can detect barge-in via
+      // hardware AEC. Outside conversation mode, pure playback gives the loudest speaker output.
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: conversationMode,
+        shouldRouteThroughEarpiece: false,
+      }).catch(() => {});
     }
     const sentences = v.sentences.length ? v.sentences : [v.text];
     let urls: string[] | null = null;
@@ -222,8 +239,21 @@ export function onMicLevel(fn: LevelListener): () => void {
   return () => levelListeners.delete(fn);
 }
 
+/**
+ * Barge-in sentinel: when armed and the speaker is playing, consecutive voice frames above the
+ * threshold trigger bargeInCb. The AEC strips the speaker's own audio, so a high level means the
+ * user is talking over the agent.
+ */
+const BARGE_IN_LEVEL = 0.18;
+const BARGE_IN_FRAMES = 3; // ~48ms at 16 kHz / 512-sample buffers — fast enough to feel instant
+let bargeInArmed = false;
+let bargeInCount = 0;
+export function armBargeIn(on: boolean) {
+  bargeInArmed = on;
+  bargeInCount = 0;
+}
+
 function emitLevel(pcm: ArrayBuffer) {
-  if (!levelListeners.size) return;
   const samples = new Int16Array(pcm);
   let sum = 0;
   for (let i = 0; i < samples.length; i += 4) sum += samples[i] * samples[i];
@@ -231,6 +261,20 @@ function emitLevel(pcm: ArrayBuffer) {
   // Speech RMS sits around 0.02 to 0.2; stretch it to fill 0..1.
   const level = Math.min(1, rms * 6);
   levelListeners.forEach((fn) => fn(level));
+
+  // Barge-in: detect the user speaking over the agent during TTS.
+  if (bargeInArmed && speaker.speaking && bargeInCb) {
+    if (level >= BARGE_IN_LEVEL) {
+      bargeInCount++;
+      if (bargeInCount >= BARGE_IN_FRAMES) {
+        bargeInArmed = false;
+        bargeInCount = 0;
+        bargeInCb();
+      }
+    } else {
+      bargeInCount = 0;
+    }
+  }
 }
 
 function wavFromPcm(chunks: ArrayBuffer[], sampleRate: number): Uint8Array {
@@ -268,13 +312,16 @@ export type MicPermission = 'granted' | 'denied';
 export function useMic() {
   const chunks = useRef<ArrayBuffer[]>([]);
   const rate = useRef(SAMPLE_RATE);
+  /** Whether the stream is running in sentinel mode (level-only, no WAV capture). */
+  const sentinel = useRef(false);
+
   const { stream } = useAudioStream({
     sampleRate: SAMPLE_RATE,
     channels: 1,
     encoding: 'int16',
     onBuffer: (b) => {
       rate.current = b.sampleRate;
-      chunks.current.push(b.data);
+      if (!sentinel.current) chunks.current.push(b.data);
       emitLevel(b.data);
     },
   });
@@ -283,17 +330,52 @@ export function useMic() {
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) return 'denied';
     chunks.current = [];
+    sentinel.current = false;
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, shouldRouteThroughEarpiece: false });
     micOpen = true;
     await stream.start();
     return 'granted';
   }, [stream]);
 
+  /**
+   * Sentinel mode: open the mic stream for barge-in level detection only. Chunks are discarded so
+   * no WAV is built, and micOpen stays false so the Speaker can keep playing through the loudspeaker.
+   * Call `promoteToCapture()` to switch to real capture (barge-in fires this).
+   */
+  const startSentinel = useCallback(async (): Promise<MicPermission> => {
+    const perm = await requestRecordingPermissionsAsync();
+    if (!perm.granted) return 'denied';
+    chunks.current = [];
+    sentinel.current = true;
+    // allowsRecording must be true for the stream, but micOpen stays false so playback continues.
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, shouldRouteThroughEarpiece: false });
+    await stream.start();
+    return 'granted';
+  }, [stream]);
+
+  /** Promote from sentinel to full capture: start keeping chunks for the WAV. */
+  const promoteToCapture = useCallback(() => {
+    if (!sentinel.current) return;
+    sentinel.current = false;
+    micOpen = true;
+    chunks.current = []; // drop any pre-barge-in noise
+  }, []);
+
+  const stopSentinel = useCallback(() => {
+    if (!sentinel.current) return;
+    sentinel.current = false;
+    stream.stop();
+    levelListeners.forEach((fn) => fn(0));
+    // Restore playback mode.
+    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: conversationMode, shouldRouteThroughEarpiece: false }).catch(() => {});
+  }, [stream]);
+
   const stop = useCallback(async (): Promise<{ uri: string; discard: () => void } | null> => {
+    sentinel.current = false;
     stream.stop();
     micOpen = false;
     levelListeners.forEach((fn) => fn(0));
-    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false });
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: conversationMode, shouldRouteThroughEarpiece: false });
     const captured = chunks.current;
     chunks.current = [];
     if (!captured.length) return null;
@@ -311,5 +393,5 @@ export function useMic() {
     };
   }, [stream]);
 
-  return { start, stop };
+  return { start, stop, startSentinel, stopSentinel, promoteToCapture };
 }

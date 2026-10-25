@@ -42,8 +42,8 @@ import {
   type VoiceRequest,
 } from '@/lib/api';
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
-import { configureAudio, onMicLevel, speaker, useMic } from '@/lib/audio';
-import { createPauseDetector } from '@/lib/pause-detector';
+import { armBargeIn, configureAudio, onBargeIn, onMicLevel, setConversationMode, speaker, useMic } from '@/lib/audio';
+import { CONVO_PAUSE_MS, createPauseDetector } from '@/lib/pause-detector';
 import { haptic } from '@/lib/haptics';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
@@ -99,6 +99,8 @@ export interface AgentState {
   preview: CheckoutPreview | null;
   receipt: CheckoutResult | null;
   micDenied: boolean;
+  /** Hands-free conversation mode: the agent listens after every line and uses tight endpointing. */
+  conversing: boolean;
 }
 
 export type Action =
@@ -128,7 +130,8 @@ export type Action =
   | { type: 'review'; id: string | null }
   | { type: 'caption_clear' }
   | { type: 'checkin'; checkin: AgentState['checkin'] }
-  | { type: 'view'; view: PanelView };
+  | { type: 'view'; view: PanelView }
+  | { type: 'converse'; on: boolean };
 
 const SILENCE_MS = 8_000;
 const LOOKING_MS = 1_000;
@@ -163,6 +166,7 @@ export const initial: AgentState = {
   preview: null,
   receipt: null,
   micDenied: false,
+  conversing: false,
 };
 
 export function reducer(s: AgentState, a: Action): AgentState {
@@ -240,6 +244,8 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, declined: a.message };
     case 'view':
       return { ...s, view: a.view };
+    case 'converse':
+      return { ...s, conversing: a.on, phase: a.on ? s.phase : (s.phase === 'listening' ? 'idle' : s.phase) };
   }
 }
 
@@ -291,6 +297,10 @@ export interface AgentApi {
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
   /** Say a line, then run `then` when it has been spoken to the end. An interrupted line never runs it. */
   sayThen: (text: string, then: () => void) => void;
+  /** Enter hands-free conversation mode: the agent listens after every line and uses tight endpointing. */
+  startConversation: () => void;
+  /** Leave conversation mode: the agent goes back to push-to-talk. */
+  endConversation: () => void;
 }
 
 const AgentContext = createContext<AgentApi | null>(null);
@@ -340,6 +350,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const autoListening = useRef(false);
   /** Unanswered automatic listens in a row; after two the agent waits for a tap (no endless loop). */
   const autoMisses = useRef(0);
+  /** Hands-free conversation mode: the loop keeps running after every speech. */
+  const conversing = useRef(false);
 
   // --- speech -------------------------------------------------------------
 
@@ -473,6 +485,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'background') {
         wasBackground = true;
+        if (conversing.current) {
+          conversing.current = false;
+          setConversationMode(false);
+          armBargeIn(false);
+          mic.stopSentinel();
+          dispatch({ type: 'converse', on: false });
+        }
         speaker.interrupt();
       } else if (next === 'active' && wasBackground) {
         wasBackground = false;
@@ -645,7 +664,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       // about two seconds ends the answer and everything said so far is sent as one.
       listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
       pauseWatch.current?.();
-      const detector = createPauseDetector();
+      const detector = createPauseDetector(conversing.current ? { pauseMs: CONVO_PAUSE_MS } : undefined);
       let spokeSeen = false;
       const off = onMicLevel((level) => {
         const { spoke, paused } = detector.feed(level, Date.now());
@@ -726,9 +745,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void startListening(true);
       return;
     }
-    // A question was just asked (or an onboarding step is waiting for a spoken answer): open the mic
-    // by itself so the shopper never has to tap. After two unanswered tries, wait for a tap.
-    if ((voice.expects_response || (listenHandler.current && !ranAfter)) && autoMisses.current < 2 && !holding.current) {
+    // Conversation mode: listen after every line (the loop keeps going until the user ends it).
+    // Outside conversation mode: listen only when a question was asked or onboarding expects a spoken answer.
+    const shouldAutoListen = conversing.current
+      || voice.expects_response
+      || (listenHandler.current && !ranAfter);
+    if (shouldAutoListen && autoMisses.current < 2 && !holding.current) {
       autoListening.current = true;
       void startListening(true);
       return;
@@ -758,7 +780,45 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    speaker.setListener({ onDone: (v) => onDoneRef.current(v) });
+    speaker.setListener({
+      onStart: (v) => {
+        // In conversation mode, open the mic sentinel during TTS for barge-in detection.
+        if (conversing.current && !isLocalVoice(v)) {
+          void mic.startSentinel().then((p) => {
+            if (p === 'granted') armBargeIn(true);
+          });
+        }
+      },
+      onDone: (v) => {
+        // Stop the sentinel if it's still running (TTS finished without barge-in).
+        mic.stopSentinel();
+        armBargeIn(false);
+        onDoneRef.current(v);
+      },
+    });
+    // Wire up the barge-in callback: when the sentinel detects the user speaking over TTS,
+    // interrupt TTS, promote the sentinel to full capture, and start listening.
+    onBargeIn(() => {
+      armBargeIn(false);
+      const cut = speaker.interrupt();
+      if (cut?.priority === 'alert') pendingAlert.current = cut;
+      dispatch({ type: 'interrupted' });
+      mic.promoteToCapture();
+      autoListening.current = true; // treat barge-in like auto-listen: empty results stay quiet
+      dispatch({ type: 'listen' });
+      // Set up the pause detector so the captured speech is endpointed normally.
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = setTimeout(() => void stopListening(), MAX_ANSWER_MS);
+      pauseWatch.current?.();
+      const detector = createPauseDetector(conversing.current ? { pauseMs: CONVO_PAUSE_MS } : undefined);
+      // Prime the detector: the user already started speaking (that's what triggered barge-in).
+      detector.feed(1, Date.now());
+      const off = onMicLevel((level) => {
+        const { paused } = detector.feed(level, Date.now());
+        if (paused) void stopListening();
+      });
+      pauseWatch.current = off;
+    });
     void configureAudio();
   }, []);
 
@@ -768,7 +828,46 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'interrupted' });
   };
 
+  const startConversation = useCallback(() => {
+    conversing.current = true;
+    autoMisses.current = 0;
+    setConversationMode(true);
+    dispatch({ type: 'converse', on: true });
+    haptic.tap();
+    // Greet and the loop begins. Don't use listenAfterSpeech here: onSpeechDone sees
+    // conversing.current = true and auto-listens through the shouldAutoListen path,
+    // which handles silence gracefully (heardNothing / autoMisses).
+    const s = stateRef.current;
+    if (!speaker.speaking && s.phase === 'idle') {
+      say(localVoice(Phrases.greeting), false);
+    }
+  }, [say]);
+
+  const endConversation = useCallback(() => {
+    conversing.current = false;
+    setConversationMode(false);
+    armBargeIn(false);
+    mic.stopSentinel();
+    if (speaker.speaking) speaker.interrupt();
+    // If currently listening, stop the mic and go idle.
+    if (stateRef.current.phase === 'listening') {
+      pauseWatch.current?.();
+      pauseWatch.current = null;
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = null;
+      void mic.stop(); // discard the recording
+    }
+    dispatch({ type: 'converse', on: false });
+    haptic.tap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const talkTap = useCallback(() => {
+    // In conversation mode, tapping the orb ends the conversation.
+    if (conversing.current) {
+      endConversation();
+      return;
+    }
     haptic.tap();
     autoMisses.current = 0;
     const s = stateRef.current;
@@ -797,11 +896,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         });
       return;
     }
-    // Greeting first, then the mic opens when it finishes.
-    listenAfterSpeech.current = true;
-    say(localVoice(Phrases.greeting), false);
+    // Start conversation mode: greet and begin the hands-free loop.
+    startConversation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [say]);
+  }, [say, startConversation, endConversation]);
 
   const talkHoldStart = useCallback(() => {
     holding.current = true;
@@ -1047,11 +1145,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       resetDemo,
       sayLocal,
       sayThen,
+      startConversation,
+      endConversation,
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal, sayThen, showView, answer, dismiss,
+      confirmCheckout, resetDemo, sayLocal, sayThen, showView, answer, dismiss, startConversation, endConversation,
     ],
   );
 
