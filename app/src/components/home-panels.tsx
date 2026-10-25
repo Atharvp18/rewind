@@ -19,7 +19,7 @@ import { EligibilityBadge } from '@/components/eligibility-badge';
 import { Icon, Notice } from '@/components/icon';
 import { InvoiceCard } from '@/components/invoice-view';
 import { InfoPanel, PanelActions, PanelText, type PanelTone } from '@/components/info-panel';
-import { Radius, Spacing, Target } from '@/constants/theme';
+import { Press, Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import type { Card, PaymentRecommendation, ScanResponse } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
@@ -126,16 +126,17 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // Answers stay active after the question's window: a late answer re-asks for the same item.
   const busy = state.phase === 'submitting';
 
-  if (res.scan.state === 'unresolved') {
-    return (
-      <InfoPanel title="Could not confirm this item">
-        <PanelText>Try another angle, or tap Talk and say what it is.</PanelText>
-        <PanelActions>
-          <BigButton label="Scan again" icon="retry" variant="primary" size="primary" onPress={skip} />
-        </PanelActions>
-      </InfoPanel>
-    );
-  }
+  // An item that is simply not in our data is just named and priced: no eligibility badge, no mention of a list.
+  const showBadge = !(eligibility.label === 'not_eligible' && (eligibility.basis === 'no_match' || eligibility.basis === 'index_unavailable'));
+
+  // The card shows what the agent says: its side notes and its question, in the same words.
+  const sentences = res.voice.sentences.length ? res.voice.sentences : [res.voice.text];
+  const notes = sentences.filter((t) => /already have one|may belong to another item/i.test(t));
+  const last = sentences[sentences.length - 1] ?? '';
+  const question = last.endsWith('?') ? last : null;
+
+  // Nothing readable: the agent says so ("hold the item steady"); there is no card and no rescan button.
+  if (res.scan.state === 'unresolved') return null;
 
   // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
   if (res.voice.response_scope === 'confirm_strength') {
@@ -153,19 +154,25 @@ function ScanPanel({ res }: { res: ScanResponse }) {
           <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
             <PanelText kind="display">{formatCents(product.amount_cents)}</PanelText>
           </View>
-          <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
+          {showBadge ? <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} /> : null}
         </View>
       ) : null}
       {product.amount_cents == null ? (
         <AlertBlock level="warning" title="Price not found">
-          Point at the shelf tag, or say the price.
+          Please move closer to the price tag.
         </AlertBlock>
       ) : null}
-      {product.amount_cents == null ? (
+      {product.amount_cents == null && showBadge ? (
         <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
       ) : null}
+      {notes.map((n) => (
+        <PanelText key={n} kind="small" muted>
+          {n}
+        </PanelText>
+      ))}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}
       {rec && needsAnotherCard(rec) ? <AddCardSuggestion /> : null}
+      {question ? <PanelText kind="label">{question}</PanelText> : null}
       {rec && rec.decision !== 'blocked' ? (
         <CardChooser
           rec={rec}
@@ -335,7 +342,7 @@ function CardChooser({
                   backgroundColor: isSuggested ? palette.surface : palette.surfaceAlt,
                   borderColor: isSuggested ? palette.primary : palette.border,
                   borderWidth: isSuggested ? 2 : 1,
-                  opacity: reason ? 0.6 : pressed ? 0.85 : 1,
+                  opacity: reason ? Press.disabled : pressed ? Press.pressed : 1,
                 },
               ]}>
               <CardArt type={c.type} size="swatch" />
@@ -407,7 +414,7 @@ function CartPanel() {
         {scope === 'confirm_review_rest' ? (
           <ButtonPair yesA11y="Yes, check the rest" noA11y="No, I'm done" onYes={() => answer('yes')} onNo={() => answer('no')} />
         ) : (
-          <BigButton label="Checkout" icon="next" variant="primary" size="primary" onPress={startCheckout} />
+          <BigButton label="Check out" icon="next" variant="primary" size="primary" onPress={startCheckout} />
         )}
       </PanelActions>
     </InfoPanel>
@@ -559,8 +566,8 @@ function ReceiptPanel() {
 function DeclinedPanel({ message }: { message: string }) {
   const { startCheckout, showView } = useAgent();
   return (
-    <InfoPanel title={Phrases.declinedTitle} tone="danger" onClose={() => showView('cart')}>
-      <AlertBlock level="danger" title="Declined">
+    <InfoPanel title={Phrases.declinedTitle} tone="warning" onClose={() => showView('cart')}>
+      <AlertBlock level="warning" title="Nothing was charged">
         {message}
       </AlertBlock>
       <PanelActions>
@@ -584,7 +591,7 @@ const styles = StyleSheet.create({
   suggestedTag: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   rxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  rxIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rxIcon: { width: 36, height: 36, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   // Room to breathe: the name, its strength, the question and the note each get their own block.
   rxNameBlock: { gap: Spacing.sm, marginTop: Spacing.sm },
   rxStrength: { alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },

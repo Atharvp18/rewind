@@ -36,6 +36,7 @@ import type {
   ScanResponse,
   SttResponse,
   TtsResponse,
+  DemoRun,
   VoiceRequest,
 } from '@/lib/api';
 import { ApiError } from '@/lib/api-error';
@@ -67,11 +68,13 @@ const SEED: Record<1 | 2, { fsa: number; hsa: number }> = {
   2: { fsa: 1500, hsa: 500 },
 };
 
-const seedCards = (run: 1 | 2): Card[] => [
-  { id: 'card_fsa_1', type: 'fsa', nickname: 'FSA card', balance_cents: SEED[run].fsa, status: 'active', network: 'visa' },
-  { id: 'card_hsa_1', type: 'hsa', nickname: 'HSA card', balance_cents: SEED[run].hsa, status: 'active', network: 'visa' },
-  { id: 'card_visa_1', type: 'general', nickname: 'Visa credit', balance_cents: 500000, status: 'active', network: 'visa' },
-];
+/** Run 3 is the two-account setup: HSA ($5.00, same as run 2) and Visa, no FSA card. */
+const seedCards = (run: DemoRun): Card[] =>
+  [
+    { id: 'card_fsa_1', type: 'fsa' as const, nickname: 'FSA card', balance_cents: SEED[run === 3 ? 2 : run].fsa, status: 'active' as const, network: 'visa' as const, last4: '4417' },
+    { id: 'card_hsa_1', type: 'hsa' as const, nickname: 'HSA card', balance_cents: SEED[run === 3 ? 2 : run].hsa, status: 'active' as const, network: 'visa' as const },
+    { id: 'card_visa_1', type: 'general' as const, nickname: 'Visa credit', balance_cents: 500000, status: 'active' as const, network: 'visa' as const },
+  ].filter((c) => !(run === 3 && c.type === 'fsa'));
 
 // ---- invoices (PROPOSED, business spec 6.6) ------------------------------------
 
@@ -421,7 +424,7 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
           collected_at: null, matched_name: null },
       },
       recommendation: null,
-      voice: voice('I could not confirm this item. Try another angle, or tell me what it is.'),
+      voice: voice('I do not see an item in the frame. Please hold the item steady in front of the camera.'),
     };
   }
 
@@ -536,7 +539,7 @@ export async function tts(): Promise<TtsResponse> {
 function insertItem(scanId: string, cardId: string): void {
   const entry = state.scans.get(scanId);
   if (!entry?.item) throw new ApiError({ code: 'E_PRODUCT_UNRESOLVED', message: 'unknown scan',
-    speech: 'I could not confirm this item. Try another angle, or tell me what it is.', retryable: false });
+    speech: 'I do not see an item in the frame. Please hold the item steady in front of the camera.', retryable: false });
   state.items.push({
     id: randomUUID(), seq: ++state.seq, scan_id: scanId, card_id: cardId,
     display_name: entry.item.product.name, amount_cents: entry.item.product.amount_cents!,
@@ -553,7 +556,7 @@ export async function reissuePrompt(
   const entry = state.scans.get(scanId);
   if (!entry?.item) {
     throw new ApiError({ code: 'E_PRODUCT_UNRESOLVED', message: 'unknown scan',
-      speech: 'I could not confirm this item. Try another angle, or tell me what it is.', retryable: false });
+      speech: 'I do not see an item in the frame. Please hold the item steady in front of the camera.', retryable: false });
   }
   const prompt_id = randomUUID();
   state.prompts.set(prompt_id, { scope, scan_id: scanId, expiresAt: Date.now() + promptTtlMs, consumed: false });
@@ -784,7 +787,7 @@ export async function checkoutConfirm(
   return result;
 }
 
-export async function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
+export async function resetDemo(run: DemoRun): Promise<{ cards: Card[]; cart: Cart }> {
   state.cards = seedCards(run);
   state.lastVoice = null; // a reset is a fresh start: "repeat that" must not replay the last session
   state.items = [];

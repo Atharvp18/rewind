@@ -126,14 +126,22 @@ def _claude_extract(image_bytes: bytes) -> VisionExtract:
         warnings.append("E_NO_PRICE")
     if data.get("unreadable_reason"):
         warnings.append("E_VISION_UNCLEAR")
-    if data.get("tag_may_belong_to_neighbour"):
+        # The reason decides what the agent suggests (more light, less glare, hold still).
+        specific = {"dark": "E_TOO_DARK", "glare": "E_GLARE", "blurry": "E_BLURRY"}.get(str(data["unreadable_reason"]))
+        if specific:
+            warnings.append(specific)
+    neighbour = bool(data.get("tag_may_belong_to_neighbour"))
+    if neighbour:
         warnings.append("E_VISION_UNCLEAR")
+        warnings.append("E_TAG_NEIGHBOUR")
 
     name_conf = data.get("field_confidence", {}).get("name", 0.0)
     if name_conf < 0.5:
         warnings.append("E_PRODUCT_UNRESOLVED")
 
     price_cents = data.get("shelf_price_cents")
+    if neighbour:
+        price_cents = None            # the tag may be another item's: never price this item from it
     if price_cents is not None and (price_cents < 1 or price_cents > 50000):
         warnings.append("E_NO_PRICE")
         price_cents = None

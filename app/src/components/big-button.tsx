@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View, type PressableProps } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Icon, type IconName } from '@/components/icon';
-import { Radius, Spacing, Target } from '@/constants/theme';
+import { Press, Radius, Spacing, Target } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'accent';
@@ -56,7 +56,7 @@ export function BigButton({
           // Soft by default: the label identifies the button (WCAG 1.4.11 needs no outline then).
           // High contrast draws an edge on every control.
           borderWidth: palette.controlBorderWidth,
-          opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          opacity: disabled ? Press.disabled : pressed ? Press.pressed : 1,
           alignSelf: fill ? 'stretch' : 'auto',
           flexGrow: stretch ? 1 : 0,
         },

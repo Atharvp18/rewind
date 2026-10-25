@@ -1,9 +1,9 @@
 import { Children, Fragment, isValidElement, useEffect, useState, type ReactElement, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
-import { Icon } from '@/components/icon';
+import { CloseButton } from '@/components/close-button';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { Elevation, Layout, MaxContentWidth, Motion, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
@@ -107,14 +107,7 @@ export function InfoPanel({
             <AppText kind="heading" accessibilityRole="header" style={styles.headerTitle}>
               {title}
             </AppText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Close ${title ?? 'panel'}`}
-              onPress={onClose}
-              hitSlop={6}
-              style={({ pressed }) => [styles.close, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.8 : 1 }]}>
-              <Icon name="close" size={24} />
-            </Pressable>
+            <CloseButton label={`Close ${title ?? 'panel'}`} onPress={onClose} />
           </View>
         ) : null}
         <View style={styles.scrollWrap}>
@@ -173,7 +166,6 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.md,
   },
   headerTitle: { flex: 1 },
-  close: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   // Pinned footer: same side padding as the body, so buttons line up with the text.
   footer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
   actions: { gap: Spacing.md },

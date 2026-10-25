@@ -32,11 +32,14 @@ export function CameraStage({
   ref,
   active,
   granted,
+  torch = false,
   onBarcode,
 }: {
   ref?: Ref<CameraStageHandle>;
   active: boolean;
   granted: boolean;
+  /** The phone's light, turned on after a scan that was too dark to read. */
+  torch?: boolean;
   /** Live barcode position on screen (on-device, no network), for the focus corners. */
   onBarcode?: (code: string, bounds: { x: number; y: number; w: number; h: number } | null) => void;
 }) {
@@ -107,6 +110,7 @@ export function CameraStage({
           facing="back"
           active={active}
           animateShutter={false}
+          enableTorch={torch}
           barcodeScannerSettings={{ barcodeTypes: ['ean13', 'upc_a', 'upc_e'] }}
           onBarcodeScanned={handleBarcode}
         />
