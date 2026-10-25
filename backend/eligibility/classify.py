@@ -58,7 +58,12 @@ def classify_eligibility(
         index_checked: True when Moss answered (so "no listing" is meaningful); False when it
             was not consulted or was unavailable.
     """
-    return _cross_check_retailer(_classify_by_rules(product, package_marking), retailer, index_checked)
+    result = _cross_check_retailer(_classify_by_rules(product, package_marking), retailer, index_checked)
+    # Not in our data: assume it is NOT eligible, so it goes to the general Visa (team decision
+    # 2026-10-24). A listing that disagrees with the rules (package_disagreement) still asks.
+    if result.label == "could_not_confirm" and result.basis == "no_match":
+        return EligibilityResult(label="not_eligible", basis="no_match")
+    return result
 
 
 def _classify_by_rules(

@@ -48,7 +48,7 @@ export interface ProductResolution {
   is_medication: boolean;
   is_prescription_only: boolean;
   amount_cents: number | null;
-  price_source: 'shelf_tag' | 'cache' | 'user_spoken' | 'seeded' | null;
+  price_source: 'shelf_tag' | 'cache' | 'user_spoken' | 'seeded' | 'online' | null;
   state: ResultState;
   warnings: string[];
 }

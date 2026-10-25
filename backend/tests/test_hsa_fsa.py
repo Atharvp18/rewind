@@ -93,10 +93,10 @@ def test_shelf_medicine_in_irs_category_is_eligible_without_a_barcode():
         assert r.label == "eligible" and r.basis == "irs_category_rule"
 
 
-def test_medicine_outside_irs_categories_is_never_guessed():
+def test_medicine_outside_irs_categories_is_never_guessed_eligible():
     from eligibility.classify import classify_eligibility
     for category in ("vitamins_supplements", "other", "personal_care"):
-        assert classify_eligibility(product(category), None).label == "could_not_confirm"
+        assert classify_eligibility(product(category), None).label == "not_eligible"      # not in our data
 
 
 def test_non_medicine_follows_category_rules():
@@ -153,7 +153,7 @@ def test_disagreeing_listing_downgrades_to_could_not_confirm():
 
 
 def test_listing_never_upgrades_a_could_not_confirm():
-    assert classify("vitamins_supplements", listing(True)).label == "could_not_confirm"
+    assert classify("vitamins_supplements", listing(True)).label == "not_eligible"
 
 
 def test_no_listing_but_index_not_consulted_leaves_the_rule_answer():
@@ -161,10 +161,10 @@ def test_no_listing_but_index_not_consulted_leaves_the_rule_answer():
     assert r.label == "eligible" and r.basis == "irs_category_rule"
 
 
-def test_index_answered_but_product_not_listed_is_could_not_confirm():
+def test_index_answered_but_product_not_listed_is_treated_as_not_eligible():
     from eligibility.classify import classify_eligibility
     r = classify_eligibility(product("pain_relief"), None, None, index_checked=True)
-    assert r.label == "could_not_confirm" and r.basis == "no_match"
+    assert r.label == "not_eligible" and r.basis == "no_match"
 
 
 def test_not_listed_does_not_change_a_not_eligible_answer():

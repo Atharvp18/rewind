@@ -53,9 +53,8 @@ def go(name: str, session: dict, **entities):
 @pytest.mark.asyncio
 async def test_unknown_product_by_name_could_not_confirm():
     facts, scan = await product_agent.handle(product_hint="yoga mat")
-    assert scan["eligibility"]["label"] == "could_not_confirm"
+    assert scan["eligibility"]["label"] == "not_eligible"
     assert scan["state"] == "partial"
-    assert "I could not confirm eligibility" in facts.must_say
 
 
 @pytest.mark.asyncio

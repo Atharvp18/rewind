@@ -18,6 +18,7 @@ from eligibility.classify import classify_eligibility
 from lookup.chain import resolve_product
 from lookup.moss_index import MossUnavailable, find_match
 from lookup.normalize import normalize_key
+from lookup.web_price import find_price_online
 from models.schemas import EligibilityResult, ProductResolution, ScanResponse, ScanResult
 from payments import cart_store
 from payments.routing import route_item
@@ -26,7 +27,7 @@ from vision.claude_vision import extract_product
 
 router = APIRouter(prefix="/v1")
 
-SCAN_BUDGET_S = 8.0                # whole /v1/scan (spec 0.7)
+SCAN_BUDGET_S = 11.0               # whole /v1/scan (spec 0.7)
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PRICE_MAX_CENTS = 50_000_000       # $500,000.00: anything above is a typo, not a shelf price
 
@@ -66,6 +67,11 @@ async def identify(img: bytes, hint_price_cents: int | None, extract=None):
         product.amount_cents, product.price_source = retailer["price_cents"], "seeded"
         product.state = "resolved"
         product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
+    if product.amount_cents is None and product.name != "Unknown product":
+        online = await asyncio.to_thread(find_price_online, product)    # last resort: search the web
+        if online:
+            product.amount_cents, product.price_source, product.state = online, "online", "resolved"
+            product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
     elig = classify_eligibility(product, extract.package_eligibility_marking, retailer, checked)
     return product, elig
 

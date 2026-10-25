@@ -36,7 +36,7 @@ class ProductResolution(BaseModel):
     is_medication: bool = False
     is_prescription_only: bool = False
     amount_cents: int | None = None
-    price_source: Literal["shelf_tag", "cache", "user_spoken", "seeded"] | None = None
+    price_source: Literal["shelf_tag", "cache", "user_spoken", "seeded", "online"] | None = None
     state: Literal["resolved", "partial", "unresolved"] = "unresolved"
     warnings: list[str] = []
 

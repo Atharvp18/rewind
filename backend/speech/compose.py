@@ -83,7 +83,11 @@ def eligibility_line(product: ProductResolution, elig: EligibilityResult) -> str
         return "I could not confirm eligibility."
     # The confidence phrase is not spoken or captioned (Nak, 2026-10-24): just the result.
     # confidence_phrase() stays for anything that wants to show it.
-    return "HSA eligible." if elig.label == "eligible" else "Not HSA eligible."
+    if elig.label == "eligible":
+        return "HSA eligible."
+    if elig.basis == "no_match":
+        return "I could not find this on the HSA eligible list, so I am treating it as not eligible."
+    return "Not HSA eligible."
 
 
 def scope_for(rec: PaymentRecommendation | None) -> str:
@@ -102,6 +106,8 @@ def _card_line(rec: PaymentRecommendation, cards: dict[str, Card]) -> str:
     reason = rec.reason_code
     if reason in ("eligible_sufficient_balance", "not_eligible", "no_health_card_linked", "routed_to_next_card"):
         lead = "No HSA or FSA card is linked, so " if reason == "no_health_card_linked" else ""
+        if reason == "not_eligible":
+            return f"Please use your {name(rec.card_id)}, not an HSA or FSA card. Add it to your cart?"
         return f"{lead}{'use' if lead else 'Use'} your {name(rec.card_id)}. Add it to your cart?"
     if reason == "eligible_insufficient_balance":
         other = name(rec.card_options[0]) if rec.card_options else "other card"
@@ -146,8 +152,12 @@ def compose_speech(
     if rec is not None:
         parts.append(_card_line(rec, by_id))
     scope = scope_for(rec)
-    return _request(" ".join(parts), scope=scope, prompt_id=prompt_id if scope != "none" else None,
-                    request_id=request_id)
+    if product.price_source == "online":
+        parts.insert(1, "I found that price online, so it is an estimate.")
+    # Not HSA/FSA eligible is an alert: the shopper should not put it on a health card.
+    priority = "alert" if elig.label == "not_eligible" else "normal"
+    return _request(" ".join(parts), scope=scope, priority=priority,
+                    prompt_id=prompt_id if scope != "none" else None, request_id=request_id)
 
 
 # --- the cart --------------------------------------------------------------------------------------

@@ -124,11 +124,13 @@ def test_a_slow_scan_hits_the_budget(client):
     assert r.status_code == 504 and r.json()["error"]["code"] == "E_UPSTREAM_TIMEOUT"
 
 
-def test_could_not_confirm_asks_which_card_and_lists_every_card(client):
+def test_a_product_not_in_our_data_is_treated_as_not_eligible_and_goes_to_the_visa(client):
     body = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
     rec = body["recommendation"]
-    assert rec["decision"] == "ask_user" and set(rec["card_options"]) == {HSA, FSA, VISA}
-    assert body["voice"]["response_scope"] == "choose_card"
+    assert body["scan"]["eligibility"]["label"] == "not_eligible"
+    assert rec["decision"] == "route_to_general" and rec["card_id"] == VISA
+    assert body["voice"]["priority"] == "alert" and "Visa" in body["voice"]["text"]
+    assert "not eligible" in body["voice"]["text"]
 
 
 # --- adding to the cart ------------------------------------------------------------------------------
@@ -178,14 +180,22 @@ def test_a_not_eligible_item_is_never_added_to_a_health_card(client):
     assert client.get("/v1/cart").json()["groups"] == []
 
 
-def test_choosing_a_card_for_an_unconfirmed_item(client):
+def test_an_unlisted_item_cannot_go_on_a_health_card(client):
     s = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
-    assert add(client, s).status_code == 422             # which card? has no default answer
+    assert add(client, s, FSA).status_code == 422
     s = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
-    r = add(client, s, VISA)
+    r = add(client, s)
     assert r.status_code == 200 and r.json()["cart"]["groups"][0]["card_id"] == VISA
-    item = r.json()["cart"]["groups"][0]["items"][0]
-    assert item["user_overrode_card"] is True
+
+
+def test_a_scan_with_no_readable_price_uses_the_online_price_and_says_so(client, monkeypatch):
+    import api.scan as scan_api
+    monkeypatch.setattr(scan_api, "find_price_online", lambda product: 349)
+    r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:tissues_far", "image/jpeg")})
+    body = r.json()
+    assert body["scan"]["product"]["price_source"] == "online" and body["scan"]["product"]["amount_cents"] == 349
+    assert "found that price online" in body["voice"]["text"]
+    assert body["recommendation"]["card_id"] == VISA
 
 
 def test_remove_last_item(client):
@@ -391,21 +401,10 @@ def test_dont_add_that_is_a_no_not_a_yes(client):
     assert say(client, "don't add that", s["voice"]["prompt_id"]).json()["action"] == "skip"
 
 
-def test_a_named_card_answers_which_card(client):
-    s = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
-    r = say(client, "put it on my visa", s["voice"]["prompt_id"]).json()
-    assert r["action"] == "add_to_cart" and "Visa credit" in r["voice"]["text"]
-    s = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
-    r = say(client, "use the FSA", s["voice"]["prompt_id"]).json()
-    assert "FSA card" in r["voice"]["text"]
-
-
-def test_a_bare_yes_does_not_pick_a_card_but_asks_again(client):
+def test_yes_adds_an_unlisted_item_to_the_visa(client):
     s = scan(client, "Yoga Mat", 2500, upc=None, medication=False, category="other")
     r = say(client, "yes", s["voice"]["prompt_id"]).json()
-    assert r["action"] == "choose_card" and r["voice"]["text"].startswith("Which card")
-    assert client.get("/v1/cart").json()["groups"] == []
-    assert say(client, "visa", r["voice"]["prompt_id"]).json()["action"] == "add_to_cart"
+    assert r["action"] == "add_to_cart" and "Visa credit" in r["voice"]["text"]
 
 
 def test_yes_to_the_only_alternative_card(client, fake):
