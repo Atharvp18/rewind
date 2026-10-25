@@ -3,7 +3,7 @@ and text and never talks to Cartesia.
 
   POST /v1/stt         audio in            -> transcript   (Cartesia Ink, batch)
   POST /v1/tts         text in             -> one audio file per sentence (Cartesia Sonic)
-  GET  /v1/audio/{id}  fetch one sentence  -> mp3 bytes
+  GET  /v1/audio/{id}  fetch one sentence  -> WAV bytes
 
 TTS flow: the first sentence is synthesised before /v1/tts answers, so a Cartesia failure is
 reported at once (the app then speaks with expo-speech) and the first audio is ready to play.
@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from api.envelope import ApiError
+from speech.loudness import loud_wav
 from speech.sentences import split_sentences
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,9 @@ router = APIRouter()
 
 STT_MODEL = "ink-whisper"
 DEFAULT_TTS_MODEL = "sonic-3"
-# Small mp3 at 24 kHz: speech quality is fine and each file downloads fast.
-OUTPUT_FORMAT = {"container": "mp3", "sample_rate": 24000, "bit_rate": 64000}
+# Raw 16-bit PCM at 24 kHz: made louder in speech/loudness.py, then served as a WAV file.
+SAMPLE_RATE = 24000
+OUTPUT_FORMAT = {"container": "raw", "encoding": "pcm_s16le", "sample_rate": SAMPLE_RATE}
 
 # Sonic-3 volume, 0.5 to 2.0 (the maximum): 1.0 played quietly on a phone speaker.
 TTS_VOLUME = float(os.environ.get("CARTESIA_VOLUME", "2.0"))
@@ -208,7 +210,7 @@ class TTSResponse(BaseModel):
 
 
 class AudioStore:
-    """Synthesis tasks and the mp3 files they write. Files live 10 minutes (spec 0.6)."""
+    """Synthesis tasks and the WAV files they write. Files live 10 minutes (spec 0.6)."""
 
     def __init__(self, directory: Path):
         self.dir = directory
@@ -217,7 +219,7 @@ class AudioStore:
         self.created: dict[str, float] = {}
 
     def path(self, audio_id: str) -> Path:
-        return self.dir / f"{audio_id}.mp3"
+        return self.dir / f"{audio_id}.wav"
 
     def register(self, audio_id: str, task: asyncio.Task) -> None:
         # Mark failures as seen: a failed sentence nobody fetched must not log "never retrieved".
@@ -242,7 +244,7 @@ class AudioStore:
         """Delete every file, including ones left by a previous run."""
         for audio_id in list(self.created):
             self.drop(audio_id)
-        for file in self.dir.glob("*.mp3"):
+        for file in self.dir.glob("*.wav"):
             with suppress(FileNotFoundError):
                 file.unlink()
 
@@ -274,7 +276,7 @@ async def _synthesize(text: str, audio_id: str, timeout_s: float) -> Path:
     if not audio:
         raise RuntimeError("Cartesia returned no audio")
     path = store.path(audio_id)
-    await asyncio.to_thread(path.write_bytes, audio)
+    await asyncio.to_thread(path.write_bytes, loud_wav(audio, SAMPLE_RATE))
     return path
 
 
@@ -328,4 +330,4 @@ async def get_audio(audio_id: str) -> FileResponse:
     path = store.path(audio_id)
     if not path.exists():
         raise ApiError("E_NOT_FOUND", "no such audio")
-    return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
