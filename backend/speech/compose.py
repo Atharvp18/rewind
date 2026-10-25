@@ -78,6 +78,11 @@ def confidence_phrase(product: ProductResolution, elig: EligibilityResult) -> st
     return ""
 
 
+def is_unlisted(elig: EligibilityResult) -> bool:
+    """Treated as not eligible only because no listing was found. The shopper is never told that."""
+    return elig.label == "not_eligible" and elig.basis in ("no_match", "index_unavailable")
+
+
 def eligibility_line(product: ProductResolution, elig: EligibilityResult) -> str:
     if elig.label == "could_not_confirm":
         return "I could not confirm eligibility."
@@ -85,8 +90,8 @@ def eligibility_line(product: ProductResolution, elig: EligibilityResult) -> str
     # confidence_phrase() stays for anything that wants to show it.
     if elig.label == "eligible":
         return "HSA eligible."
-    if elig.basis in ("no_match", "index_unavailable"):
-        return "I could not find this on the HSA eligible list, so I am treating it as not eligible."
+    if is_unlisted(elig):
+        return ""          # not in our data: say nothing about the list, just name it, price it and route it
     return "Not HSA eligible."
 
 
@@ -100,13 +105,13 @@ def scope_for(rec: PaymentRecommendation | None) -> str:
     return "none"
 
 
-def _card_line(rec: PaymentRecommendation, cards: dict[str, Card]) -> str:
+def _card_line(rec: PaymentRecommendation, cards: dict[str, Card], unlisted: bool = False) -> str:
     name = lambda cid: card_name(cid, cards)
     options = _join(f"your {name(c)}" for c in rec.card_options)
     reason = rec.reason_code
     if reason in ("eligible_sufficient_balance", "not_eligible", "no_health_card_linked", "routed_to_next_card"):
         lead = "No HSA or FSA card is linked, so " if reason == "no_health_card_linked" else ""
-        if reason == "not_eligible":
+        if reason == "not_eligible" and not unlisted:
             return f"Please use your {name(rec.card_id)}, not an HSA or FSA card. Add it to your cart?"
         return f"{lead}{'use' if lead else 'Use'} your {name(rec.card_id)}. Add it to your cart?"
     if reason == "eligible_insufficient_balance":
@@ -148,12 +153,15 @@ def compose_speech(
         return _request(text, request_id=request_id)
 
     by_id = _cards_by_id(cards)
-    parts = [f"{product.name}, {money(product.amount_cents)}.", eligibility_line(product, elig)]
+    unlisted = is_unlisted(elig)
+    parts = [f"{product.name}, {money(product.amount_cents)}."]
+    if line := eligibility_line(product, elig):
+        parts.append(line)
     if rec is not None:
-        parts.append(_card_line(rec, by_id))
+        parts.append(_card_line(rec, by_id, unlisted))
     scope = scope_for(rec)
     # Not HSA/FSA eligible is an alert: the shopper should not put it on a health card.
-    priority = "alert" if elig.label == "not_eligible" else "normal"
+    priority = "alert" if elig.label == "not_eligible" and not unlisted else "normal"
     return _request(" ".join(parts), scope=scope, priority=priority,
                     prompt_id=prompt_id if scope != "none" else None, request_id=request_id)
 

@@ -126,6 +126,9 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // Answers stay active after the question's window: a late answer re-asks for the same item.
   const busy = state.phase === 'submitting';
 
+  // An item that is simply not in our data is just named and priced: no eligibility badge, no mention of a list.
+  const showBadge = !(eligibility.label === 'not_eligible' && (eligibility.basis === 'no_match' || eligibility.basis === 'index_unavailable'));
+
   // Nothing readable: the agent says so ("hold the item steady"); there is no card and no rescan button.
   if (res.scan.state === 'unresolved') return null;
 
@@ -145,7 +148,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
           <View accessible accessibilityLabel={`Price ${centsForScreenReader(product.amount_cents)}`}>
             <PanelText kind="display">{formatCents(product.amount_cents)}</PanelText>
           </View>
-          <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
+          {showBadge ? <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} /> : null}
         </View>
       ) : null}
       {product.amount_cents == null ? (
@@ -153,7 +156,7 @@ function ScanPanel({ res }: { res: ScanResponse }) {
           Point at the shelf tag, or say the price.
         </AlertBlock>
       ) : null}
-      {product.amount_cents == null ? (
+      {product.amount_cents == null && showBadge ? (
         <EligibilityBadge eligibility={eligibility} isMedication={product.is_medication} />
       ) : null}
       {rec ? <Recommendation rec={rec} cards={state.cards} /> : null}

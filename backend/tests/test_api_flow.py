@@ -129,8 +129,16 @@ def test_a_product_not_in_our_data_is_treated_as_not_eligible_and_goes_to_the_vi
     rec = body["recommendation"]
     assert body["scan"]["eligibility"]["label"] == "not_eligible"
     assert rec["decision"] == "route_to_general" and rec["card_id"] == VISA
-    assert body["voice"]["priority"] == "alert" and "Visa" in body["voice"]["text"]
-    assert "not eligible" in body["voice"]["text"]
+    text = body["voice"]["text"]
+    # Just the name, the price and the card: nothing about eligibility or a list.
+    assert text == "Yoga Mat, $25.00. Use your Visa credit. Add it to your cart?"
+    assert body["voice"]["priority"] == "normal"
+
+
+def test_a_known_ineligible_item_is_still_flagged(client):
+    body = kettle(client)
+    text = body["voice"]["text"]
+    assert "Not HSA eligible" in text and "not an HSA or FSA card" in text and body["voice"]["priority"] == "alert"
 
 
 # --- adding to the cart ------------------------------------------------------------------------------
