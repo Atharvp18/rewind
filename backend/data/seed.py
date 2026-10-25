@@ -16,7 +16,19 @@ KEY_KETTLE_CORN = normalize_key(None, "Kettle Corn", None)
 
 # The store printed at the top of the invoice. All mock data: override with REWIND_STORE_NAME and
 # REWIND_STORE_ADDRESS to match wherever the demo is shown.
-STORE = {"name": "Rewind Demo Store", "address": "123 Main Street, Berkeley, CA 94704"}
+STORE = {"name": "Rewind Demo Store", "address": "123 Main Street, Berkeley, CA 94704",
+         "phone": "(555) 010-0100"}
+
+# Stores the app can check in to (PROPOSED, prototype only). All mock: fake addresses and 555-01xx
+# phone numbers. Coordinates are only compared with the phone's position for a moment, never stored.
+CHECKIN_STORES = [
+    {"id": "store_cvs", "name": "CVS Pharmacy", "address": "100 Example Ave, Berkeley, CA 94704",
+     "phone": "(555) 010-0142", "lat": 37.8716, "lng": -122.2727},
+    {"id": "store_walmart", "name": "Walmart Pharmacy", "address": "2200 Sample Blvd, Oakland, CA 94607",
+     "phone": "(555) 010-0178", "lat": 37.8044, "lng": -122.2712},
+    {"id": "store_walgreens", "name": "Walgreens", "address": "55 Mockingbird Ln, Emeryville, CA 94608",
+     "phone": "(555) 010-0119", "lat": 37.8313, "lng": -122.2852},
+]
 
 NESSIE_ACCOUNT_ENV = {"card_hsa_1": "NESSIE_HSA_ACCOUNT_ID", "card_fsa_1": "NESSIE_FSA_ACCOUNT_ID",
                       "card_visa_1": "NESSIE_VISA_ACCOUNT_ID"}

@@ -15,7 +15,8 @@ from data import db, seed
 
 PUBLIC = (
     "health", "get_cards", "cache_get", "cache_put", "eligibility_lookup_upc", "save_scan", "get_scan", "get_cart",
-    "add_cart_item", "reassign_cart_item", "remove_last_cart_item", "pop_last_cart_item", "clear_cart",
+    "add_cart_item", "reassign_cart_item", "remove_last_cart_item", "pop_last_cart_item", "remove_cart_item",
+    "clear_cart", "list_payments", "link_card",
     "create_prompt", "consume_prompt", "get_payment", "get_payment_by_id", "confirm_checkout", "reset_demo",
 )
 
@@ -125,6 +126,28 @@ class FakeDB:
 
     def remove_last_cart_item(self):
         return self.pop_last_cart_item()[1]
+
+    def remove_cart_item(self, item_id):
+        found = next((i for i in self.items if i["id"] == item_id), None)
+        if found:
+            self.items.remove(found)
+        return found, self.get_cart()
+
+    def list_payments(self, limit=50):
+        rows = sorted(self.payments.values(), key=lambda p: p["created_at"], reverse=True)[:limit]
+        return [{"payment_id": p["payment_id"], "total_cents": p["total_cents"],
+                 "splits": copy.deepcopy(p["splits"]), "created_at": p["created_at"]} for p in rows]
+
+    def link_card(self, card_type, nickname, last4, network):
+        details = {"nickname": nickname, "last4": last4, "network": network}
+        same = next((c for c in self.cards.values() if c["type"] == card_type), None)
+        if same:
+            same.update(details)
+            return dict(same)
+        card_id = f"card_{card_type}_{len(self.cards) + 1}"
+        self.cards[card_id] = {"id": card_id, "type": card_type, "balance_cents": db.NEW_CARD_BALANCE_CENTS[card_type],
+                               "nessie_account_id": None, "status": "active", "is_default": False, **details}
+        return dict(self.cards[card_id])
 
     def clear_cart(self):
         self.items = []

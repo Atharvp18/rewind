@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from api import memory
 from api.envelope import ApiError
 from data import db
-from payments import cart_store, checkout, nessie
+from payments import cart_store, checkout, nessie, store_checkin
 from speech import compose
 
 router = APIRouter(prefix="/v1")
@@ -47,6 +47,8 @@ CART = r"\bcart\b"
 NO = r"^(no|nope|nah|skip|cancel|stop)\b|\bskip (it|that|this)\b|\bnever ?mind\b|\bdon'?t\b|\bnot now\b"
 YES = (r"^(yes|yeah|yep|yup|sure|ok|okay|please|correct|right|confirm)\b|\badd (that|it|this)\b"
        r"|\bgo ahead\b|\bdo it\b|\bthat'?s right\b")
+KEEP_OR_REMOVE = r"\b(keep|remove)\b"
+SCOPED_ANSWERS = ("confirm_remove_item", "confirm_review_rest", "confirm_checkin")
 CARD_WORDS = {"hsa": "hsa", "fsa": "fsa", "visa": "general", "credit": "general", "general": "general"}
 
 
@@ -70,6 +72,16 @@ def command(body: Command, background: BackgroundTasks) -> dict:
     if body.confidence is not None and body.confidence < MIN_CONFIDENCE:
         raise ApiError("E_STT_LOW_CONFIDENCE", "transcript below the confidence threshold")
     text = normalize(body.transcript)
+
+    # A yes / no / remove / keep may answer a cart review or a store check-in. Those prompts are
+    # tried first, without using up a prompt of any other scope (a wrong scope never consumes).
+    if body.prompt_id and (has(YES, text) or has(NO, text) or has(KEEP_OR_REMOVE, text)):
+        try:
+            info = cart_store.consume(body.prompt_id, SCOPED_ANSWERS)
+        except db.PromptExpired:
+            info = None
+        if info:
+            return answer_scoped(info, text)
 
     if has(BALANCE, text):
         return reply("balance_refused", compose.balance_refusal())
@@ -97,6 +109,50 @@ def command(body: Command, background: BackgroundTasks) -> dict:
     if has(YES, text) or card_id:
         return act_on_prompt(body.prompt_id, card_id, cards, background)
     raise ApiError("E_STT_LOW_CONFIDENCE", "transcript did not match a command")
+
+
+def answer_scoped(info: dict, text: str) -> dict:
+    """Answers to the PROPOSED cart-review and store check-in questions."""
+    payload, scope = info["payload"], info["scope"]
+    yes = has(YES, text) and not has(NO, text)
+    if scope == "confirm_checkin":
+        store = store_checkin.by_id(payload.get("store_id"))
+        if yes and store:
+            store_checkin.check_in(store)
+            return reply("checked_in", compose.checked_in(store["name"], store["address"]),
+                         store=store_checkin.public(store))
+        return reply("skip", compose.checkin_declined())
+
+    reviewed = list(payload.get("reviewed", []))
+    if scope == "confirm_remove_item":
+        item = next((i for i in cart_store.flat_items(db.get_cart()) if i["id"] == payload.get("item_id")), None)
+        remove = has(r"\bremove\b", text) or (yes and not has(r"\bkeep\b", text))
+        if item and remove:
+            db.remove_cart_item(item["id"])
+            prefix = f"Removed {item['display_name']}."
+        else:
+            prefix = f"Keeping {item['display_name']}." if item else ""
+        return after_review(prefix, reviewed)
+
+    # confirm_review_rest: "would you like to check the other items too?"
+    rest = [i for i in cart_store.flat_items(db.get_cart()) if i["id"] not in reviewed]
+    if yes and rest:
+        item = rest[0]
+        prompt_id = db.create_prompt("confirm_remove_item", item.get("scan_id"),
+                                     {"item_id": item["id"], "reviewed": reviewed + [item["id"]]})
+        return reply("review_item", compose.review_item(item["display_name"], item["amount_cents"], prompt_id),
+                     cart=db.get_cart(), item_id=item["id"])
+    return reply("review_done", compose.review_done(), cart=db.get_cart())
+
+
+def after_review(prefix: str, reviewed: list[str]) -> dict:
+    """After one item is settled: offer the items not looked at yet, or close the review."""
+    cart = db.get_cart()
+    rest = [i for i in cart_store.flat_items(cart) if i["id"] not in reviewed]
+    if not rest:
+        return reply("review_done", compose.review_done(prefix or "Okay."), cart=cart)
+    prompt_id = db.create_prompt("confirm_review_rest", None, {"reviewed": reviewed})
+    return reply("review_item", compose.review_rest(prefix, len(rest), prompt_id), cart=cart, item_id=None)
 
 
 def clear_cart_prompt() -> dict:

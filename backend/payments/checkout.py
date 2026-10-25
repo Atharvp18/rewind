@@ -13,7 +13,7 @@ from typing import Any
 from data import db
 from models.schemas import VoiceRequest
 from lookup import purchase_memory
-from payments import cart_store, invoice
+from payments import cart_store, invoice, store_checkin
 from payments.routing import HEALTH_TYPES, CheckoutGroup, CheckoutPlan, Move, apply_moves, plan_checkout
 from speech import compose
 
@@ -129,7 +129,9 @@ def charge(idempotency_key: str, info: dict) -> Confirmed:
         for m in moves:                                       # the user agreed to these moves
             db.reassign_cart_item(m.item_id, m.to_card_id)
         # the cart is emptied by the charge, so the paid items travel with it for the invoice
-        paid = [dict(s, items=[invoice.item_snapshot(i) for i in final_items
+        here = store_checkin.current()
+        tag = {"store": store_checkin.public(here)} if here else {}   # the store the user checked in to
+        paid = [dict(s, items=[dict(invoice.item_snapshot(i), **tag) for i in final_items
                                if i["assigned_card_id"] == s["card_id"]]) for s in splits]
         payment = db.confirm_checkout(idempotency_key, paid)
         if not payment.get("replayed"):                       # a repeated key charged nothing new

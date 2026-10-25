@@ -210,7 +210,8 @@ def test_clear_cart_needs_a_confirmation_prompt(client):
 def test_cards_endpoint_lists_the_cards(client):
     cards = client.get("/v1/cards").json()
     assert {c["id"]: c["balance_cents"] for c in cards} == {HSA: 34000, FSA: 2500, VISA: 500000}
-    assert set(cards[0]) == {"id", "type", "nickname", "balance_cents", "status"}
+    # last4 and network are null until a card is linked (POST /v1/cards); the app reads them
+    assert set(cards[0]) == {"id", "type", "nickname", "balance_cents", "status", "last4", "network"}
 
 
 def test_database_down_is_a_spoken_503(client, fake):

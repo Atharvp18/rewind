@@ -98,6 +98,9 @@ class VoiceRequest(BaseModel):
         "confirm_checkout",
         "confirm_clear_cart",
         "confirm_strength",
+        "confirm_remove_item",
+        "confirm_review_rest",
+        "confirm_checkin",
         "none",
     ] = "none"
     sentences: list[str] = []

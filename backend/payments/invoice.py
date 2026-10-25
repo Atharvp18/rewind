@@ -83,3 +83,51 @@ def cart_groups(payment: dict, cards: list[dict]) -> list[dict]:
             "subtotal_cents": split["amount_cents"],
         })
     return groups
+
+
+# --- purchase history (PROPOSED: GET /v1/payments, business spec 6.6) ----------------------------
+
+# A fixed-rate tax ESTIMATE for one state, labeled as an estimate (business spec 6.6). Tax on
+# groceries and medicine varies and is unverified, so the note says so.
+TAX_BASIS_POINTS = 725
+TAX_NOTE = "Estimated sales tax at 7.25% (one fixed rate). Estimate only: tax on medicine varies."
+
+
+def store_contact() -> dict:
+    return {**store(), "phone": os.environ.get("REWIND_STORE_PHONE") or seed.STORE["phone"]}
+
+
+def history_invoice(payment: dict, cards: list[dict]) -> dict:
+    """One payment as the History list shows it: store, items with eligibility and card, an
+    estimated tax, which card paid what, and the possible-reimbursement total (an HSA/FSA-eligible
+    item paid with the everyday card). Rewind prepares this; it never files a claim."""
+    by_id = {c["id"]: c for c in cards}
+    items = _items(payment)
+    tagged = next((i["store"] for i in items if i.get("store")), None)   # the store checked in to, if any
+    lines = []
+    for item in items:
+        card_id = next(s["card_id"] for s in payment["splits"] if item in s.get("items", []))
+        lines.append({
+            "name": item["display_name"], "qty": 1, "unit_cents": item["amount_cents"],
+            "amount_cents": item["amount_cents"], "eligibility_label": item.get("eligibility_label", "could_not_confirm"),
+            "card_id": card_id, "card_type": by_id.get(card_id, {}).get("type", "general"),
+        })
+    subtotal = payment["total_cents"]
+    tax = (subtotal * TAX_BASIS_POINTS + 5000) // 10000            # integer cents, rounded half up
+    created = payment.get("created_at") or datetime.now().astimezone().isoformat()
+    return {
+        "invoice_id": payment["payment_id"],
+        "date": created,
+        "store": tagged or store_contact(),
+        "lines": lines,
+        "subtotal_cents": subtotal,
+        "tax_cents": tax,
+        "tax_note": TAX_NOTE,
+        "total_cents": subtotal + tax,
+        "payments": [{"card_id": s["card_id"], "nickname": by_id.get(s["card_id"], {}).get("nickname", ""),
+                      "type": by_id.get(s["card_id"], {}).get("type", "general"),
+                      "last4": by_id.get(s["card_id"], {}).get("last4"), "amount_cents": s["amount_cents"]}
+                     for s in payment["splits"]],
+        "reimbursable_cents": sum(l["amount_cents"] for l in lines
+                                  if l["eligibility_label"] == "eligible" and l["card_type"] == "general"),
+    }

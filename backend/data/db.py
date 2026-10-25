@@ -252,6 +252,12 @@ def pop_last_cart_item() -> tuple[dict | None, dict]:
     return (removed or None), get_cart()
 
 
+def remove_cart_item(item_id: str) -> tuple[dict | None, dict]:
+    """Remove one item by id. Returns (the removed row or None, the updated cart)."""
+    rows = _call(lambda: _sb().table("cart_items").delete().eq("id", item_id).execute()).data
+    return (rows[0] if rows else None), get_cart()
+
+
 def clear_cart() -> None:
     _call(lambda: _sb().table("cart_items").delete().neq("id", "").execute())
 
@@ -307,6 +313,38 @@ def get_payment(idempotency_key: str) -> dict | None:
     return {"payment_id": row["payment_id"], "total_cents": row["total_cents"],
             "splits": row["splits_json"], "new_balances": balances, "replayed": True,
             "created_at": row.get("created_at")}
+
+
+def list_payments(limit: int = 50) -> list[dict]:
+    """Completed payments, newest first, in get_payment's shape (without new_balances)."""
+    rows = _call(lambda: _sb().table("payments").select("*").eq("status", "simulated_complete")
+                 .order("created_at", desc=True).limit(limit).execute()).data
+    return [{"payment_id": r["payment_id"], "total_cents": r["total_cents"], "splits": r["splits_json"],
+             "created_at": r.get("created_at")} for r in rows]
+
+
+def link_card(card_type: str, nickname: str, last4: str | None, network: str | None) -> dict:
+    """Link a card the user photographed. Needs data/migration_card_details.sql.
+
+    The demo keeps one card per type: linking an HSA updates the seeded HSA card (its demo balance
+    stays), so the seeded runs still work. A type with no card yet gets a new row.
+    """
+    details = {"nickname": nickname, "last4": last4, "network": network}
+    cards = get_cards()
+    same = next((c for c in cards if c["type"] == card_type), None)
+    if same:
+        _call(lambda: _sb().table("cards").update(details).eq("id", same["id"]).execute())
+        card_id = same["id"]
+    else:
+        card_id = f"card_{card_type}_{len(cards) + 1}"
+        row = {"id": card_id, "type": card_type, "balance_cents": NEW_CARD_BALANCE_CENTS[card_type],
+               "status": "active", "is_default": False, **details}
+        _call(lambda: _sb().table("cards").insert(row).execute())
+    return next(c for c in get_cards() if c["id"] == card_id)
+
+
+# Demo balance for a card type that had no seeded card (all simulated money).
+NEW_CARD_BALANCE_CENTS = {"hsa": 34000, "fsa": 2500, "general": 500000}
 
 
 def get_payment_by_id(payment_id: str) -> dict | None:

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from api import memory
 from data import db
 from lookup import purchase_memory
+from payments import store_checkin
 
 router = APIRouter(prefix="/v1/demo")
 
@@ -21,5 +22,6 @@ class Reset(BaseModel):
 def reset(body: Reset) -> dict:
     result = db.reset_demo(body.run)
     memory.forget()
+    store_checkin.check_out()
     purchase_memory.clear_in_background()         # History's Moss memory is not in Postgres
     return {"cards": result["cards"], "cart": result["cart"]}

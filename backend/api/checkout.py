@@ -48,6 +48,13 @@ def confirm(body: Confirm, background: BackgroundTasks) -> dict:
     return confirmed_body(result)
 
 
+@router.get("/payments")
+def list_payments() -> dict:
+    """PROPOSED: every completed payment as an invoice, newest first (the app's History page)."""
+    cards = db.get_cards()
+    return {"invoices": [invoice.history_invoice(p, cards) for p in db.list_payments()]}
+
+
 @router.get("/payments/{payment_id}/invoice")
 def get_invoice(payment_id: str) -> dict:
     payment = db.get_payment_by_id(payment_id)

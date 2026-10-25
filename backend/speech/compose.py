@@ -293,3 +293,42 @@ def checkout_result(
 
 def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> VoiceRequest:
     return _request(LOW_BALANCE.format(card=card_name(card_id, _cards_by_id(cards))), priority="alert")
+
+
+# --- reviewing one cart item (PROPOSED: tap an item in the cart) -----------------------------------
+
+def review_item(name: str, amount_cents: int, prompt_id: str | None = None) -> VoiceRequest:
+    return _request(f"{name}, {money(amount_cents)}. Do you want to remove it from your cart?",
+                    scope="confirm_remove_item", prompt_id=prompt_id)
+
+
+def review_gone() -> VoiceRequest:
+    return _request("That item is no longer in your cart.")
+
+
+def review_rest(prefix: str, remaining: int, prompt_id: str | None = None) -> VoiceRequest:
+    word = ["no", "one", "two", "three", "four", "five"][remaining] if remaining <= 5 else str(remaining)
+    items = "item" if remaining == 1 else "items"
+    them = "it" if remaining == 1 else "them"
+    return _request(f"{prefix} You also have {word} other {items}. Would you like to check {them} too?".strip(),
+                    scope="confirm_review_rest", prompt_id=prompt_id)
+
+
+def review_done(prefix: str = "Okay.") -> VoiceRequest:
+    return _request(f"{prefix} Let me know when you're ready to check out.".strip())
+
+
+# --- store check-in (PROPOSED, prototype) ------------------------------------------------------------
+
+def checkin_question(name: str, address: str, prompt_id: str | None = None) -> VoiceRequest:
+    return _request(f"Are you at {name}, {address}? Say yes to check in.", scope="confirm_checkin",
+                    prompt_id=prompt_id)
+
+
+def checked_in(name: str, address: str) -> VoiceRequest:
+    return _request(f"You're checked in at {name}, {address}. "
+                    "Please point your camera at an item to start shopping.")
+
+
+def checkin_declined() -> VoiceRequest:
+    return _request("Okay. You can still scan items.")
