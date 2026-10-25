@@ -113,6 +113,58 @@ flowchart TD
     G --> M["Simulated Visa Checkout"]
 ```
 
+## Run the Project
+
+Requirements: Node 22.13+ or 24.3+, Python 3.12, and **Expo Go (SDK 58)** on an iPhone. Product rules and design decisions live in [`specs/`](specs/).
+
+### Mobile app
+
+```bash
+cd app
+npm install
+cp .env.example .env      # set EXPO_PUBLIC_API_URL to the backend address
+npx expo start --tunnel --go
+```
+
+Scan the QR code with Expo Go. `--tunnel` works even when the venue Wi-Fi blocks local connections.
+
+If `EXPO_PUBLIC_API_URL` is left empty, the app runs on an offline mock of the demo script (`src/lib/mock-backend.ts`). The mock cannot hear, so it uses fixed answers. Only the real backend reads cards and speaks with Cartesia.
+
+`src/lib/api.ts` is the only file that talks to the backend.
+
+### Backend
+
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+The backend reads its keys from a `.env` file (names only; never commit the values): `ANTHROPIC_API_KEY`, `CARTESIA_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `NESSIE_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `APIFY_TOKEN` for the offline data collection only.
+
+### Demo controls
+
+Use **Profile → Demo** in the app to set up the store visit, the account setup, and a declined card, and to reset the demo.
+
+### Checks
+
+```bash
+# app
+cd app
+npx tsc --noEmit
+npx expo lint
+npx jest
+npx expo-doctor
+node scripts/contrast-audit.mjs   # WCAG contrast and color-vision check of every theme color
+
+# backend
+cd backend
+.venv/bin/python -m pytest -q
+```
+
+The accessibility audit with measured contrast is in [`app/ACCESSIBILITY.md`](app/ACCESSIBILITY.md).
+
 ## Eligibility Pipeline
 
 Rewind uses multiple checks instead of allowing the AI model to guess:
