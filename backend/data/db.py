@@ -171,6 +171,12 @@ def eligibility_bulk_insert(rows: list[dict]) -> int:
     return len(records)
 
 
+def eligibility_delete(product_keys: list[str]) -> None:
+    """Remove rows by product_key (used to clear retired placeholder rows)."""
+    if product_keys:
+        _call(lambda: _sb().table("eligibility_items").delete().in_("product_key", product_keys).execute())
+
+
 # --- scans ----------------------------------------------------------------------------------
 
 def save_scan(scan_id: str, product: dict, eligibility: dict) -> None:
@@ -234,8 +240,33 @@ def remove_last_cart_item() -> dict:
     return get_cart()
 
 
+def pop_last_cart_item() -> tuple[dict | None, dict]:
+    """Remove the most recently added item. Returns (the removed row or None, the updated cart)."""
+    removed = _rpc("remove_last_cart_item", {})
+    return (removed or None), get_cart()
+
+
 def clear_cart() -> None:
     _call(lambda: _sb().table("cart_items").delete().neq("id", "").execute())
+
+
+# --- purchase history (the History agent reads this) ---------------------------------------
+
+def get_purchases(since: str | None = None, until: str | None = None,
+                  card_type: str | None = None, payment_id: str | None = None) -> list[dict]:
+    """Purchased items, newest first. since/until are ISO timestamps; card_type is hsa, fsa or general."""
+    def run():
+        q = _sb().table("purchase_items").select("*")
+        if since:
+            q = q.gte("purchased_at", since)
+        if until:
+            q = q.lt("purchased_at", until)
+        if card_type:
+            q = q.eq("card_type", card_type)
+        if payment_id:
+            q = q.eq("payment_id", payment_id)
+        return q.order("purchased_at", desc=True).execute()
+    return _call(run).data
 
 
 # --- prompts (15 s, single use, scope-bound) ----------------------------------------------
@@ -258,14 +289,44 @@ def consume_prompt(prompt_id: str, expected_scope: str) -> dict:
 
 # --- checkout and reset (atomic, in Postgres) ---------------------------------------------
 
+def get_payment(idempotency_key: str) -> dict | None:
+    """The payment already recorded for this key, in confirm_checkout's return shape, or None."""
+    rows = _call(lambda: _sb().table("payments").select("*")
+                 .eq("idempotency_key", idempotency_key).limit(1).execute()).data
+    if not rows:
+        return None
+    row = rows[0]
+    balances = [{"id": c["id"], "nickname": c["nickname"], "balance_cents": c["balance_cents"]}
+                for c in get_cards()]
+    return {"payment_id": row["payment_id"], "total_cents": row["total_cents"],
+            "splits": row["splits_json"], "new_balances": balances, "replayed": True,
+            "created_at": row.get("created_at")}
+
+
+def get_payment_by_id(payment_id: str) -> dict | None:
+    """Same shape as get_payment, found by payment_id (for re-showing an invoice)."""
+    rows = _call(lambda: _sb().table("payments").select("idempotency_key").eq("payment_id", payment_id)
+                 .limit(1).execute()).data
+    return get_payment(rows[0]["idempotency_key"]) if rows else None
+
+
 def confirm_checkout(idempotency_key: str, splits: list[dict]) -> dict:
-    """Simulated payment. splits = [{"card_id": ..., "amount_cents": ...}].
+    """Simulated payment. splits = [{"card_id": ..., "amount_cents": ..., "items": [...]}].
+
+    `items` is optional: the cart rows paid by that card, kept in splits_json so the invoice can be
+    shown again later (checkout empties the cart). Postgres only reads card_id and amount_cents.
 
     A repeated idempotency_key returns the original payment with replayed=True and charges
     nothing. Raises CheckoutFailed if any card cannot pay; nothing is changed in that case.
     """
-    clean = [{"card_id": s["card_id"], "amount_cents": _cents(s["amount_cents"], "amount_cents")}
-             for s in splits]
+    clean = []
+    for s in splits:
+        row = {"card_id": s["card_id"], "amount_cents": _cents(s["amount_cents"], "amount_cents")}
+        if s.get("items"):
+            for item in s["items"]:
+                _cents(item["amount_cents"], "item amount_cents")
+            row["items"] = s["items"]
+        clean.append(row)
     try:
         return _rpc("confirm_checkout", {"p_idempotency_key": idempotency_key, "p_splits": clean})
     except APIError as e:

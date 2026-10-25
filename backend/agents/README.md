@@ -14,6 +14,7 @@ These agents run that workflow inside an ASI:One conversation.
 | `orchestrator_agent.py` | Rewind Shopping Assistant | _fill in after first run_ | The front desk. Talks to the user over the Agent Chat Protocol, understands each message (Claude), keeps each user's session in `ctx.storage`, phrases every reply, and routes work to the specialists |
 | `product_agent.py` | Rewind Product Agent | _fill in after first run_ | Specialist. Shelf photo or product name → fixed pipeline (vision → lookup → eligibility) → facts + `ScanResult` |
 | `payment_agent.py` | Rewind Payment Agent | _fill in after first run_ | Specialist. Card routing (HSA/FSA vs. general), cart, low-balance alerts, simulated checkout |
+| `history_agent.py` | Rewind History Agent | _fill in after first run_ | Specialist, read-only. Answers questions about past purchases (totals, what was bought, what could be claimed back) from a Moss memory; Claude fills a fixed question form, code does the dates and sums |
 
 ```
 ASI:One user ──Chat Protocol──▶ Orchestrator ──ProductRequest──▶ Product agent
@@ -21,6 +22,8 @@ ASI:One user ──Chat Protocol──▶ Orchestrator ──ProductRequest─�
                                        │
                                        ├──PaymentRequest──▶ Payment agent
                                        ◀──PaymentResponse──┘
+                                       ├──HistoryRequest──▶ History agent
+                                       ◀──HistoryResponse──┘
 ```
 
 Workers are stateless and deterministic: they return **facts** (`FactsMsg`), never sentences.
@@ -72,3 +75,14 @@ make test
 - Until the database is connected, items found only by name come back "could not confirm."
 - The insurance-covered part of a medication is never routed to an HSA/FSA.
 - A photo attached in ASI:One passes through Fetch.ai's Agent Storage. The phone app path never stores frames.
+
+
+## History (purchase memory)
+
+- Over-the-counter purchases only (a prescription copay is never stored).
+- Source of truth: Supabase `purchase_items` (run `backend/data/migration_purchase_items.sql` once in the SQL Editor).
+  Checkout copies each payment's rows into a Moss memory in the background; `History` reads Moss (exact filters:
+  date, card, medicine, category; fuzzy lookup only for a named product) and falls back to the table if Moss is down.
+- Set `HISTORY_AGENT_SEED` in `backend/.env`, run `python agents/history_agent.py`, Connect -> Mailbox, and paste its
+  address in the table above (same as the other agents).
+- Rehearse before the table exists: `python scripts/local_chat.py history` (sample purchases, no database).

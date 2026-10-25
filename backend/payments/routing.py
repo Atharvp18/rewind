@@ -49,6 +49,15 @@ def _default(cards: list[Card]) -> Card | None:
     return next((c for c in cards if c.is_default), cards[0])
 
 
+def health_in_order(cards: list[Card]) -> list[Card]:
+    """HSA/FSA cards in spending order: FSA first, then HSA (team decision 2026-10-24).
+
+    FSA money is the employer's and can be lost when the person leaves the job; HSA money stays
+    with the person. Within a type the default card comes first, then the order given.
+    """
+    return sorted((c for c in cards if c.type in HEALTH_TYPES), key=lambda c: (c.type != "fsa", not c.is_default))
+
+
 def _default_general(active: list[Card]) -> Card | None:
     return _default([c for c in active if c.type == "general"])
 
@@ -130,23 +139,25 @@ def route_item(
         return rec("route_to_general", "no_health_card_linked", card=general,
                    before=general.balance_cents, after=general.balance_cents - amount_cents)
 
-    defaults = [c for c in health if c.is_default]
-    if len(health) > 1 and not defaults:
-        return rec("ask_user", "multiple_health_cards", options=[c.id for c in health])
-    hsa = defaults[0] if defaults else health[0]
+    # Always the same order: FSA, then HSA, then the everyday card. No "which health card?" question.
+    ordered = health_in_order(health)
+    first = ordered[0]
 
-    if hsa.balance_cents >= amount_cents:         # equal counts as sufficient
-        return rec("route_to_hsa", "eligible_sufficient_balance", card=hsa,
-                   before=hsa.balance_cents, after=hsa.balance_cents - amount_cents)
+    if first.balance_cents >= amount_cents:       # equal counts as sufficient
+        return rec("route_to_hsa", "eligible_sufficient_balance", card=first,
+                   before=first.balance_cents, after=first.balance_cents - amount_cents)
 
-    # balance too low, including zero or negative
-    if general is not None and general.balance_cents >= amount_cents:
-        return rec("ask_user", "eligible_insufficient_balance", options=[general.id],
-                   reroute=Reroute(from_card_id=hsa.id, to_card_id=general.id, reason="insufficient_balance"),
-                   before=hsa.balance_cents)
+    # The first card's balance is too low (including zero or negative): suggest the next one that
+    # covers the item, still asking first. Health cards before the everyday card.
+    fallbacks = ordered[1:] + ([general] if general is not None else [])
+    nxt = next((c for c in fallbacks if c.balance_cents >= amount_cents), None)
+    if nxt is not None:
+        return rec("ask_user", "eligible_insufficient_balance", options=[nxt.id],
+                   reroute=Reroute(from_card_id=first.id, to_card_id=nxt.id, reason="insufficient_balance"),
+                   before=first.balance_cents)
 
     # STEP 5: nothing covers it.
-    return rec("blocked", "no_card_covers", before=hsa.balance_cents)
+    return rec("blocked", "no_card_covers", before=first.balance_cents)
 
 
 # --- the whole cart (spec 3.5, "Group rules at checkout") ------------------------------------
@@ -194,9 +205,9 @@ def plan_checkout(items: list[dict[str, Any]], cards: list[Card | dict[str, Any]
 
     Within an over-limit card, items are kept largest first while they fit, then smaller items
     that still fit are kept too (first-fit decreasing), so as little as possible moves. Ties keep
-    cart order. Moved items go to the default general card; an eligible item may also go to the
-    default health card. A card that is itself over its limit is never a destination, and an
-    item that is not confirmed eligible is never moved to an HSA/FSA.
+    cart order. Moved items follow the spending order FSA, then HSA, then the everyday card (see
+    `destinations`). A card that is itself over its limit is never a destination, and an item that
+    is not confirmed eligible is never moved to an HSA/FSA.
     """
     cards = _cards(cards)
     by_id = {c.id: c for c in cards}
@@ -219,12 +230,24 @@ def plan_checkout(items: list[dict[str, Any]], cards: list[Card | dict[str, Any]
 
     usable = [c for c in cards if c.status == "active" and c.id not in over_ids]
     general = _default([c for c in usable if c.type == "general"])
-    health = _default([c for c in usable if c.type in HEALTH_TYPES])
+    health = health_in_order(usable)
 
     def destinations(item: dict, source_id: str) -> list[Card]:
-        found = [general] if general else []
-        if health and item["eligibility_label"] == "eligible":
-            found.append(health)
+        """Where an item can move, in spending order: FSA, then HSA, then the everyday card.
+
+        An FSA overflow goes to the HSA before the everyday card. An HSA overflow goes to the
+        everyday card. An everyday-card overflow may go to a health card, FSA first, but only if
+        the item is eligible.
+        """
+        eligible = item["eligibility_label"] == "eligible"
+        source = by_id[source_id]
+        found: list[Card] = []
+        if eligible and source.type == "fsa":
+            found += [c for c in health if c.type == "hsa"]
+        elif eligible and source.type == "general":
+            found += health
+        if general:
+            found.append(general)
         return [c for c in found if c.id != source_id]
 
     issues: list[CheckoutIssue] = []

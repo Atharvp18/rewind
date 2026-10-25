@@ -31,12 +31,12 @@ The business spec still lists open items (section 17). This spec applies the def
 |---|---|---|---|
 | 1 | Data policy conflict | **All data is mock.** No real prescriptions, receipts, or insurer plan data. Insurer profiles are two synthetic plans, visibly labeled mock in the UI and the pitch | Sections 6.1, 10, 14 |
 | 2 | Eligibility data source | **Retailer-listed data collected with Apify before the demo** (fsastore.com, per business spec section 19.5), loaded into a Moss index. The IRS category rule table is the fallback and must stand alone | Sections 19.5, 24 |
-| 3 | Medication eligibility stated plainly | **Only on an exact UPC match.** Anything else falls back to `could_not_confirm` | Section 6.2 |
+| 3 | Medication eligibility stated plainly | **Revised 2026-10-24 (Tiea): no barcodes.** Claude Vision reads the product and its category; a shelf (OTC) medicine in an IRS-backed category (CARES Act) is `eligible`. A medicine in any other category falls back to `could_not_confirm`. Scope: shelf medicines only, nothing that needs a doctor's letter | Section 6.2 |
 | 4 | Copay and insurance (revised 2026-10-24) | **Insurance applies only to counter prescriptions; shelf items never mention it.** Prescriptions are read back (drug + strength) first. Copay amounts are an **estimate** from the plan's published tier table, labelled as one, only for flat-copay plans with the exact drug and strength listed; coinsurance, deductible-first, prior-auth, off-formulary, and unknown-plan cases give no number and send the user to the pharmacist, whose amount always wins. Only the estimated copay enters the cart (`remaining_after_copay`), never the full price. Copays are generally HSA/FSA-qualified (IRS Pub 502), so the agent **suggests** the HSA ("Copays are usually HSA eligible") but never routes it automatically. Five mock plans; one modeled on UnitedHealthcare Student Resources + OptumRx. A card scan keeps only the plan profile in storage; the cardholder's name is held in memory for the conversation; member ID, group, RxBIN/PCN, and DOB have no field in the extraction schema. Drug names are dropped from the session after each answer. Rewind never files a claim | Sections 20.5, 23; `backend/agents/insurance.py` |
 | 5 | Third eligibility label | **Approved.** The label is `could_not_confirm` everywhere: API, database, tests, and app | Sections 20, 24 |
 | 7 | Retailer lookup scope | **The shelf tag is the only price source in v1.** No retailer API is built | Sections 19.3, 23.3 |
 | 8 | Store address versus no-tracking | **User-entered or seeded mock only.** Never derived from scan history or location | Sections 6.6, 12 |
-| 9 | Fetch.ai status | **Second front door, off the phone's live path.** Three ACP agents on Agentverse (orchestrator, product, payment) run the same scan → eligibility → routing → simulated checkout workflow inside an ASI:One chat, with a shelf photo attached in place of the camera. This meets the Fetch.ai track's "primary workflow inside ASI:One" rule without touching the Expo app. Moss is removed; eligibility uses the UPC table and IRS rules. The Fetch.ai Payment Protocol is **not** used for checkout (it cannot express the HSA/Visa split) and is stretch-only as agent monetization. Updated 2026-10-24 | Sections 5, 7; `backend/agents/README.md` |
+| 9 | Fetch.ai status | **Second front door, off the phone's live path.** Three ACP agents on Agentverse (orchestrator, product, payment) run the same scan → eligibility → routing → simulated checkout workflow inside an ASI:One chat, with a shelf photo attached in place of the camera. This meets the Fetch.ai track's "primary workflow inside ASI:One" rule without touching the Expo app. Moss is removed; eligibility uses the UPC table and IRS rules. The Fetch.ai Payment Protocol is **not** used for checkout (it cannot express the HSA/Visa split) and is stretch-only as agent monetization. Updated 2026-10-24 | Sections 5, 7; `backend/agents/README.md` | **History (added 2026-10-24):** a fourth read-only agent answers questions about past purchases. Claude fills a fixed form (kind, period, card, medicine_only, category, item); code resolves dates and adds up amounts; a Moss memory of `purchase_items` rows (over-the-counter only) is queried with exact filters, with the table as fallback. Checked live: filters on date, card, amount and flags were exact and complete, recall takes milliseconds once loaded, and a purchase written by another process is visible in about a second.
 | 10 | Database | **Supabase only. No SQLite, no local fallback** | Team decision, section 7.3 |
 | 11 | WCAG target | **WCAG 2.2 Level AA** | Section 23.1 |
 | 12 | One accessibility button or two | **One button.** Short tap repeats the last prompt with haptic feedback. Long press, or saying "accessibility settings," opens the panel | Reconciles 6.5-A and 6.7 |
@@ -845,28 +845,30 @@ Per business spec section 19.2, simplified by decision 7 (no retailer API in v1)
 Order matters.
 
 ```
-1. If product.upc and eligibility_lookup_upc(upc) returns a row:
-       label      = "eligible" if row.eligible else "not_eligible"
-       basis      = "upc_match"
-       confidence = None
-       → go to step 5
+(Revised 2026-10-24, Tiea. No barcodes; Claude Vision names the product and its category.)
 
-2. Moss query on "brand name size category":
-       if top score >= THRESHOLD and size/strength agrees:
-           label = from matched row; basis = "semantic_match"; confidence = score
-           → go to step 5
-       if strength mismatch (200 mg vs 400 mg):
-           label = "could_not_confirm"; basis = "semantic_match"; → return
-       if Moss unavailable or times out:
-           basis = "index_unavailable"; → step 3
-
-3. IRS category rule table (2.8):
+1. IRS category rule on Vision's category (2.8):
        eligible / not_eligible / needs_review
-       needs_review → label = "could_not_confirm"
+       a medication outside an IRS-backed "eligible" category -> "could_not_confirm"
+       needs_review -> "could_not_confirm"
        basis = "irs_category_rule"; confidence = None
 
-4. Otherwise:
-       label = "could_not_confirm"; basis = "no_match"
+2. Moss query on "brand name category" (lookup/moss_index.py). Size, strength and pack count are
+   left out on purpose: they do not change whether an OTC medicine is eligible.
+       accept the closest listing if score >= 0.75,
+              OR score >= 0.40 and the listing's brand appears in the product's brand/name
+       Moss answered, no accepted listing  -> index_checked = True, no match
+       Moss unavailable or timed out       -> index_checked = False (step 1 decides alone)
+
+3. Combine ("eligible" needs two sources):
+       rule eligible + listing eligible            -> eligible, basis "semantic_match", confidence = score
+       rule eligible + no listing (index answered) -> could_not_confirm, basis "no_match"
+       rule eligible + listing not eligible        -> could_not_confirm, basis "package_disagreement"
+       rule not_eligible                           -> not_eligible (already routes to the Visa)
+       a listing never upgrades could_not_confirm; only the IRS rules can say eligible
+
+4. Price fallback: if the shelf tag price is missing and a listing was accepted, use the listing's
+   price (price_source "seeded") and speak it as "listed online at $X". A shelf tag always wins.
 
 5. Cross-check against the package marking:
        if package_marking == "eligible" and label == "not_eligible":
@@ -874,9 +876,9 @@ Order matters.
        (marking "none_seen" never overrides an index result)
 ```
 
-**Medication rule (decision 3).** For a medication, only `basis == "upc_match"` may produce `eligible` or `not_eligible`. A medication that reaches step 2 or 3 returns `could_not_confirm`.
+**Medication rule (decision 3, revised 2026-10-24).** Barcodes are removed. A medication is `eligible` only when Claude Vision's category is IRS-backed `eligible` (pain_relief, cold_flu_allergy, digestive_health, menstrual_care, otc_medicine); any other category returns `could_not_confirm`. Products are keyed by `normalize_key(brand, name, size)`.
 
-**THRESHOLD** cannot be known in advance. Start at 0.75, tune it on the real demo shelf, then hardcode it with a comment recording the test.
+**THRESHOLD** is 0.75, with a 0.40 floor when the brand agrees. Live check on 2026-10-24 (`scripts/check_moss.py`, 26 rows): correct products scored 0.50 to 1.00 (brand-only "Allegra" 0.50, "Tums" 0.61), a wrong-brand near match scored 0.67 and was rejected, unrelated items scored 0.22 to 0.40. Re-tune on the real demo shelf.
 
 **The index must hold both eligible and non-eligible rows.** An index of eligible items only returns a near match for everything, including kettle corn (section 24.6). Build the negative examples in from the start.
 
@@ -931,7 +933,7 @@ Moss index (`create_index`): `id` is the UPC or the normalized key, `text` is "b
 - Stubs committed in hour 1.
 - 10 photos of the demo shelf return valid `VisionExtract` objects. An unclear photo returns low confidence and `E_VISION_UNCLEAR`, never a guessed price.
 - The three demo items get the right labels. Kettle corn returns `not_eligible` or `could_not_confirm`, **never** `eligible`.
-- A match below threshold, a strength mismatch, and a package disagreement each return `could_not_confirm`.
+- An eligible rule with no store listing, a listing that disagrees, and a package disagreement each return `could_not_confirm`. Strength and pack size are not compared.
 - On 20 to 30 extra test items, **no non-eligible item is labeled eligible.** Record how many return `could_not_confirm`; that number goes in the pitch.
 - The medical-advice refusal fires reliably.
 
@@ -1125,6 +1127,13 @@ Build it in **hour 1**, before routing. After it runs, clear the in-memory cart 
 
 ## 3.5 Routing algorithm
 
+> **Claim tip at checkout (added 2026-10-24, Tiea).** If an *eligible* item was paid
+> on a general card (Visa), the checkout confirmation adds: "You paid $X for {items}
+> with your Visa credit, and it's HSA eligible. You can file a claim with your
+> {HSA|FSA} provider to pay yourself back, for example through Optum Financial or
+> HealthEquity. Keep your receipt." The agent points the way only; it never files.
+> Not said for not-eligible or could-not-confirm items.
+
 `payments/routing.py`. Pure function: no I/O, no network.
 
 ```python
@@ -1166,10 +1175,16 @@ STEP 3 — not_eligible
 STEP 4 — eligible
   health_cards = active cards with type in ('hsa','fsa')
   if none:                         route_to_general, reason "no_health_card_linked"
-  if more than one and no default: ask_user, reason "multiple_health_cards"
-  card = the single health card, or the default
-  if card.balance_cents >= amount (equality is sufficient):
-      decision = "route_to_hsa", reason "eligible_sufficient_balance"
+  FSA FIRST (revised 2026-10-24, Tiea): order health_cards FSA before HSA, because
+      FSA money expires at the end of the plan year and HSA money never does.
+      Scope: shelf (OTC) medicines; nothing that needs a doctor's letter.
+  card = the first card in that order whose balance covers the amount
+  if card exists (equality is sufficient):
+      decision = "route_to_hsa", reason "fsa_first" if card is an FSA
+                 else "eligible_sufficient_balance"
+      An FSA pick is spoken with: "Your FSA money expires at the end of the
+      plan year, so I'll use it first."
+      The user can still name the other card ("put it on my HSA").
   else (including balance <= 0):
       if a general card covers it:
           decision = "ask_user", reason "eligible_insufficient_balance",
@@ -1223,7 +1238,7 @@ Rule 2 is the declined-card moment. For run 2, with HSA at $15.00 and a group of
 - Requires an `idempotency_key` from the app and a live `prompt_id`.
 - One Postgres function, called by RPC: insert into `payments` with the unique key; if the key already exists, return the **existing** payment unchanged; otherwise decrement every card group, write `splits_json`, set `simulated_complete`. All or nothing, in one transaction.
 - Return and speak the new balances.
-- If any balance crosses the low-balance threshold, emit a `priority: "alert"` `VoiceRequest`.
+- If any HSA/FSA balance is **under $10.00 (1000 cents)** after the payment, emit a `priority: "alert"` `VoiceRequest`. (Team decision 2026-10-24: $10.00, down from $20.00 in the agents and $25.00 in `payments/checkout.py`. Both now use `LOW_BALANCE_CENTS = 1000`.) After a successful payment, `payments/checkout.py` also copies the new `purchase_items` rows into History's Moss memory in the background, and `/v1/demo/reset` empties that memory; neither ever delays or fails the response.
 
 Empty cart: "Your cart is empty." No card linked: checkout blocked. Refunds, returns, and non-USD are out of scope.
 
@@ -1295,7 +1310,7 @@ async def scan(image: UploadFile, barcode: str | None = None, hint_price_cents: 
 
 | Situation | Spoken |
 |---|---|
-| Medication, exact UPC match | No confidence phrase: "HSA eligible." |
+| Medication in an IRS-backed category | No confidence phrase: "HSA eligible." |
 | Non-medication, `upc_match` or `irs_category_rule` | "high confidence" |
 | Non-medication, `semantic_match` | "high confidence" if score ≥ the high mark set in testing, else "moderate confidence" |
 | `could_not_confirm` | "I could not confirm eligibility" |
@@ -1303,7 +1318,7 @@ async def scan(image: UploadFile, barcode: str | None = None, hint_price_cents: 
 ## 3.12 Atharv's definition of done
 
 - `pytest` covers group rules 1 to 3 with the demo numbers: $340.00, $15.00, $12.99, $5.49, $4.99.
-- Run 1 ends at **$321.52**. Run 2 produces the documented reroute.
+- Run 1 ends with the FSA at **$6.52** (FSA $25.00 minus $18.48). Run 2 produces the documented reroute.
 - `reset_demo()` runs twice with identical output.
 - After reset: two cards, two insurer profiles, three cached demo products, and three demo `eligibility_items` rows exist in Supabase.
 - A repeated `idempotency_key` returns the original payment and does not charge twice.
@@ -1361,7 +1376,7 @@ The Apify go/no-go test (2.9) can run in parallel with Gate 2 because it is offl
 
 These are the **facts** each line must contain. The exact sentence may be phrased naturally by Claude, but every listed figure and label must appear verbatim and no other number may (see `backend/agents/speaker.py`).
 
-**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card drops below the low-balance level. Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
+**Privacy rule (team decision, 2026-10-24): card balances are never spoken.** Saying a balance aloud in a store exposes it to anyone nearby. The agent only says whether a card *can cover* an item, says "please use another card" when it can't, and plays a beep with "Your HSA card is running low. You might want to add funds." when an HSA/FSA card is under **$10.00** (the low-balance level; team decision 2026-10-24). Asked directly for a balance, it declines and points to the app. Balances are still tracked to the cent internally.
 
 **Run 1, HSA at $340.00:**
 
@@ -1377,7 +1392,7 @@ These are the **facts** each line must contain. The exact sentence may be phrase
 
 > Must contain "HSA card", "can't cover", "$18.48", "Advil Ibuprofen 200mg", "Bandages", "Visa credit" → yes. **Must not contain "$15.00".**
 
-Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 32152. Any other stored balance means routing or money handling is wrong.
+Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 2500 − 1848 = 652 (the FSA). Any other stored balance means routing or money handling is wrong.
 
 ## 4.5 Test matrix
 
@@ -1403,7 +1418,7 @@ Arithmetic check (internal, not spoken): 1299 + 549 = 1848. 34000 − 1848 = 321
 
 **Speech (Atharv):** every line in 4.4 matches exactly.
 
-**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; below threshold, strength mismatch, and package disagreement each return `could_not_confirm`; a medication without an exact UPC match returns `could_not_confirm`; Moss down falls back to category rules.
+**Eligibility (Tiea):** three demo items correct; kettle corn never `eligible`; an eligible rule with no store listing, a disagreeing listing, and package disagreement each return `could_not_confirm`; a medication outside the IRS-backed categories returns `could_not_confirm`; Moss down falls back to category rules.
 
 **App (Nak), manual:** permission-denied paths; silent switch; Bluetooth; incoming call mid-sentence; 3-minute idle reconnect; barge-in; largest text size on every screen; VoiceOver and TalkBack.
 

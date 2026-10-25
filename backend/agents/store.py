@@ -12,6 +12,7 @@ import copy
 import logging
 
 from data import db
+from lookup import purchase_memory
 from agents.speaker import say
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,8 @@ def save(before: dict, after: dict, request_id: str):
         if splits:
             # Atomic in Postgres: debits every card and empties the cart, or changes nothing.
             # The request id is the idempotency key, so a retried message never charges twice.
-            db.confirm_checkout(request_id, splits)
+            result = db.confirm_checkout(request_id, splits)
+            purchase_memory.mirror_payment((result or {}).get("payment_id"))   # background; see lookup/purchase_memory.py
             return None
 
         old = {i["id"]: i for i in before["cart"]}

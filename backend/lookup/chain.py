@@ -46,13 +46,12 @@ def _cached_price_is_fresh(cached: dict) -> bool:
 
 
 def resolve_product(extract: VisionExtract) -> ProductResolution:
-    product_key = build_product_key(extract.upc, extract.brand, extract.name, extract.size)
+    product_key = build_product_key(extract.brand, extract.name, extract.size)
     warnings = list(extract.warnings)
 
-    if not extract.name and not extract.upc:
+    if not extract.name:
         return ProductResolution(
             product_key=product_key,
-            upc=extract.upc,
             name="Unknown product",
             category=extract.category or "other",
             state="unresolved",
@@ -97,7 +96,6 @@ def resolve_product(extract: VisionExtract) -> ProductResolution:
 
     resolution = ProductResolution(
         product_key=product_key,
-        upc=extract.upc,
         name=name,
         brand=brand,
         size=size,
@@ -113,7 +111,7 @@ def resolve_product(extract: VisionExtract) -> ProductResolution:
     if state != "unresolved":
         try:
             cache_put(product_key, {
-                "upc": extract.upc,
+                "upc": None,
                 "normalized_name": name,
                 "brand": brand,
                 "size": size,

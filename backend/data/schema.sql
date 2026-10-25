@@ -92,6 +92,28 @@ CREATE TABLE IF NOT EXISTS payments (
   status          TEXT NOT NULL CHECK (status IN ('simulated_complete','failed'))
 );
 
+-- One row per item actually paid for, written by confirm_checkout before it empties the cart.
+-- The History agent reads this; payments only keeps totals per card. The card type is copied in
+-- so a purchase keeps its meaning even if a card is later removed. History is over-the-counter
+-- only: a prescription copay (product_key 'prescription') is never stored here.
+CREATE TABLE IF NOT EXISTS purchase_items (
+  id                 TEXT PRIMARY KEY,                 -- the cart item's id
+  payment_id         TEXT NOT NULL REFERENCES payments(payment_id),
+  purchased_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  product_key        TEXT NOT NULL,
+  display_name       TEXT NOT NULL,
+  amount_cents       BIGINT NOT NULL,
+  amount_basis       TEXT NOT NULL CHECK (amount_basis IN ('shelf_price','remaining_after_copay')),
+  card_id            TEXT NOT NULL,
+  card_type          TEXT NOT NULL CHECK (card_type IN ('hsa','fsa','general')),
+  eligibility_label  TEXT NOT NULL,
+  user_overrode_card BOOLEAN NOT NULL DEFAULT FALSE,   -- eligible item put on the Visa: a possible reimbursement
+  category           TEXT,                             -- from the scan: pain_relief, cold_flu_allergy, ...
+  is_medication      BOOLEAN NOT NULL DEFAULT FALSE    -- from the scan: "some medicine I bought last month"
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_time ON purchase_items(purchased_at);
+CREATE INDEX IF NOT EXISTS idx_purchase_payment ON purchase_items(payment_id);
+
 -- Row-level security off for the demo (section 3.2): a blocked insert at judging time
 -- looks identical to a bug. The service key lives on the backend only.
 ALTER TABLE cards             DISABLE ROW LEVEL SECURITY;
@@ -102,3 +124,4 @@ ALTER TABLE cart_items        DISABLE ROW LEVEL SECURITY;
 ALTER TABLE insurers          DISABLE ROW LEVEL SECURITY;
 ALTER TABLE prompts           DISABLE ROW LEVEL SECURITY;
 ALTER TABLE payments          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_items    DISABLE ROW LEVEL SECURITY;

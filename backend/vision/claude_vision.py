@@ -19,25 +19,24 @@ STUB_MODE = os.environ.get("REWIND_STUB_VISION", "true").lower() == "true"
 VISION_MODEL = os.environ.get("VISION_MODEL", "claude-opus-5-5")
 
 
-def extract_product(image_bytes: bytes, barcode_hint: str | None = None) -> VisionExtract:
+def extract_product(image_bytes: bytes) -> VisionExtract:
     """Extract product information from a camera frame.
 
     Args:
         image_bytes: JPEG image data.
-        barcode_hint: UPC digits from the app's barcode scanner, if available.
     """
     if STUB_MODE:
-        return _stub_extract(barcode_hint, image_bytes)
-    return _claude_extract(image_bytes, barcode_hint)
+        return _stub_extract(image_bytes)
+    return _claude_extract(image_bytes)
 
 
-def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> VisionExtract:
+def _stub_extract(image_bytes: bytes = b"") -> VisionExtract:
     """Hardcoded data for testing: advil (default), card, rx_label, tissues_far, tissues_close.
 
     Picked by a marker in the image bytes (b"stub:card"), else REWIND_STUB_IMAGE.
     """
     kind = os.environ.get("REWIND_STUB_IMAGE", "advil")
-    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close"):
+    for marker in ("card", "rx_label", "advil", "tissues_far", "tissues_close", "allegra", "excedrin"):
         if f"stub:{marker}".encode() in image_bytes:
             kind = marker
     if kind in ("tissues_far", "tissues_close"):   # same box; only the close photo shows the tag
@@ -45,6 +44,16 @@ def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> 
             name="Kleenex Facial Tissues", brand="Kleenex", size="160 count", category="personal_care",
             shelf_price_cents=349 if kind == "tissues_close" else None,
             field_confidence={"name": 0.9, "price": 0.9 if kind == "tissues_close" else 0.0},
+        )
+    if kind == "excedrin":  # an OTC medicine that is NOT in the Moss catalog: eligible by rule, unlisted
+        return VisionExtract(
+            name="Excedrin Migraine", brand="Excedrin", category="pain_relief", is_medication=True,
+            is_prescription_only=False, shelf_price_cents=1299, field_confidence={"name": 0.95, "price": 0.9})
+    if kind == "allegra":   # a bottle with no shelf tag in view: price must come from the store listing
+        return VisionExtract(
+            name="Allegra 24 Hour Allergy Relief", brand="Allegra", category="cold_flu_allergy",
+            is_medication=True, is_prescription_only=False,
+            field_confidence={"name": 0.95, "price": 0.0},
         )
     if kind == "card":
         return VisionExtract(image_kind="insurance_card")
@@ -58,7 +67,6 @@ def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> 
         name="Advil Ibuprofen 200mg Tablets",
         brand="Advil",
         size="200mg, 50 count",
-        upc=barcode_hint,
         shelf_price_cents=1299,
         category="pain_relief",
         is_medication=True,
@@ -70,7 +78,7 @@ def _stub_extract(barcode_hint: str | None = None, image_bytes: bytes = b"") -> 
     )
 
 
-def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> VisionExtract:
+def _claude_extract(image_bytes: bytes) -> VisionExtract:
     """Call Claude vision API with the image and return structured product data."""
     import anthropic
 
@@ -90,11 +98,6 @@ def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         {"type": "text", "text": VISION_USER_PROMPT},
     ]
 
-    if barcode_hint:
-        user_content.append({
-            "type": "text",
-            "text": f"The app's barcode scanner read these digits: {barcode_hint}",
-        })
 
     response = client.messages.create(
         model=VISION_MODEL,
@@ -125,7 +128,7 @@ def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         warnings.append("E_VISION_UNCLEAR")
 
     name_conf = data.get("field_confidence", {}).get("name", 0.0)
-    if name_conf < 0.5 and not barcode_hint:
+    if name_conf < 0.5:
         warnings.append("E_PRODUCT_UNRESOLVED")
 
     price_cents = data.get("shelf_price_cents")
@@ -138,7 +141,6 @@ def _claude_extract(image_bytes: bytes, barcode_hint: str | None = None) -> Visi
         name=data.get("name"),
         brand=data.get("brand"),
         size=data.get("size"),
-        upc=barcode_hint or data.get("upc_digits"),
         shelf_price_cents=price_cents,
         category=data.get("category", "other"),
         is_medication=data.get("is_medication", False) or kind == "pharmacy_label",

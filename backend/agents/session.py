@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-LOW_BALANCE_CENTS = 2000
+LOW_BALANCE_CENTS = 1000   # $10.00: an HSA/FSA card under this after a payment gets the low-balance alert (spec 4.4)
 
 # --- mock insurance plans -----------------------------------------------------
 #

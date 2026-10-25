@@ -21,6 +21,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -132,3 +133,42 @@ async def get_balances_or_last_known(cards: list[dict[str, Any]]) -> BalanceRepo
         out.append(card)
 
     return BalanceReport(cards=out, degraded=degraded, warnings=["E_NESSIE_UNAVAILABLE"] if degraded else [])
+
+
+# --- payment log -------------------------------------------------------------------------------------
+# Nessie keeps a withdrawal list per account even though it never moves the balance (see the top of
+# this file). Each simulated checkout writes one withdrawal per card it charged, so the payment is on
+# record in Nessie. This is a log only: Supabase holds the balance, and nothing waits on this.
+
+async def _post_withdrawal(client: httpx.AsyncClient, key: str, date: str, entry: dict) -> bool:
+    body = {"medium": "balance", "transaction_date": date, "status": "completed",
+            "amount": entry["amount_cents"], "description": entry["description"]}
+    try:
+        response = await client.post(f"{_base_url()}/accounts/{entry['account_id']}/withdrawals",
+                                     params={"key": key}, json=body)
+    except Exception as e:  # noqa: BLE001 - a log write must never raise into a payment
+        logger.warning("Nessie payment log failed: %s", type(e).__name__)
+        return False
+    if response.status_code not in (200, 201):
+        logger.warning("Nessie payment log failed: HTTP %s", response.status_code)
+        return False
+    return True
+
+
+async def log_withdrawals(entries: list[dict]) -> list[bool]:
+    """Record a completed checkout. entries = [{"account_id", "amount_cents", "description"}].
+
+    Run it after the response is sent (BackgroundTasks). Never raises; returns one bool per entry,
+    and an empty list when there is nothing to send or no key. Amounts are integer cents, the same
+    unit the demo accounts' balances were created in.
+    """
+    key = os.environ.get("NESSIE_API_KEY")
+    if not key or not entries:
+        return []
+    date = datetime.now(timezone.utc).date().isoformat()
+    try:
+        async with httpx.AsyncClient(timeout=BUDGET_S, transport=_transport) as client:
+            return list(await asyncio.gather(*(_post_withdrawal(client, key, date, e) for e in entries)))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Nessie payment log failed: %s", type(e).__name__)
+        return [False] * len(entries)
