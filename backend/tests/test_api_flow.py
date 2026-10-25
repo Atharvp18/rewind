@@ -243,6 +243,42 @@ def test_a_scan_of_the_allergy_demo_item_uses_its_price_without_the_index(client
     assert "online" not in body["voice"]["text"].lower()
 
 
+def _scan_with(client, monkeypatch, **fields):
+    import api.scan as scan_api
+    from models.schemas import VisionExtract
+    monkeypatch.setattr(scan_api, "extract_product", lambda img: VisionExtract(**fields))
+    return client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}).json()
+
+
+def test_more_than_one_item_in_the_frame_asks_for_one(client, monkeypatch):
+    body = _scan_with(client, monkeypatch, name="Advil", category="pain_relief", shelf_price_cents=1299,
+                      warnings=["E_MULTIPLE_PRODUCTS"])
+    assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
+    assert "more than one item" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
+
+
+def test_an_unclear_photo_says_what_to_change(client, monkeypatch):
+    for warning, phrase in (("E_TOO_DARK", "too dark"), ("E_GLARE", "glare"), ("E_BLURRY", "blurry")):
+        body = _scan_with(client, monkeypatch, name=None, category="other", warnings=["E_VISION_UNCLEAR", warning])
+        assert body["scan"]["state"] == "unresolved" and phrase in body["voice"]["text"]
+        assert warning in body["scan"]["warnings"]          # the app turns on the light for E_TOO_DARK
+
+
+def test_a_tag_that_may_belong_to_the_next_item_is_not_used_for_the_price(client, monkeypatch):
+    body = _scan_with(client, monkeypatch, name="Tylenol Extra Strength Caplets", category="pain_relief",
+                      shelf_price_cents=99, warnings=["E_VISION_UNCLEAR", "E_TAG_NEIGHBOUR"])
+    # the demo item's own price (519), never the neighbour's tag (99)
+    assert body["scan"]["product"]["amount_cents"] == 519
+    assert "may belong to another item" in body["voice"]["text"]
+
+
+def test_scanning_an_item_already_in_the_cart_offers_another(client):
+    add(client, advil(client))
+    again = advil(client)
+    text = again["voice"]["text"]
+    assert "You already have one in your cart" in text and text.endswith("Add another one?")
+
+
 def test_remove_last_item(client):
     add(client, advil(client))
     add(client, bandages(client))
