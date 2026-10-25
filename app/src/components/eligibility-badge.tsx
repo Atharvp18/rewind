@@ -16,18 +16,6 @@ const LOOK: Record<
   could_not_confirm: { icon: 'unconfirmed', text: 'Could not confirm eligibility', fg: 'unconfirmed', bg: 'unconfirmedBg' },
 };
 
-/**
- * Confidence wording follows tech spec 3.11: medication on an exact UPC match
- * gets no confidence phrase; other confirmed results say "high confidence"
- * (or "moderate" for a weaker semantic match).
- */
-function confidenceText(e: EligibilityResult, isMedication: boolean): string | null {
-  if (e.label === 'could_not_confirm') return null;
-  if (isMedication && e.basis === 'upc_match') return null;
-  if (e.basis === 'semantic_match' && e.confidence != null && e.confidence < 0.85) return 'moderate confidence';
-  return 'high confidence';
-}
-
 /** Always icon + words + color (WCAG 1.4.1). Never color alone. */
 export function EligibilityBadge({
   eligibility,
@@ -40,8 +28,7 @@ export function EligibilityBadge({
 }) {
   const { palette } = useA11y();
   const look = LOOK[eligibility.label];
-  const conf = 'basis' in eligibility ? confidenceText(eligibility, isMedication) : null;
-  const text = conf ? `${look.text}, ${conf}` : look.text;
+  const text = look.text; // no confidence wording, on screen or read aloud
 
   return (
     <View
