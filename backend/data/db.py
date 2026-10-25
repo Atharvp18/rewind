@@ -392,11 +392,7 @@ def confirm_checkout(idempotency_key: str, splits: list[dict]) -> dict:
 
 def reset_demo(run: int = 1) -> dict:
     """Restore the seed state in one transaction. Returns {cards, cart}."""
-    from data.seed import reset_payload, seeded_details   # imported here so db.py stays importable on its own
+    from data.seed import reset_payload       # imported here so db.py stays importable on its own
 
-    _rpc("reset_demo", reset_payload(run))
-    # The Postgres function does not write last4 / network (they came later, migration_card_details.sql),
-    # so the seeded FSA card gets its demo details here. Scanned cards keep theirs.
-    for card_id, details in seeded_details().items():
-        _call(lambda: _sb().table("cards").update(details).eq("id", card_id).execute())
-    return {"cards": get_cards(), "cart": get_cart()}
+    result = _rpc("reset_demo", reset_payload(run))
+    return {"cards": result["cards"], "cart": get_cart()}

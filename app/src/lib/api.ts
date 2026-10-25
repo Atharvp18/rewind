@@ -204,8 +204,7 @@ export interface CheckoutPreview {
 }
 
 export interface CheckoutResult {
-  /** null when nothing was charged: the body is then a new checkout question (CheckoutPreview's shape). */
-  payment_id: string | null;
+  payment_id: string;
   groups: CartGroup[];
   new_balances: { card_id: string; balance_cents: number }[];
   /** PROPOSED: the invoice for this payment (also listed by GET /v1/payments). */
@@ -457,18 +456,6 @@ export function getHealth(): Promise<Health> {
   return request('/v1/health');
 }
 
-/**
- * Is an item in the camera frame right now? One photo, read in memory and not saved. Used when the
- * shopper pauses after a scan. Offline (mock) it throws, and the caller falls back to the motion sensor.
- */
-export async function frameCheck(imageUri: string): Promise<boolean> {
-  if (isMock()) throw new Error('frame check needs the real backend');
-  const form = new FormData();
-  form.append('image', filePart(imageUri));
-  const res = await request<{ item_in_frame: boolean }>('/v1/frame-check', { method: 'POST', body: form }, false, 8000);
-  return res.item_in_frame;
-}
-
 /** `imageUri` is a local file:// JPEG, deleted by the caller right after this resolves. */
 export function scan(
   imageUri: string,
@@ -639,10 +626,7 @@ export function linkCard(body: LinkCardRequest): Promise<Card> {
   return request('/v1/cards', json(body));
 }
 
-/** 1: three accounts (FSA used first). 2: low health balances (declined run). 3: two accounts, HSA and Visa. */
-export type DemoRun = 1 | 2 | 3;
-
-export function resetDemo(run: DemoRun): Promise<{ cards: Card[]; cart: Cart }> {
+export function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
   if (isMock()) return mock.resetDemo(run);
   return request('/v1/demo/reset', json({ run }));
 }

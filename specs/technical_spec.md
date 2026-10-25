@@ -1469,4 +1469,3 @@ The honest framing is also the strongest one for the Anthropic track's "thoughtf
 - The insurance-covered portion is never routed to an HSA. Copays always end with a pharmacist check.
 - At IIAS stores, registers may already block ineligible items. Rewind tells the shopper in the aisle, before the register, and which card to use.
 - All payments are simulated. All insurer and card data is mock.
-

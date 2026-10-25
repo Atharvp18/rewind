@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PanResponder, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -13,7 +13,6 @@ import Animated, {
 import { AppText } from '@/components/app-text';
 import { BigButton } from '@/components/big-button';
 import { Icon } from '@/components/icon';
-import { CloseButton } from '@/components/close-button';
 import { InvoiceCard } from '@/components/invoice-view';
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import { useDomeHeight } from '@/components/voice-orb';
@@ -22,7 +21,6 @@ import { useA11y } from '@/lib/a11y';
 import { getPaymentHistory, type Invoice } from '@/lib/api';
 import { shareReimbursementPacketPdf } from '@/lib/invoice-pdf';
 import { centsForScreenReader, formatCents } from '@/lib/money';
-import { Screens } from '@/lib/phrases';
 import { useAgent } from '@/state/agent';
 
 /**
@@ -35,7 +33,7 @@ import { useAgent } from '@/state/agent';
  */
 export function HistorySheet() {
   const { palette, reduceMotion, settings } = useA11y();
-  const { showView, state, sayLocal } = useAgent();
+  const { showView, state } = useAgent();
   const cue = useScrollCue();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
@@ -127,7 +125,14 @@ export function HistorySheet() {
             Simulated payments · mock data
           </AppText>
         </View>
-        <CloseButton label="Close purchase history" onPress={() => showView('camera')} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close purchase history"
+          onPress={() => showView('camera')}
+          hitSlop={8}
+          style={({ pressed }) => [styles.close, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.8 : 1 }]}>
+          <Icon name="close" size={26} />
+        </Pressable>
       </View>
 
       <View style={styles.flex}>
@@ -171,11 +176,7 @@ export function HistorySheet() {
               key={inv.invoice_id}
               invoice={inv}
               open={open === inv.invoice_id}
-              onToggle={() => {
-                const opening = open !== inv.invoice_id;
-                setOpen(opening ? inv.invoice_id : null);
-                if (opening) sayLocal(Screens.invoice(inv)); // read the receipt that just opened
-              }}
+              onToggle={() => setOpen(open === inv.invoice_id ? null : inv.invoice_id)}
             />
           ))}
         </ScrollView>
@@ -188,6 +189,7 @@ export function HistorySheet() {
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', borderRadius: Radius.card + 4, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, borderBottomWidth: 1 },
+  close: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },

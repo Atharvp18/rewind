@@ -30,11 +30,6 @@ export interface Settings {
   haptics: boolean;
   /** How long a question waits for an answer (WCAG 2.2.1 Timing Adjustable). */
   answerSeconds: number;
-  /**
-   * Speaking while Rewind talks cuts it off and it listens. For headphones only: on the loudspeaker the
-   * microphone hears Rewind itself (Expo Go has no echo cancellation).
-   */
-  interruptBySpeaking: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -47,7 +42,6 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   haptics: true,
   answerSeconds: 30,
-  interruptBySpeaking: false,
 };
 
 export const ANSWER_SECONDS = [15, 30, 60] as const;

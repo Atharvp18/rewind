@@ -246,9 +246,6 @@ export const Radius = {
   pill: 999,
 } as const;
 
-/** One press and disabled look for every tappable thing. */
-export const Press = { pressed: 0.8, disabled: 0.45 } as const;
-
 export const MaxContentWidth = 640;
 
 /**
