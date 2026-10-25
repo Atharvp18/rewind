@@ -48,7 +48,9 @@ HSA_BALANCE_CENTS = {run: b["hsa"] for run, b in HEALTH_BALANCE_CENTS.items()}  
 CARDS = [
     {"id": "card_hsa_1", "type": "hsa", "nickname": "HSA card",
      "balance_cents": 34000, "nessie_account_id": None, "status": "active", "is_default": False},
-    {"id": "card_fsa_1", "type": "fsa", "nickname": "FSA card",
+    # The demo has no physical FSA card, so it gets fixed demo details (a fictional number) and looks
+    # like the HSA and Visa cards, which are scanned and carry their own last 4 digits.
+    {"id": "card_fsa_1", "type": "fsa", "nickname": "FSA card", "last4": "4417", "network": "visa",
      "balance_cents": 2500, "nessie_account_id": None, "status": "active", "is_default": True},
     {"id": "card_visa_1", "type": "general", "nickname": "Visa credit",
      "balance_cents": 500000, "nessie_account_id": None, "status": "active", "is_default": False},
@@ -113,6 +115,11 @@ def cards_for_run(run: int) -> list[dict]:
         # environment (NESSIE_HSA_ACCOUNT_ID, NESSIE_VISA_ACCOUNT_ID); unset means not linked.
         card["nessie_account_id"] = os.environ.get(NESSIE_ACCOUNT_ENV[card["id"]]) or None
     return cards
+
+
+def seeded_details() -> dict[str, dict]:
+    """Card details the seed sets itself (only cards that are never scanned in the demo)."""
+    return {c["id"]: {"last4": c["last4"], "network": c["network"]} for c in CARDS if c.get("last4")}
 
 
 def reset_payload(run: int) -> dict:

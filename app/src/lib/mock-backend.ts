@@ -71,7 +71,7 @@ const SEED: Record<1 | 2, { fsa: number; hsa: number }> = {
 /** Run 3 is the two-account setup: HSA ($5.00, same as run 2) and Visa, no FSA card. */
 const seedCards = (run: DemoRun): Card[] =>
   [
-    { id: 'card_fsa_1', type: 'fsa' as const, nickname: 'FSA card', balance_cents: SEED[run === 3 ? 2 : run].fsa, status: 'active' as const, network: 'visa' as const },
+    { id: 'card_fsa_1', type: 'fsa' as const, nickname: 'FSA card', balance_cents: SEED[run === 3 ? 2 : run].fsa, status: 'active' as const, network: 'visa' as const, last4: '4417' },
     { id: 'card_hsa_1', type: 'hsa' as const, nickname: 'HSA card', balance_cents: SEED[run === 3 ? 2 : run].hsa, status: 'active' as const, network: 'visa' as const },
     { id: 'card_visa_1', type: 'general' as const, nickname: 'Visa credit', balance_cents: 500000, status: 'active' as const, network: 'visa' as const },
   ].filter((c) => !(run === 3 && c.type === 'fsa'));
