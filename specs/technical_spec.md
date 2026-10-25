@@ -824,15 +824,18 @@ baby_care           other
 
 ## 2.6 Lookup chain
 
-Per business spec section 19.2, simplified by decision 7 (no retailer API in v1):
+Per business spec section 19.2. Team decision 2026-10-25: the store listing is the primary price and the internet fills the gaps once.
 
-1. Build `product_key` from the extract.
-2. `cache_get(product_key)`. On a hit, reuse identity and eligibility. Reuse the cached **price** only if the row is under 24 hours old; otherwise take the price from the current shelf tag.
-3. On a miss, the shelf tag is the product. No network lookup in v1.
-4. If no price from either source, the state is `partial`: speak what is known and ask the user to point at the tag or say the price. A spoken price is stored with `price_source = "user_spoken"`.
-5. `cache_put` the result with its source label.
+**Price order (Product agent, `agents/product_agent.py`):**
 
-**The shelf price always wins.** Never invent a price, and never block the first spoken answer on a lookup.
+1. **Store listing.** The closest listing in the Moss index (Apify rows). Its price is primary, even when a shelf tag is also read. Spoken as "listed online at $X".
+2. **Saved internet price.** A price and pack size found earlier by Claude's web search (`lookup/online_price.py`), saved in `product_cache` with `source = "web_search"` and no expiry, so the same product always gets the same price and size. `reset_demo` keeps these rows.
+3. **Shelf tag.** The price read from the photo.
+4. **New internet search.** Only when Moss answered "not listed" and nothing above gave a price. Claude searches the web for one standard package's price and size (`WEB_LOOKUP_MODEL`, default Sonnet 5.5, 25 s limit), the answer is saved as in step 2, and it is spoken as "listed online". If the search finds nothing, the state is `partial` and the agent asks for the price as before.
+
+A product the index does not list is never eligible (section 2.7), so it routes to the Visa credit after the user says yes. If Moss is down, no internet search is made, because "not listed" cannot be known.
+
+Never invent a price. A price outside $0.01 to $500.00, or an answer that is not valid JSON, counts as not found.
 
 | State | Meaning | Agent behavior |
 |---|---|---|

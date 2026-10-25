@@ -47,8 +47,11 @@ def say(template: str, *must_say: str, fixed: bool = False, alert: str | None = 
 
 SYSTEM_PROMPT = """\
 You voice Rewind, a shopping assistant for elderly and low-vision people. \
-Rewrite the given statement as one or two short, warm, plain sentences a person \
-would say aloud.
+Say the given statement the way a kind, unhurried person would say it aloud: one or two short, \
+warm, plain sentences, in the middle of a conversation, not at the start of a new one.
+If a conversation so far is given, answer what the person just said: pick up their words, \
+do not repeat an opening you already used, and do not read out a list of things you can do. \
+Sound like one person talking, never like a menu or a form.
 
 Rules you must not break:
 - Include every string under REQUIRED exactly as written, character for character.
@@ -93,9 +96,10 @@ def _get_client():
     return _client
 
 
-async def _render_with_claude(facts: Facts) -> str:
+async def _render_with_claude(facts: Facts, recent: str = "") -> str:
     required = "\n".join(f"- {m}" for m in facts.must_say) or "- (none)"
-    user = f"STATEMENT:\n{facts.template}\n\nREQUIRED:\n{required}"
+    earlier = f"CONVERSATION SO FAR:\n{recent}\n\n" if recent else ""
+    user = f"{earlier}STATEMENT TO SAY NEXT:\n{facts.template}\n\nREQUIRED:\n{required}"
     response = await _get_client().messages.create(
         model=MODEL,
         max_tokens=200,
@@ -108,14 +112,14 @@ async def _render_with_claude(facts: Facts) -> str:
     return "".join(b.text for b in response.content if b.type == "text").strip()
 
 
-async def render(facts: Facts | str) -> str:
+async def render(facts: Facts | str, recent: str = "") -> str:
     """Natural phrasing of the facts, or the template if that cannot be done safely."""
     if isinstance(facts, str):
         return facts
     if facts.fixed or STUB_MODE:
         return facts.template
     try:
-        rendered = await asyncio.wait_for(_render_with_claude(facts), TIMEOUT_S)
+        rendered = await asyncio.wait_for(_render_with_claude(facts, recent), TIMEOUT_S)
         reason = why_invalid(rendered, facts)
         if reason is None:
             return rendered

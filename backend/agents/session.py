@@ -15,6 +15,31 @@ from typing import Any
 
 LOW_BALANCE_CENTS = 1000   # $10.00: an HSA/FSA card under this after a payment gets the low-balance alert (spec 4.4)
 
+# The conversation log lives in the agent's own storage (uAgents ctx.storage, saved to disk), one list
+# per user, apart from the session. A new chat session or an agent restart does not wipe it, so the
+# assistant can still follow "add that one" after a pause. Only the last few lines go to Claude.
+TURNS_STORED = 20
+TURNS_SHOWN = 8
+
+
+def turns_key(user: str) -> str:
+    return f"turns:{user}"
+
+
+def add_turn(storage, user: str, who: str, text: str) -> None:
+    """Append a line ("user" or "assistant") to the user's log, keeping the last TURNS_STORED."""
+    if text:
+        turns = (storage.get(turns_key(user)) or []) + [{"who": who, "text": text[:300]}]
+        storage.set(turns_key(user), turns[-TURNS_STORED:])
+
+
+def recent_turns(storage, user: str) -> list[dict]:
+    return (storage.get(turns_key(user)) or [])[-TURNS_SHOWN:]
+
+
+def transcript(turns: list[dict]) -> str:
+    return "\n".join(f"{t['who']}: {t['text']}" for t in turns)
+
 # --- mock insurance plans -----------------------------------------------------
 #
 # All plan details are synthetic (tech spec decision 1). One plan is modeled on the

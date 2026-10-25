@@ -98,13 +98,19 @@ A medicine the user calls "my prescription", or one picked up "at the counter", 
 Put the drug and strength in product, e.g. "omeprazole 20mg", and use eligibility_question.
 
 Context tells you what the assistant just asked; a bare "yes", "sure", "nah", \
-or "that one" refers to it."""
+or "that one" refers to it. Read the recent conversation: follow what the person means, not just \
+their last few words ("as well", "that one", "the other", "also" refer back to it). A person who names \
+a new product and says add, buy or get it wants to look that product up first: scan_product with the \
+product set."""
 
 
 def _context(session: dict) -> str:
     pending = session.get("pending") or {}
     scan = session.get("last_scan") or {}
     lines = []
+    recent = session.get("turns")
+    if recent:
+        lines.append("Recent conversation (oldest first):\n" + "\n".join(f"  {t['who']}: {t['text']}" for t in recent))
     if pending:
         lines.append(f"Assistant's pending question: {pending.get('scope')}")
     if scan:
