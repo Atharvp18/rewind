@@ -25,6 +25,9 @@ import { useCallback, useRef } from 'react';
 import * as api from '@/lib/api';
 import type { VoiceRequest } from '@/lib/api';
 
+/** True while the mic is open; playback must not start in the recording session (quiet, receiver-like output). */
+let micOpen = false;
+
 export async function configureAudio(): Promise<void> {
   // Default is already true; set it anyway (1.4).
   await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false });
@@ -104,6 +107,10 @@ class Speaker {
   }
 
   private async play(v: VoiceRequest, token: number) {
+    if (!micOpen) {
+      // Make sure the session is plain playback (the loudspeaker) before every line.
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false }).catch(() => {});
+    }
     const sentences = v.sentences.length ? v.sentences : [v.text];
     let urls: string[] | null = null;
     // One retry: a slow first Cartesia sentence should not drop the whole line to the phone's voice.
@@ -277,12 +284,14 @@ export function useMic() {
     if (!perm.granted) return 'denied';
     chunks.current = [];
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, shouldRouteThroughEarpiece: false });
+    micOpen = true;
     await stream.start();
     return 'granted';
   }, [stream]);
 
   const stop = useCallback(async (): Promise<{ uri: string; discard: () => void } | null> => {
     stream.stop();
+    micOpen = false;
     levelListeners.forEach((fn) => fn(0));
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false });
     const captured = chunks.current;
