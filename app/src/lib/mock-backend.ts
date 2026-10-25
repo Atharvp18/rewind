@@ -421,7 +421,7 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
           collected_at: null, matched_name: null },
       },
       recommendation: null,
-      voice: voice('I could not confirm this item. Try another angle, or tell me what it is.'),
+      voice: voice('I do not see an item in the frame. Please hold the item steady in front of the camera.'),
     };
   }
 
@@ -536,7 +536,7 @@ export async function tts(): Promise<TtsResponse> {
 function insertItem(scanId: string, cardId: string): void {
   const entry = state.scans.get(scanId);
   if (!entry?.item) throw new ApiError({ code: 'E_PRODUCT_UNRESOLVED', message: 'unknown scan',
-    speech: 'I could not confirm this item. Try another angle, or tell me what it is.', retryable: false });
+    speech: 'I do not see an item in the frame. Please hold the item steady in front of the camera.', retryable: false });
   state.items.push({
     id: randomUUID(), seq: ++state.seq, scan_id: scanId, card_id: cardId,
     display_name: entry.item.product.name, amount_cents: entry.item.product.amount_cents!,
@@ -553,7 +553,7 @@ export async function reissuePrompt(
   const entry = state.scans.get(scanId);
   if (!entry?.item) {
     throw new ApiError({ code: 'E_PRODUCT_UNRESOLVED', message: 'unknown scan',
-      speech: 'I could not confirm this item. Try another angle, or tell me what it is.', retryable: false });
+      speech: 'I do not see an item in the frame. Please hold the item steady in front of the camera.', retryable: false });
   }
   const prompt_id = randomUUID();
   state.prompts.set(prompt_id, { scope, scan_id: scanId, expiresAt: Date.now() + promptTtlMs, consumed: false });

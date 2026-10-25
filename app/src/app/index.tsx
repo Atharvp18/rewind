@@ -28,6 +28,9 @@ import { useAgent } from '@/state/agent';
 const BARCODE_LIVE_MS = 800;
 /** Barcode events arrive many times a second; update the corners at most this often. */
 const BARCODE_THROTTLE_MS = 150;
+/** Quiet this long after a scanned item and the agent asks what to do next. */
+const IDLE_AFTER_SCAN_MS = 9000;
+
 /** Payment-card aspect ratio (ISO/IEC 7810 ID-1), for the onboarding card guide. */
 const CARD_RATIO = 1.586;
 
@@ -46,7 +49,7 @@ const CARD_RATIO = 1.586;
 export default function Home() {
   const { palette } = useA11y();
   const { profile, loaded } = useProfile();
-  const { state, beginCapture, scanFrame, sayLocal, startCheckin } = useAgent();
+  const { state, beginCapture, scanFrame, sayLocal, startCheckin, offerRepeat, askAnythingElse } = useAgent();
   const [camera, requestCamera] = useCameraPermissions();
   const focused = useIsFocused();
   const { width, height } = useWindowDimensions();
@@ -71,12 +74,17 @@ export default function Home() {
 
   // --- store check-in: once per launch, after onboarding (position used once, never stored) ----
   const checkedIn = useRef(false);
-  // Once per launch, after onboarding: welcome the shopper back and say where to put the item.
+  // Once per launch, for a returning shopper only: welcome them back and say where to put the item.
+  // Nobody who is (or just was) in onboarding is "back": first run and a demo restart skip it.
   const welcomed = useRef(false);
+  const sawOnboarding = useRef(false);
+  useEffect(() => {
+    if (onboarding) sawOnboarding.current = true;
+  }, [onboarding]);
   useEffect(() => {
     if (!loaded || onboarding || !focused || welcomed.current) return;
     welcomed.current = true;
-    sayLocal(Phrases.launchWelcome);
+    if (!sawOnboarding.current) sayLocal(Phrases.launchWelcome);
   }, [loaded, onboarding, focused, sayLocal]);
   useEffect(() => {
     if (!loaded || onboarding || !focused || checkedIn.current) return;
@@ -168,6 +176,31 @@ export default function Home() {
     lastScannedCode.current = barcode?.code ?? null;
     void scan();
   }, [autoReady, available, steady, barcode, scan]);
+
+  // --- a pause after a scanned item -------------------------------------------------
+  // The shopper has gone quiet with a result on screen and nothing being asked. If the phone has not
+  // moved since the scan, the item is still in the frame: offer to repeat. If it moved (the item was
+  // taken out of the frame), ask whether there is anything else to scan. Once per scan.
+  const scanId = state.lastScan?.scan.state !== 'unresolved' ? state.lastScan?.scan.scan_id : undefined;
+  const movesAtScan = useRef(0);
+  const [idleAskedFor, setIdleAskedFor] = useState<string | null>(null);
+  const moveCountRef = useRef(0);
+  useEffect(() => {
+    moveCountRef.current = moveCount;
+  }, [moveCount]);
+  useEffect(() => {
+    movesAtScan.current = moveCountRef.current;
+  }, [scanId]);
+  const idleReady = !!scanId && autoReady && idleAskedFor !== scanId;
+  useEffect(() => {
+    if (!idleReady || !scanId) return;
+    const t = setTimeout(() => {
+      setIdleAskedFor(scanId);
+      if (moveCountRef.current > movesAtScan.current) askAnythingElse();
+      else offerRepeat();
+    }, IDLE_AFTER_SCAN_MS);
+    return () => clearTimeout(t);
+  }, [idleReady, scanId, askAnythingElse, offerRepeat, state.phase]);
 
   // --- focus corners ----------------------------------------------------------
   const scanShowing = !!state.lastScan && state.view === 'camera' && !state.declined && !state.receipt;

@@ -87,11 +87,11 @@ describe('the demo shelf (spec 4.4, 4.6)', () => {
     expect(r.recommendation).toMatchObject({ decision: 'route_to_general', card_id: VISA, reason_code: 'not_eligible' });
   });
 
-  it('an item the shelf does not know: "I could not confirm this item", no recommendation, no question (spec 2.6, 4.6)', async () => {
+  it('an item the shelf does not know: "I do not see an item in the frame", no recommendation, no question (spec 2.6, 4.6)', async () => {
     const r = await scanN(4);
     expect(r.scan.state).toBe('unresolved');
     expect(r.recommendation).toBeNull();
-    expect(r.voice.text).toBe('I could not confirm this item. Try another angle, or tell me what it is.');
+    expect(r.voice.text).toBe('I do not see an item in the frame. Please hold the item steady in front of the camera.');
     expect(r.voice.expects_response).toBe(false);
     expect(r.scan.product.amount_cents).toBeNull(); // never a guessed price
   });

@@ -129,7 +129,7 @@ def _card_line(rec: PaymentRecommendation, cards: dict[str, Card]) -> str:
 
 
 def product_unresolved(request_id: str | None = None) -> VoiceRequest:
-    return _request("I could not confirm this item. Try another angle, or tell me what it is.",
+    return _request("I do not see an item in the frame. Please hold the item steady in front of the camera.",
                     request_id=request_id)
 
 

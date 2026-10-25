@@ -31,7 +31,7 @@ const TYPE_LABEL: Record<Card['type'], string> = {
 export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
   const { profile, reset } = useProfile();
-  const { state, resetDemo, sayLocal, showView, startCheckin, leaveStore, demoDecline } = useAgent();
+  const { state, resetDemo, sayLocal, showView, startCheckin, leaveStore, demoDecline, markFresh } = useAgent();
   const { area } = useStage();
   const cue = useScrollCue();
 
@@ -211,6 +211,7 @@ export function ProfileSheet() {
             label="Set up again"
             variant="danger"
             onPress={() => {
+              markFresh();
               reset();
               showView('camera');
             }}

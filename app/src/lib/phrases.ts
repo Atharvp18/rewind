@@ -12,6 +12,13 @@ export const Phrases = {
   greeting: 'How may I help you today?',
   /** Every launch after onboarding: say it and caption it. */
   launchWelcome: 'Welcome back. Please place your item on the frame.',
+  /** Paused after a scan with the item still in view. */
+  askRepeat: 'Would you like me to repeat?',
+  /** Paused after a scan and the item moved out of the frame. */
+  askMore: "Is there anything else you'd like me to scan?",
+  okay: 'Okay.',
+  /** The scan found nothing to read: no panel, just this line. */
+  noItem: 'I do not see an item in the frame. Please hold the item steady in front of the camera.',
   /** Return from background (1.2). */
   welcomeBack: (n: number) =>
     `Welcome back, you have ${n} ${n === 1 ? 'item' : 'items'} in your cart. Say repeat that to hear the last message.`,

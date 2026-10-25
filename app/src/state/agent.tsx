@@ -282,6 +282,12 @@ export interface AgentApi {
   /** Close the current panel and return to the plain camera. */
   dismiss: () => void;
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
+  /** After an item was scanned and the shopper paused: ask whether to repeat it (a yes repeats it). */
+  offerRepeat: () => void;
+  /** After an item was scanned and moved out of the frame: ask if there is anything else to scan. */
+  askAnythingElse: () => void;
+  /** A demo restart: the shopper counts as new, so no "welcome back" until the app is relaunched. */
+  markFresh: () => void;
 }
 
 const AgentContext = createContext<AgentApi | null>(null);
@@ -382,6 +388,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [say],
   );
 
+  // Idle questions are not remembered, so "repeat" still repeats the item, not the question.
+  const repeatOffer = useRef(false);
+  const fresh = useRef(false);
+  const offerRepeat = useCallback(() => {
+    repeatOffer.current = true;
+    say(localVoice(Phrases.askRepeat), false);
+  }, [say]);
+  const askAnythingElse = useCallback(() => say(localVoice(Phrases.askMore), false), [say]);
+  const markFresh = useCallback(() => {
+    fresh.current = true;
+  }, []);
+
   // --- errors ---------------------------------------------------------------
 
   const handleError = useCallback(
@@ -450,6 +468,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         speaker.interrupt();
       } else if (next === 'active' && wasBackground) {
         wasBackground = false;
+        if (fresh.current) return; // after a demo restart the shopper is new: no "welcome back"
         const n = stateRef.current.cart.groups.reduce((k, g) => k + g.items.length, 0);
         say(localVoice(Phrases.welcomeBack(n)), false);
       }
@@ -589,6 +608,19 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const sendTranscript = useCallback(
     async (transcript: string, confidence: number) => {
+      if (repeatOffer.current) {
+        // "Would you like me to repeat?" is answered here; anything else is a normal command.
+        repeatOffer.current = false;
+        if (/^\W*(yes|yeah|yep|yup|sure|please|ok|okay|repeat)\b/i.test(transcript)) {
+          haptic.done();
+          say(stateRef.current.lastVoice ?? localVoice(Phrases.nothingToRepeat), false);
+          return;
+        }
+        if (/^\W*(no|nope|nah|not now)\b/i.test(transcript)) {
+          say(localVoice(Phrases.okay), false);
+          return;
+        }
+      }
       dispatch({ type: 'submit' });
       try {
         const promptId = stateRef.current.lastScan ? await ensurePrompt() : stateRef.current.livePrompt?.id;
@@ -598,7 +630,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(e);
       }
     },
-    [applyCommand, handleError, ensurePrompt],
+    [applyCommand, handleError, ensurePrompt, say],
   );
 
   // --- listening ------------------------------------------------------------
@@ -912,6 +944,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     async (run: 1 | 2) => {
       try {
         const res = await api.resetDemo(run);
+        fresh.current = true;
         dispatch({ type: 'cards', cards: res.cards });
         dispatch({ type: 'cart', cart: res.cart });
         dispatch({ type: 'preview', preview: null });
@@ -972,11 +1005,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       confirmCheckout,
       resetDemo,
       sayLocal,
+      offerRepeat,
+      askAnythingElse,
+      markFresh,
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal, showView, answer, dismiss,
+      confirmCheckout, resetDemo, sayLocal, offerRepeat, askAnythingElse, markFresh, showView, answer, dismiss,
     ],
   );
 

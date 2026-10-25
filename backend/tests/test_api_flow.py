@@ -108,7 +108,7 @@ def test_an_unidentifiable_product_is_unresolved(client):
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")})
     body = r.json()
     assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
-    assert "tell me what it is" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
+    assert "hold the item steady" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
 
 
 def test_an_empty_image_is_rejected(client):

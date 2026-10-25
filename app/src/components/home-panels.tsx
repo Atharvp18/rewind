@@ -126,16 +126,8 @@ function ScanPanel({ res }: { res: ScanResponse }) {
   // Answers stay active after the question's window: a late answer re-asks for the same item.
   const busy = state.phase === 'submitting';
 
-  if (res.scan.state === 'unresolved') {
-    return (
-      <InfoPanel title="Could not confirm this item">
-        <PanelText>Try another angle, or tap Talk and say what it is.</PanelText>
-        <PanelActions>
-          <BigButton label="Scan again" icon="retry" variant="primary" size="primary" onPress={skip} />
-        </PanelActions>
-      </InfoPanel>
-    );
-  }
+  // Nothing readable: the agent says so ("hold the item steady"); there is no card and no rescan button.
+  if (res.scan.state === 'unresolved') return null;
 
   // Pill bottle: read drug name and strength back; nothing proceeds until confirmed (tech spec 2.3).
   if (res.voice.response_scope === 'confirm_strength') {
