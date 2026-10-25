@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
@@ -70,7 +71,7 @@ export function ProfileSheet() {
           )}
         </View>
         <View style={styles.flex}>
-          <AppText kind="heading" accessibilityRole="header" numberOfLines={1}>
+          <AppText kind="heading" accessibilityRole="header">
             {`${profile.firstName} ${profile.lastName}`.trim() || 'Your profile'}
           </AppText>
           {profile.phoneVerified && profile.phone ? (
@@ -204,13 +205,9 @@ export function ProfileSheet() {
               showView('camera');
             }}
           />
-          <BigButton label="Reset · run 1 (HSA $340.00)" onPress={() => restart(1)} />
-          <BigButton label="Reset · run 2 (HSA $15.00)" onPress={() => restart(2)} />
-          <BigButton
-            label="Set up again"
-            variant="danger"
-            onPress={() => restart(1)}
-          />
+          <ConfirmButton label="Reset · run 1 (HSA $340.00)" onConfirm={() => restart(1)} />
+          <ConfirmButton label="Reset · run 2 (HSA $15.00)" onConfirm={() => restart(2)} />
+          <ConfirmButton label="Set up again" variant="danger" onConfirm={() => restart(1)} />
         </Section>
       </ScrollView>
       {/* "More below": a soft fade and a bobbing chevron until the end is near. */}
@@ -256,3 +253,33 @@ const styles = StyleSheet.create({
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   block: { gap: Spacing.xs },
 });
+
+/**
+ * Erases everything, so it takes two taps (spec 20.9, Apple HIG for destructive actions): the first tap
+ * asks, the second within 5 seconds does it. The question is also said out loud.
+ */
+function ConfirmButton({ label, variant, onConfirm }: { label: string; variant?: 'danger'; onConfirm: () => void }) {
+  const { sayLocal } = useAgent();
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <BigButton
+      label={armed ? 'Tap again to erase everything' : label}
+      accessibilityHint={armed ? undefined : 'Erases your cart, history and setup. Asks you to tap again first.'}
+      variant={armed ? 'danger' : variant}
+      onPress={() => {
+        if (armed) {
+          setArmed(false);
+          onConfirm();
+        } else {
+          setArmed(true);
+          sayLocal('This erases your cart, history and setup. Tap again to confirm.');
+        }
+      }}
+    />
+  );
+}
