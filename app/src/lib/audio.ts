@@ -111,6 +111,7 @@ class Speaker {
       try {
         const res = await api.tts(v.text, v.priority);
         urls = res.sentences.sort((a, b) => a.index - b.index).map((s) => api.audioUrl(s.audio_url));
+        console.log(`[voice] Cartesia ready: ${urls.length} sentence(s)`);
       } catch (e) {
         console.warn(`[voice] /v1/tts failed (attempt ${attempt + 1}): ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -160,7 +161,17 @@ class Speaker {
         player.volume = this.opts.volume;
         // playbackRate is read-only on the native player: only setPlaybackRate() changes it.
         player.setPlaybackRate(this.opts.rate);
+        console.log(`[voice] playing ${url.slice(-12)} (volume ${this.opts.volume}, rate ${this.opts.rate})`);
+        let lastNote = '';
         sub = player.addListener('playbackStatusUpdate', (s) => {
+          const note = `${s.playbackState}/${s.timeControlStatus} loaded=${s.isLoaded} playing=${s.playing} mute=${s.mute} wait=${s.reasonForWaitingToPlay ?? ''}`;
+          if (note !== lastNote) console.log(`[voice] status ${note}${s.error ? ` ERROR ${s.error}` : ''}`);
+          lastNote = note;
+          if (s.error) {
+            console.warn(`[voice] the audio failed to load: ${s.error}`);
+            finish(false);
+            return;
+          }
           if (s.playing) started = true;
           if (token !== this.token) finish(true);
           else if (started && s.didJustFinish) finish(true);
