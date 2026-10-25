@@ -549,6 +549,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         case 'cart_cleared':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
           if (res.action === 'add_item') dispatch({ type: 'clear_scan' });
+          dispatch({ type: 'clear_prompt' }); // the question was answered; unblock auto-capture
           break;
         case 'review_item':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });

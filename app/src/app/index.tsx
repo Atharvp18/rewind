@@ -138,7 +138,7 @@ export default function Home() {
   const autoReady = watching && (state.phase === 'idle' || (state.conversing && state.phase === 'listening')) && !state.livePrompt;
   // Card steps (onboarding and Add a card): the same steadiness check takes the card photo once the
   // agent has finished the instruction and the phone is held still on the card. Tap still works.
-  const cardAutoReady = cardCapture && granted && focused && state.phase === 'idle';
+  const cardAutoReady = cardCapture && granted && focused && (state.phase === 'idle' || (state.conversing && state.phase === 'listening'));
   const { steady, moveCount, available } = useSteadiness(watching || cardAutoReady);
   const armed = useRef(true);
   const cardArmed = useRef(true);
