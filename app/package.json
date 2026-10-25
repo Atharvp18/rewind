@@ -61,7 +61,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
-    "test:live": "REWIND_LIVE_URL=${REWIND_LIVE_URL:-http://127.0.0.1:8000} jest __tests__/live-contract.test.ts"
+    "test:live": "REWIND_LIVE_URL=${REWIND_LIVE_URL:-https://shelf-sense-zwvv.onrender.com} jest __tests__/live-contract.test.ts"
   },
   "private": true,
   "jest": {
