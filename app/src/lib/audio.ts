@@ -62,6 +62,11 @@ class Speaker {
     return this.current !== null;
   }
 
+  /** Nothing playing and nothing queued: safe to open the microphone without hearing ourselves. */
+  get quiet() {
+    return this.current === null && this.queue.length === 0;
+  }
+
   speak(v: VoiceRequest) {
     if (v.priority === 'alert' && this.current) {
       const cut = this.current;

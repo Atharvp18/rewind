@@ -1,6 +1,7 @@
 // The reducer is pure; the native audio, sensor and location modules it sits beside are not loaded here.
 jest.mock('@/lib/audio', () => ({ speaker: {}, configureAudio: jest.fn(), useMic: jest.fn() }));
 jest.mock('expo-location', () => ({}));
+jest.mock('expo-audio', () => ({ getRecordingPermissionsAsync: jest.fn() }));
 
 import { initial, reducer } from '@/state/agent';
 import type { ScanResponse } from '@/lib/api';

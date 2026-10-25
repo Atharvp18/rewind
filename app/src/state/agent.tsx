@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 import * as Location from 'expo-location';
+import { getRecordingPermissionsAsync } from 'expo-audio';
 import { AppState } from 'react-native';
 
 import * as api from '@/lib/api';
@@ -104,6 +105,7 @@ export interface AgentState {
 
 export type Action =
   | { type: 'listen' }
+  | { type: 'listen_done' }
   | { type: 'capture' }
   | { type: 'scan_sent' }
   | { type: 'scan_received'; res: ScanResponse; photo: { width: number; height: number } }
@@ -170,6 +172,9 @@ export function reducer(s: AgentState, a: Action): AgentState {
   switch (a.type) {
     case 'listen':
       return { ...s, phase: 'listening' };
+    case 'listen_done':
+      // Heard nothing usable: back to waiting for the open question, or idle.
+      return { ...s, phase: s.livePrompt ? 'awaiting_confirm' : 'idle' };
     case 'capture':
       return { ...s, phase: 'capturing' };
     case 'scan_sent':
@@ -273,7 +278,11 @@ export interface AgentApi {
    * Onboarding: route the next thing the user says to `fn` instead of
    * /v1/command. Pass null to restore normal commands.
    */
-  setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => void;
+  /**
+   * Route the next thing the user says to `fn` (onboarding). `auto` (default true) opens the mic by
+   * itself after the step's line is spoken; card-photo steps pass false so listening never delays the photo.
+   */
+  setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null, auto?: boolean) => void;
   beginCapture: () => void;
   scanFrame: (
     imageUri: string,
@@ -354,7 +363,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const holding = useRef(false);
   const checkoutKey = useRef<string | null>(null);
   const onDoneRef = useRef<(v: VoiceRequest) => void>(() => {});
-  const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void } | null>(null);
+  const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void; auto: boolean } | null>(null);
+  /** The mic opened by itself after a question (not a tap): silence there stays quiet. */
+  const autoListening = useRef(false);
+  /** Unanswered automatic listens in a row; after two the agent waits for a tap (no endless loop). */
+  const autoMisses = useRef(0);
+  /** A local question was just asked (repeat? anything else?): listen for the answer. */
+  const answerNext = useRef(false);
 
   // --- speech -------------------------------------------------------------
 
@@ -428,11 +443,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   // Idle questions are not remembered, so "repeat" still repeats the item, not the question.
   const repeatOffer = useRef(false);
   const fresh = useRef(false);
+  const moreOffer = useRef(false);
   const offerRepeat = useCallback(() => {
     repeatOffer.current = true;
+    answerNext.current = true;
     say(localVoice(Phrases.askRepeat), false);
   }, [say]);
-  const askAnythingElse = useCallback(() => say(localVoice(Phrases.askMore), false), [say]);
+  const askAnythingElse = useCallback(() => {
+    moreOffer.current = true;
+    answerNext.current = true;
+    say(localVoice(Phrases.askMore), false);
+  }, [say]);
   const markFresh = useCallback(() => {
     fresh.current = true;
   }, []);
@@ -651,6 +672,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const sendTranscript = useCallback(
     async (transcript: string, confidence: number) => {
+      if (moreOffer.current) {
+        // "Is there anything else you'd like me to scan?"
+        moreOffer.current = false;
+        if (/^\W*(yes|yeah|yep|yup|sure|ok|okay)\b/i.test(transcript)) {
+          say(localVoice(Phrases.nextItem), false);
+          return;
+        }
+        if (/^\W*(no|nope|nah|that'?s (it|all)|i'?m (done|good))\b/i.test(transcript)) {
+          say(localVoice(Phrases.whenReady), false);
+          return;
+        }
+      }
       if (repeatOffer.current) {
         // "Would you like me to repeat?" is answered here; anything else is a normal command.
         repeatOffer.current = false;
@@ -688,6 +721,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       return;
     }
     dispatch({ type: 'listen' });
+    if (autoListening.current) haptic.tap(); // the mic opened by itself: a tap-like buzz says "go ahead"
     if (autoStop) {
       if (listenTimer.current) clearTimeout(listenTimer.current);
       listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
@@ -698,15 +732,29 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     if (listenTimer.current) clearTimeout(listenTimer.current);
     listenTimer.current = null;
     if (stateRef.current.phase !== 'listening') return;
+    const auto = autoListening.current;
+    autoListening.current = false;
+    // The mic opened by itself and heard nothing: stay quiet, wait for the question's silence prompt.
+    const heardNothing = () => {
+      autoMisses.current += 1;
+      dispatch({ type: 'listen_done' });
+      if (stateRef.current.livePrompt) armSilence();
+    };
     const rec = await mic.stop();
     if (!rec) {
-      dispatch({ type: 'idle' });
+      if (auto) heardNothing();
+      else dispatch({ type: 'idle' });
       return;
     }
     dispatch({ type: 'submit' });
     try {
       const handler = listenHandler.current;
       const { transcript, confidence } = await api.stt(rec.uri, handler?.hint);
+      if (auto && !transcript.trim()) {
+        heardNothing();
+        return;
+      }
+      autoMisses.current = 0;
       dispatch({ type: 'user_said', text: transcript });
       if (handler) {
         dispatch({ type: 'idle' });
@@ -715,7 +763,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         await sendTranscript(transcript, confidence);
       }
     } catch (e) {
-      handleError(e);
+      if (auto && e instanceof ApiError && e.code === 'E_STT_LOW_CONFIDENCE') heardNothing();
+      else handleError(e);
     } finally {
       rec.discard();
     }
@@ -734,6 +783,23 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     if (listenAfterSpeech.current) {
       listenAfterSpeech.current = false;
       void startListening(true);
+      return;
+    }
+    // A question was asked: open the mic by itself so the shopper can just answer (no tap needed).
+    const handler = listenHandler.current;
+    const asks = voice.expects_response || answerNext.current || (handler !== null && handler.auto);
+    answerNext.current = false;
+    if (asks && !screenReaderOn && autoMisses.current < 2 && speaker.quiet) {
+      void (async () => {
+        const perm = await getRecordingPermissionsAsync().catch(() => null);
+        // Never pop the permission prompt from here, and never listen over the next line.
+        if (!perm?.granted || !speaker.quiet || stateRef.current.phase === 'listening') {
+          if (voice.expects_response) armSilence();
+          return;
+        }
+        autoListening.current = true;
+        await startListening(true);
+      })();
       return;
     }
     if (voice.expects_response) armSilence();
@@ -821,8 +887,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setListenHandler = useCallback(
-    (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => {
-      listenHandler.current = fn ? { hint, fn } : null;
+    (hint: SttHint | undefined, fn: ((transcript: string) => void) | null, auto = true) => {
+      listenHandler.current = fn ? { hint, fn, auto } : null;
+      autoMisses.current = 0; // a new step or question gets fresh tries
     },
     [],
   );
@@ -1020,6 +1087,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (promptTimer.current) clearTimeout(promptTimer.current);
       if (listenTimer.current) clearTimeout(listenTimer.current);
       repeatOffer.current = false;
+      moreOffer.current = false;
+      answerNext.current = false;
+      autoMisses.current = 0;
       heldVoice.current = null;
       fresh.current = true; // a new shopper is never "back"
       let reset: { cards: Card[]; cart: Cart } = { cards: stateRef.current.cards, cart: { groups: [], total_cents: 0 } };

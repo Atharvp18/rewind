@@ -43,6 +43,10 @@ export const Phrases = {
   /** Paused after a scan and the item moved out of the frame. */
   askMore: "Is there anything else you'd like me to scan?",
   okay: 'Okay.',
+  /** Yes to "anything else to scan?" */
+  nextItem: 'Okay. Hold the next item steady in the frame.',
+  /** No to "anything else to scan?" */
+  whenReady: "Okay. Say checkout when you're ready to pay.",
   /** The scan found nothing to read: no panel, just this line. */
   noItem: 'I do not see an item in the frame. Please hold the item steady in front of the camera.',
   /** Return from background (1.2). */
@@ -75,26 +79,36 @@ export const Onboarding = {
   cameraWhy:
     'Rewind uses your camera to read product labels, prices, and your cards. Photos are not saved. Tap Allow camera, then choose Allow.',
   micWhy:
-    'Rewind uses your microphone so you can talk to it. It only listens while you tap or hold the round button. Tap Allow microphone, then choose Allow.',
+    'Rewind uses your microphone so you can answer out loud. It listens only right after it asks you something, or when you tap the round button. Tap Allow microphone, then choose Allow.',
   confirmCardName: (full: string) => `Your name is ${full}. Is that right?`,
-  typeName: "I couldn't confirm your name from the card. Please type it, or scan the card again.",
+  typeName: "I couldn't read your name on the card. Please say or type your first and last name, or say scan again.",
   greet: (first: string) => `Thank you, ${first}.`,
   /** The first thing a new shopper hears: who Rewind is and how to use it. */
-  welcome:
-    "Welcome to Rewind. I help you shop with your HSA, FSA, and everyday cards. Hold a product steady in front of the camera, and I'll tell you what it is, what it costs, and which card to use. Say yes to add it to your cart, and say checkout when you're ready to pay. Tap the round button any time to talk to me. Let's get you set up.",
+  welcomeIntro: "Welcome to Rewind. I help you pay for each item with the right card. Here's how it works.",
+  welcomeSteps: [
+    "Hold a product steady in the frame, and I'll read it to you.",
+    "I'll tell you the price and which card to use.",
+    'Say yes to add it to your cart. Say checkout when you are ready to pay.',
+    'Tap the round button at the bottom any time to talk to me.',
+  ],
+  welcomeGo: 'When you are ready, say get started.',
+  /** The whole welcome as spoken: intro, the steps, and how to go on (the card shows the same words). */
+  get welcome(): string {
+    return [this.welcomeIntro, ...this.welcomeSteps, this.welcomeGo].join(' ');
+  },
   askInsurance:
-    "Now your insurance card. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you.",
+    "Now your insurance card. Hold it flat inside the corners and keep still. I'll take the photo for you, or say skip.",
   confirmInsurance: (insurer: string, plan: string | null, hasRx: boolean) =>
     `Your insurance is ${insurer}${plan ? `, ${plan}` : ''}.${hasRx ? ' It shows prescription benefits.' : ''} Is that right?`,
   askPayment: (first: boolean) =>
     first
-      ? "Now your HSA or FSA Visa card. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you."
-      : "Now your everyday Visa card, credit or debit. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you.",
-  askCardType: 'Is this Visa card an HSA card, an FSA card, a credit card, or a debit card?',
+      ? "Now your HSA or FSA card. Hold it flat inside the corners and keep still. I'll take the photo for you, or say skip."
+      : "Now your everyday credit or debit card. Hold it flat inside the corners and keep still. I'll take the photo for you, or say done.",
+  askCardType: 'Is this an HSA card, an FSA card, a credit card, or a debit card?',
   confirmCard: (label: string, last4: string | null) =>
     `I see ${label}${last4 ? ` ending in ${last4.split('').join(' ')}` : ''}. Is that right?`,
   cardAdded: (label: string) => `${label} added. Do you want to add another card?`,
   unclear: 'I could not read that card. Try again with more light, and hold it still.',
   done: (first: string) =>
-    `You're all set, ${first}. Point your phone at a product and tap anywhere to scan. Your profile and settings are at the top right.`,
+    `You're all set${first ? `, ${first}` : ''}. Hold a product steady in the frame and I'll read it to you. Your cards and settings are behind your initial at the top right. Say start shopping when you're ready.`,
 } as const;
