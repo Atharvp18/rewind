@@ -131,15 +131,19 @@ def scrape(token: str, run_input: dict, limit: int) -> list[dict]:
     from apify_client import ApifyClient
 
     client = ApifyClient(token)
-    run = client.actor(os.environ.get("APIFY_ACTOR_ID") or ACTOR_ID).call(
-        run_input=run_input,
-        max_total_charge_usd=Decimal("1.0"),    # the tool's minimum allowed cap; a run costs a few tenths of a cent
-        memory_mbytes=1024,
-        run_timeout=timedelta(seconds=600),
-        logger=None,
-    )
-    items = list(client.dataset(run.default_dataset_id).iterate_items(limit=limit))
-    logger.info("Run %s: %s, %d items", run.id, run.status, len(items))
+    options = dict(run_input=run_input,
+                   max_total_charge_usd=Decimal("1.0"),    # the tool's minimum allowed cap; a run costs a few tenths of a cent
+                   memory_mbytes=1024, logger=None)
+    try:
+        run = client.actor(os.environ.get("APIFY_ACTOR_ID") or ACTOR_ID).call(run_timeout=timedelta(seconds=600), **options)
+    except TypeError:       # apify-client 2.x (Python 3.10) names it timeout_secs and returns a dict
+        run = client.actor(os.environ.get("APIFY_ACTOR_ID") or ACTOR_ID).call(timeout_secs=600, **options)
+    if isinstance(run, dict):
+        run_id, status, dataset_id = run["id"], run["status"], run["defaultDatasetId"]
+    else:
+        run_id, status, dataset_id = run.id, run.status, run.default_dataset_id
+    items = list(client.dataset(dataset_id).iterate_items(limit=limit))
+    logger.info("Run %s: %s, %d items", run_id, status, len(items))
     return items
 
 

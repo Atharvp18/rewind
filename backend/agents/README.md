@@ -11,10 +11,10 @@ These agents run that workflow inside an ASI:One conversation.
 
 | Agent | Name on Agentverse | Address | Role |
 |---|---|---|---|
-| `orchestrator_agent.py` | Rewind Shopping Assistant | _fill in after first run_ | The front desk. Talks to the user over the Agent Chat Protocol, understands each message (Claude), keeps each user's session in `ctx.storage`, phrases every reply, and routes work to the specialists |
-| `product_agent.py` | Rewind Product Agent | _fill in after first run_ | Specialist. Shelf photo or product name → fixed pipeline (vision → lookup → eligibility) → facts + `ScanResult` |
-| `payment_agent.py` | Rewind Payment Agent | _fill in after first run_ | Specialist. Card routing (HSA/FSA vs. general), cart, low-balance alerts, simulated checkout |
-| `history_agent.py` | Rewind History Agent | _fill in after first run_ | Specialist, read-only. Answers questions about past purchases (totals, what was bought, what could be claimed back) from a Moss memory; Claude fills a fixed question form, code does the dates and sums |
+| `orchestrator_agent.py` | Rewind Shopping Assistant | `agent1qgh2lut00vnaxk78nl6fyvs3l39huakthle9z3umf8042s8tmjv3jet6wsu` | The front desk. Talks to the user over the Agent Chat Protocol, understands each message (Claude), keeps each user's session in `ctx.storage`, phrases every reply, and routes work to the specialists |
+| `product_agent.py` | Rewind Product Agent | `agent1qv5swthwpdms49gh0k4hndrcjkkvk8d90z4w529md7zg973mlyj9xz44xj9` | Specialist. Shelf photo or product name → fixed pipeline (vision → lookup → eligibility) → facts + `ScanResult` |
+| `payment_agent.py` | Rewind Payment Agent | `agent1qvkjw79mr7ew9neq52fhyqu2l8vheewwu4j43pcnt43f3vzpl4jsgganw52` | Specialist. Card routing (HSA/FSA vs. general), cart, low-balance alerts, simulated checkout |
+| `history_agent.py` | Rewind History Agent | `agent1q2gktwmd0ya5qqrtm0p0cqxryvgtmfq0yprnhh7ssged68n6hvnnyt9y4nf` | Specialist, read-only. Answers questions about past purchases (totals, what was bought, what could be claimed back) from a Moss memory; Claude fills a fixed question form, code does the dates and sums |
 
 ```
 ASI:One user ──Chat Protocol──▶ Orchestrator ──ProductRequest──▶ Product agent
@@ -56,7 +56,7 @@ cp .env.example .env     # add ANTHROPIC_API_KEY and three agent seeds
 
 **Locally, no Agentverse:** `make local` runs all agents in one process with a scripted shopper.
 
-**On Agentverse (for ASI:One):** run `make orchestrator`, `make product`, `make payment` in three
+**On Agentverse (for ASI:One):** run `make orchestrator`, `make product`, `make payment`, `make history` in four
 terminals. For each, open the inspector link it prints → **Connect → Mailbox**. Then on the
 orchestrator: **Agent Profile → Chat with Agent**.
 

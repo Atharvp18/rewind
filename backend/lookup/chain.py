@@ -75,7 +75,8 @@ def resolve_product(extract: VisionExtract) -> ProductResolution:
         name = cached.get("normalized_name", name)
         brand = cached.get("brand", brand)
         size = cached.get("size", size)
-        category = cached.get("category", category)
+        if category in (None, "other"):             # a fresher reading beats an older "other"
+            category = cached.get("category", category)
         if amount_cents is None and cached.get("shelf_price_cents") is not None and _cached_price_is_fresh(cached):
             amount_cents = cached["shelf_price_cents"]
             price_source = "cache"

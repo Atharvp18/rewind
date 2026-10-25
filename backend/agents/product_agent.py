@@ -41,12 +41,33 @@ async def _pipeline(extract: VisionExtract) -> tuple[ProductResolution, Eligibil
         retailer, checked = await find_match(product), True   # closest store listing, or None
     except MossUnavailable:
         retailer, checked = None, False                        # the IRS rules decide alone
-    if product.amount_cents is None and retailer and retailer.get("price_cents") and product.name != "Unknown product":
-        # No readable shelf tag (or no live demo): fall back to the price the store lists.
-        product.amount_cents, product.price_source = retailer["price_cents"], "seeded"
-        product.state = "resolved"
-        product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
+    if product.name != "Unknown product":
+        await _settle_price(product, retailer, checked)
     return product, classify_eligibility(product, extract.package_eligibility_marking, retailer, checked)
+
+
+def _use_price(product: ProductResolution, cents: int, source: str, size: str | None = None) -> None:
+    product.amount_cents, product.price_source = cents, source
+    if size:
+        product.size = size
+    product.state = "resolved"
+    product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
+
+
+async def _settle_price(product: ProductResolution, retailer: dict | None, checked: bool) -> None:
+    """Price order: store listing (Apify, via Moss), then the price saved from an earlier internet
+    search, then the shelf tag, then a new internet search for a product the index does not list."""
+    from lookup import online_price
+
+    if retailer and retailer.get("price_cents"):
+        return _use_price(product, retailer["price_cents"], "seeded")
+    saved = await online_price.stored(product)
+    if saved:
+        return _use_price(product, saved["price_cents"], "cache", saved["size"])
+    if product.amount_cents is None and checked and retailer is None:
+        found = await online_price.search_and_save(product)   # Moss answered "not listed": look online once
+        if found:
+            _use_price(product, found["price_cents"], "cache", found["size"])
 
 
 def facts_for(product: ProductResolution, elig: EligibilityResult) -> Facts:
@@ -139,16 +160,10 @@ async def handle_full(image_url: str | None = None,
     elif product_hint:
         strength = strength_of(product_hint)
         name = re.sub(r"\s*\d+(?:\.\d+)?\s*(mg|mcg|g|ml)\b", "", product_hint, flags=re.I).strip() or product_hint
-        product = ProductResolution(
-            product_key=normalize_key(None, product_hint, None),
-            name=name,
-            size=strength,
-            category="other",
-            is_medication=bool(is_prescription),
-            is_prescription_only=bool(is_prescription),
-            state="partial",
-        )
-        elig = classify_eligibility(product, None)
+        # A typed name takes the same road as a photo, minus the shelf tag: store lookup, the store's
+        # listed price when there is no tag, then the IRS rules and the Moss listing for eligibility.
+        from vision.claude_vision import name_to_extract
+        product, elig = await _pipeline(await name_to_extract(name, strength, bool(is_prescription)))
     else:
         return HELP, None, None, None
 

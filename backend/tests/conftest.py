@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("REWIND_STUB_INTENT", "true")
 os.environ.setdefault("REWIND_STUB_SPEAK", "true")
 os.environ.setdefault("REWIND_STUB_VISION", "true")
+os.environ.setdefault("REWIND_STUB_WEB", "true")
 
 import pytest
 

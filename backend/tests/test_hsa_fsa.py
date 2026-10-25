@@ -245,15 +245,87 @@ async def pipeline(monkeypatch, retailer, price_cents=None):
     return await product_agent._pipeline(extract)
 
 
-async def test_missing_shelf_price_falls_back_to_the_stores_listed_price(monkeypatch):
+async def test_missing_shelf_price_takes_the_stores_listed_price(monkeypatch):
     product_, elig = await pipeline(monkeypatch, listing(True, price_cents=4299))
     assert product_.amount_cents == 4299 and product_.price_source == "seeded" and product_.state == "resolved"
     assert "E_NO_PRICE" not in product_.warnings and elig.label == "eligible"
 
 
-async def test_a_shelf_tag_price_always_beats_the_listing(monkeypatch):
+async def test_the_stores_listed_price_is_primary_even_when_a_shelf_tag_is_read(monkeypatch):
     product_, _ = await pipeline(monkeypatch, listing(True, price_cents=4299), price_cents=3999)
-    assert product_.amount_cents == 3999 and product_.price_source == "shelf_tag"
+    assert product_.amount_cents == 4299 and product_.price_source == "seeded"
+
+
+# --- products the index does not list: Claude finds the price online, once, and it is saved ---------
+
+class FakeWeb:
+    def __init__(self, saved=None, found=None):
+        self.saved, self.found, self.searches = saved, found, 0
+
+    async def stored(self, product):
+        return self.saved
+
+    async def search_and_save(self, product):
+        self.searches += 1
+        if self.found:
+            self.saved = self.found                  # what the real one writes to product_cache
+        return self.found
+
+
+def use_web(monkeypatch, web):
+    from lookup import online_price
+    monkeypatch.setattr(online_price, "stored", web.stored)
+    monkeypatch.setattr(online_price, "search_and_save", web.search_and_save)
+
+
+async def test_an_unlisted_product_gets_its_price_and_size_from_the_internet_search(monkeypatch):
+    web = FakeWeb(found={"price_cents": 1299, "size": "30 tablets"})
+    use_web(monkeypatch, web)
+    product_, elig = await pipeline(monkeypatch, None)
+    assert (product_.amount_cents, product_.size, product_.price_source) == (1299, "30 tablets", "cache")
+    assert elig.label == "not_eligible" and web.searches == 1      # not in the index: Visa, never the HSA or FSA
+
+
+async def test_the_same_unlisted_product_gets_the_same_price_next_time_without_searching(monkeypatch):
+    web = FakeWeb(found={"price_cents": 1299, "size": "30 tablets"})
+    use_web(monkeypatch, web)
+    await pipeline(monkeypatch, None)
+    web.found = {"price_cents": 1599, "size": "50 tablets"}      # the web would answer differently now
+    again, _ = await pipeline(monkeypatch, None)
+    assert (again.amount_cents, again.size) == (1299, "30 tablets") and web.searches == 1
+
+
+async def test_a_saved_online_price_beats_a_shelf_tag_and_a_shelf_tag_beats_a_new_search(monkeypatch):
+    use_web(monkeypatch, FakeWeb(saved={"price_cents": 1299, "size": "30 tablets"}))
+    saved, _ = await pipeline(monkeypatch, None, price_cents=999)
+    assert saved.amount_cents == 1299
+    web = FakeWeb(found={"price_cents": 1599, "size": "x"})
+    use_web(monkeypatch, web)
+    tagged, _ = await pipeline(monkeypatch, None, price_cents=999)
+    assert (tagged.amount_cents, tagged.price_source, web.searches) == (999, "shelf_tag", 0)
+
+
+async def test_no_internet_search_when_the_index_could_not_answer_or_lists_the_product(monkeypatch):
+    from agents import product_agent
+    from lookup import moss_index
+    from models.schemas import VisionExtract
+    web = FakeWeb(found={"price_cents": 1299, "size": "x"})
+    use_web(monkeypatch, web)
+
+    async def down(product):
+        raise moss_index.MossUnavailable("down")
+    monkeypatch.setattr(moss_index, "find_match", down)
+    await product_agent._pipeline(VisionExtract(name="Dolo", category="pain_relief", is_medication=True))
+    await pipeline(monkeypatch, listing(True, price_cents=None))     # listed, but the listing has no price
+    assert web.searches == 0
+
+
+def test_the_online_answer_is_read_safely():
+    from lookup import online_price
+    assert online_price._parse('Sure: {"price_dollars": 12.99, "size": " 30 tablets "}') == {"price_cents": 1299, "size": "30 tablets"}
+    assert online_price._parse('{"price_dollars": null, "size": null}') is None
+    assert online_price._parse('{"price_dollars": 99999, "size": "x"}') is None
+    assert online_price._parse("no json here") is None
 
 
 async def test_no_listing_means_no_price_is_invented(monkeypatch):

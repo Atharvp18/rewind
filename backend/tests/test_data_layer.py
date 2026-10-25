@@ -288,7 +288,7 @@ def test_reset_clears_scan_saved_prices_but_keeps_seeded_products():
     from pathlib import Path
     sql = (Path(db.__file__).parent / "functions.sql").read_text()
     reset = sql[sql.index("CREATE OR REPLACE FUNCTION reset_demo"):]
-    assert "DELETE FROM product_cache WHERE source <> 'seeded';" in reset
+    assert "DELETE FROM product_cache WHERE source NOT IN ('seeded', 'web_search');" in reset
     assert all(p["source"] == "seeded" for p in seed.DEMO_PRODUCTS)
 
 
@@ -313,7 +313,7 @@ def test_reset_clears_scan_saved_prices_but_keeps_seeded_products():
     from pathlib import Path
     sql = (Path(db.__file__).parent / "functions.sql").read_text()
     reset = sql[sql.index("CREATE OR REPLACE FUNCTION reset_demo"):]
-    assert "DELETE FROM product_cache WHERE source <> 'seeded';" in reset
+    assert "DELETE FROM product_cache WHERE source NOT IN ('seeded', 'web_search');" in reset
     assert all(p["source"] == "seeded" for p in seed.DEMO_PRODUCTS)
 
 

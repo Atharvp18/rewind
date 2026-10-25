@@ -191,9 +191,10 @@ BEGIN
   DELETE FROM prompts    WHERE TRUE;
   DELETE FROM purchase_items WHERE TRUE;   -- references payments, so it goes first
   DELETE FROM payments   WHERE TRUE;
-  -- prices saved from earlier scans go too, so every rehearsal starts the same;
+  -- prices saved from earlier scans go too, so every rehearsal starts the same; prices found
+  -- online ('web_search') stay, so a product never gets a different price or size twice;
   -- the seeded demo products are re-inserted below
-  DELETE FROM product_cache WHERE source <> 'seeded';
+  DELETE FROM product_cache WHERE source NOT IN ('seeded', 'web_search');
 
   INSERT INTO cards (id, type, nickname, balance_cents, nessie_account_id, status, is_default)
   SELECT c->>'id', c->>'type', c->>'nickname', (c->>'balance_cents')::BIGINT,

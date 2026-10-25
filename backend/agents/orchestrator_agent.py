@@ -32,7 +32,7 @@ from agents.messages import (
 )
 from agents import store
 from agents.payment_agent import pending_reminder
-from agents.session import new_session
+from agents.session import add_turn, new_session, recent_turns, transcript, turns_key
 from data import db
 from agents.speaker import Facts, render, say, PRICE_RETRY
 
@@ -134,8 +134,9 @@ def unclear_facts(session: dict) -> Facts:
 
 async def speak(ctx: Context, user: str, facts: Facts | str, session: dict | None = None) -> None:
     """Phrase the facts, remember what was said, and reply. The only place replies are sent."""
-    text = await render(facts)
     session = session if session is not None else load_session(ctx, user)
+    text = await render(facts, transcript(recent_turns(ctx.storage, user)))
+    add_turn(ctx.storage, user, "assistant", text)
     session["last_reply"] = text
     session["last_activity"] = time.time()
     session["nudges"] = 0
@@ -166,10 +167,19 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
         await speak(ctx, user, greeting(session, first_name), session)
         return
 
-    intent = await classify_intent(inc.text, session, has_image=bool(inc.image_url))
+    turns = recent_turns(ctx.storage, user)               # before this message, so it is not shown twice
+    add_turn(ctx.storage, user, "user", inc.text or "(sent a photo)")
+    intent = await classify_intent(inc.text, dict(session, turns=turns), has_image=bool(inc.image_url))
     ctx.logger.info("intent=%s entities=%s image=%s", intent.intent,
                     intent.entities.model_dump(exclude_none=True), bool(inc.image_url))
     name = intent.intent
+    if name == "add_to_cart" and intent.entities.product:
+        # "Can you add Dolo as well?" names a new item: look it up first, then ask before adding.
+        # Naming the item already being discussed ("add the Tylenol") stays an add.
+        current = ((session.get("last_scan") or {}).get("product") or {}).get("name") or ""
+        said = intent.entities.product.lower()
+        if not current or (said not in current.lower() and current.lower() not in said):
+            name = "scan_product"
 
     # Front-desk answers: no specialist needed.
     if name in LOCAL_REFUSALS:
@@ -183,6 +193,7 @@ async def on_user_message(ctx: Context, sender: str, msg: ChatMessage):
         try:
             await asyncio.to_thread(db.reset_demo, run)   # Atharv's seed, one transaction
             from lookup import purchase_memory
+            ctx.storage.remove(turns_key(user))   # a fresh demo starts a fresh conversation
             purchase_memory.clear_in_background()   # the Moss memory is not in Postgres; the reply need not wait
             await speak(ctx, user, say(f"Demo reset for run {run}.", str(run), fixed=True), new_session())
         except db.DBUnavailable:
@@ -335,7 +346,7 @@ def build_agent(mailbox: bool = True, port: int = 8003) -> Agent:
                 session["nudges"] = session.get("nudges", 0) + 1
                 session["last_activity"] = time.time()
                 save_session(ctx, user, session)
-                await ctx.send(user, reply(await render(facts)))
+                await ctx.send(user, reply(await render(facts, transcript(recent_turns(ctx.storage, user)))))
 
     return agent
 
