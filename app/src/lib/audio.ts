@@ -141,8 +141,9 @@ class Speaker {
       try {
         if (!this.player) this.player = createAudioPlayer(null);
         const player = this.player;
+        // Expo Go's native player exposes playbackRate as read-only: use the setter method.
         player.volume = this.opts.volume;
-        player.playbackRate = this.opts.rate;
+        player.setPlaybackRate(this.opts.rate);
         sub = player.addListener('playbackStatusUpdate', (s) => {
           if (s.playing) started = true;
           if (token !== this.token || s.didJustFinish) {
