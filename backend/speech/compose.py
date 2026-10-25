@@ -81,9 +81,9 @@ def confidence_phrase(product: ProductResolution, elig: EligibilityResult) -> st
 def eligibility_line(product: ProductResolution, elig: EligibilityResult) -> str:
     if elig.label == "could_not_confirm":
         return "I could not confirm eligibility."
-    label = "HSA eligible" if elig.label == "eligible" else "Not HSA eligible"
-    phrase = confidence_phrase(product, elig)
-    return f"{label}, {phrase}." if phrase else f"{label}."
+    # The confidence phrase is not spoken or captioned (Nak, 2026-10-24): just the result.
+    # confidence_phrase() stays for anything that wants to show it.
+    return "HSA eligible." if elig.label == "eligible" else "Not HSA eligible."
 
 
 def scope_for(rec: PaymentRecommendation | None) -> str:

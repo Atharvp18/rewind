@@ -82,7 +82,7 @@ describe('the demo shelf (spec 4.4, 4.6)', () => {
 
   it('kettle corn: the exact spec 4.4 line, routed to the Visa, never eligible', async () => {
     const r = await scanN(3);
-    expect(r.voice.text).toBe("Kettle corn, $4.99. Not HSA eligible, high confidence. I'll put this on your Visa credit card.");
+    expect(r.voice.text).toBe("Kettle corn, $4.99. Not HSA eligible. I'll put this on your Visa credit card.");
     expect(r.scan.eligibility.label).toBe('not_eligible');
     expect(r.recommendation).toMatchObject({ decision: 'route_to_general', card_id: VISA, reason_code: 'not_eligible' });
   });

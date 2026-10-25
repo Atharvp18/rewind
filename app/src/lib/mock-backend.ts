@@ -432,7 +432,7 @@ export async function scan(_barcode: string | null): Promise<ScanResponse> {
   const suggested = rec.card_id ? card(rec.card_id) : null;
   const text =
     item.eligibility.label !== 'eligible'
-      ? `${item.spokenName}, ${price}. Not HSA eligible, high confidence. I'll put this on your Visa credit card.`
+      ? `${item.spokenName}, ${price}. Not HSA eligible. I'll put this on your Visa credit card.`
       : suggested && rec.reason_code === 'routed_to_next_card'
         ? `I see ${item.spokenName}, ${price}. HSA eligible. Want to use your ${suggested.nickname}?`
         : suggested

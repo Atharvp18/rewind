@@ -105,8 +105,10 @@ def test_the_prompt_id_is_only_attached_to_a_question():
     (True, "semantic_match", 0.6, "moderate confidence"),
 ])
 def test_confidence_matrix(medication, basis, score, phrase):
-    line = compose.eligibility_line(product(medication=medication), elig("eligible", basis, score))
-    assert line == (f"HSA eligible, {phrase}." if phrase else "HSA eligible.")
+    e = elig("eligible", basis, score)
+    assert compose.confidence_phrase(product(medication=medication), e) == phrase      # still computed
+    # ...but never spoken or captioned (Nak, 2026-10-24): the line is just the result
+    assert compose.eligibility_line(product(medication=medication), e) == "HSA eligible."
 
 
 def test_could_not_confirm_has_no_confidence_phrase():
