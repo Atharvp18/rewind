@@ -319,6 +319,14 @@ def checkout_result(
                     "Please remember to take your items with you. Your receipt is saved in History.")
 
 
+def declined_redirect(from_card_id: str, to_card_ids: Iterable[str], cards: Iterable[Card | dict[str, Any]],
+                      result: VoiceRequest) -> VoiceRequest:
+    """A card did not go through and its items moved on. Say it plainly, never why (no-shame rule)."""
+    by_id = _cards_by_id(cards)
+    to = _join(dict.fromkeys(f"your {card_name(c, by_id)}" for c in to_card_ids))
+    return _request(f"Your {card_name(from_card_id, by_id)} didn't go through, so I used {to} instead. {result.text}")
+
+
 def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> VoiceRequest:
     return _request(LOW_BALANCE.format(card=card_name(card_id, _cards_by_id(cards))), priority="alert")
 

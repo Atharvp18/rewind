@@ -239,14 +239,15 @@ export function ProfileSheet() {
           />
           <PanelNote>Payment</PanelNote>
           <BigButton
-            label="Decline the next payment"
-            accessibilityHint="The next checkout is declined, to show the declined screen. Nothing is charged."
+            label="Decline a card at the next checkout"
+            accessibilityHint="At the next checkout the first card is declined and its items move to the next card."
             icon="danger"
             onPress={() => {
               demoDecline();
               showView('camera');
             }}
           />
+          <PanelNote>The first card charged is declined; its items move to the next card (FSA, then HSA, then Visa).</PanelNote>
           <PanelNote>Reset</PanelNote>
           <ConfirmButton
             label="Reset everything"
