@@ -12,5 +12,17 @@ import re
 _BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 
 
+# A period after these is not the end of a sentence ("Dr. Lee").
+_ABBREVIATIONS = ("dr.", "mr.", "mrs.", "ms.", "vs.")
+
+
 def split_sentences(text: str) -> list[str]:
-    return [s.strip() for s in _BOUNDARY.split(text.strip()) if s.strip()]
+    merged: list[str] = []
+    for piece in (s.strip() for s in _BOUNDARY.split(text.strip())):
+        if not piece:
+            continue
+        if merged and merged[-1].lower().endswith(_ABBREVIATIONS) and merged[-1].split()[-1].lower() in _ABBREVIATIONS:
+            merged[-1] = f"{merged[-1]} {piece}"
+        else:
+            merged.append(piece)
+    return merged

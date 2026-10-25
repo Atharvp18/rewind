@@ -130,34 +130,45 @@ class Speaker {
   private playUrl(url: string, token: number): Promise<boolean> {
     return new Promise((resolve) => {
       let sub: { remove: () => void } | null = null;
+      let player: AudioPlayer | null = null;
       let started = false;
+      let settled = false;
+      // One player per sentence: a reused player can report the previous clip's "finished" event for
+      // the next one, which cut sentences short.
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(giveUp);
+        sub?.remove();
+        try {
+          if (this.player === player) this.player = null;
+          player?.remove();
+        } catch {
+          // already released
+        }
+        resolve(ok);
+      };
       // If the audio never starts (bad download, decoder), give up so the line is still spoken.
       const giveUp = setTimeout(() => {
         if (started) return;
-        sub?.remove();
         console.warn(`[voice] no audio started within ${START_TIMEOUT_MS / 1000}s for ${url}`);
-        resolve(false);
+        finish(false);
       }, START_TIMEOUT_MS);
       try {
-        if (!this.player) this.player = createAudioPlayer(null);
-        const player = this.player;
-        // Expo Go's native player exposes playbackRate as read-only: use the setter method.
+        player = createAudioPlayer({ uri: url });
+        this.player = player;
         player.volume = this.opts.volume;
+        // playbackRate is read-only on the native player: only setPlaybackRate() changes it.
         player.setPlaybackRate(this.opts.rate);
         sub = player.addListener('playbackStatusUpdate', (s) => {
           if (s.playing) started = true;
-          if (token !== this.token || s.didJustFinish) {
-            clearTimeout(giveUp);
-            sub?.remove();
-            resolve(true);
-          }
+          if (token !== this.token) finish(true);
+          else if (started && s.didJustFinish) finish(true);
         });
-        player.replace({ uri: url });
         player.play();
       } catch (e) {
-        clearTimeout(giveUp);
         console.warn(`[voice] player error: ${e instanceof Error ? e.message : String(e)}`);
-        resolve(false);
+        finish(false);
       }
     });
   }
