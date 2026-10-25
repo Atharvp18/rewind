@@ -126,16 +126,16 @@ def test_tts_returns_one_playable_url_per_sentence(client, fake):
     for sentence in body["sentences"]:
         assert sentence["audio_url"].startswith("http://testserver/v1/audio/")
         audio = client.get(sentence["audio_url"])
-        assert audio.status_code == 200 and audio.headers["content-type"] == "audio/wav"
-        assert audio.content.startswith(b"RIFF")          # raw PCM from Cartesia, made louder, in a WAV file
+        assert audio.status_code == 200 and audio.headers["content-type"] == "audio/mpeg"
+        assert audio.content == b"ID3-" + sentence["text"].encode()
         assert audio.headers["cache-control"] == "no-store"
 
 
-def test_tts_asks_cartesia_for_the_configured_voice_model_and_raw_pcm(client, fake):
+def test_tts_asks_cartesia_for_the_configured_voice_model_and_a_small_mp3(client, fake):
     client.post("/v1/tts", json={"text": "Hello there."})
     call = fake.tts.calls[0]
     assert call["voice"] == {"id": "v1"} and call["model_id"] == "sonic-3" and call["language"] == "en"
-    assert call["output_format"] == {"container": "raw", "encoding": "pcm_s16le", "sample_rate": 24000}
+    assert call["output_format"] == {"container": "mp3", "sample_rate": 24000, "bit_rate": 64000}
 
 
 def test_tts_model_can_be_overridden_from_the_environment(client, fake, monkeypatch):
@@ -156,7 +156,7 @@ def test_tts_answers_as_soon_as_the_first_sentence_is_ready(client, fake):
     assert time.perf_counter() - t0 < 0.3                    # did not wait for sentence two
     t1 = time.perf_counter()
     late = client.get(body["sentences"][1]["audio_url"])
-    assert late.status_code == 200 and late.content.startswith(b"RIFF")
+    assert late.status_code == 200 and late.content == b"ID3-Second."
     assert time.perf_counter() - t1 >= 0.1                   # the fetch waited for the file
 
 
@@ -164,7 +164,7 @@ def test_tts_failure_on_the_first_sentence_is_reported_at_once_and_not_retryable
     fake.tts.fail.add("One.")
     error = error_of(client.post("/v1/tts", json={"text": "One. Two."}), 503, "E_TTS_UNAVAILABLE")
     assert error["retryable"] is False                       # the app speaks with expo-speech
-    assert voice.store.tasks == {} and list(voice.store.dir.glob("*.wav")) == []
+    assert voice.store.tasks == {} and list(voice.store.dir.glob("*.mp3")) == []
 
 
 def test_tts_first_sentence_timeout_is_reported_and_cleans_up(client, fake, monkeypatch):
@@ -230,13 +230,13 @@ def test_audio_unknown_id_is_not_found(client):
 def test_audio_files_are_deleted_by_purge_and_by_clear(client, fake):
     body = client.post("/v1/tts", json={"text": "One. Two."}).json()
     client.get(body["sentences"][1]["audio_url"])            # wait until both files exist
-    assert len(list(voice.store.dir.glob("*.wav"))) == 2
+    assert len(list(voice.store.dir.glob("*.mp3"))) == 2
     voice.store.purge(ttl_s=0)
-    assert list(voice.store.dir.glob("*.wav")) == [] and voice.store.tasks == {}
+    assert list(voice.store.dir.glob("*.mp3")) == [] and voice.store.tasks == {}
     error_of(client.get(body["sentences"][0]["audio_url"]), 404, "E_NOT_FOUND")
-    (voice.store.dir / ("b" * 32 + ".wav")).write_bytes(b"left over from a previous run")
+    (voice.store.dir / ("b" * 32 + ".mp3")).write_bytes(b"left over from a previous run")
     voice.store.clear()
-    assert list(voice.store.dir.glob("*.wav")) == []
+    assert list(voice.store.dir.glob("*.mp3")) == []
 
 
 # --- /v1/stt -------------------------------------------------------------------------------------------

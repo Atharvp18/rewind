@@ -77,7 +77,7 @@ def test_demo_arithmetic_matches_the_script():
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
     assert [c["balance_cents"] for c in seed.CARDS] == [34000, 2500, 500000]
-    for bad in (0, 4, None):
+    for bad in (0, 3, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
 
@@ -245,17 +245,13 @@ def test_checkout_rejects_a_float_amount_before_calling_the_database(sb):
 
 def test_reset_demo_sends_the_seed_and_returns_cards_and_empty_cart(sb):
     sb.outcomes = [{"cards": [{"id": "card_hsa_1", "balance_cents": 500}]},   # rpc
-                   [],                                                           # FSA demo last 4 digits
-                   [{"id": "card_hsa_1", "nickname": "HSA card"}],              # cards
                    [],                                                           # cart_items
-                   [{"id": "card_hsa_1", "nickname": "HSA card"}]]               # cards, for the cart
+                   [{"id": "card_hsa_1", "nickname": "HSA card"}]]               # cards
     result = db.reset_demo(2)
     rpc = next(c for c in sb.calls if c[0] == "rpc")
     assert rpc[1][0] == "reset_demo" and rpc[1][1]["p_run"] == 2
     assert next(c for c in rpc[1][1]["p_cards"] if c["id"] == "card_hsa_1")["balance_cents"] == 500
     assert result["cart"] == {"groups": [], "total_cents": 0}
-    update = next(c for c in sb.calls if c[0] == "update")      # the FSA card's demo last 4 digits
-    assert update[1][0] == {"last4": "4417", "network": "visa"}
 
 
 def test_get_cart_groups_by_card_with_subtotals(sb):

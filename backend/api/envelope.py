@@ -40,14 +40,15 @@ ERRORS: dict[str, tuple[int, str, bool]] = {
     "E_DB_UNAVAILABLE": (503, "I can't reach your cart right now. Let me try again", True),
     "E_PROMPT_EXPIRED": (409, "I didn't catch that in time. Shall I ask again?", True),
     "E_UPSTREAM_TIMEOUT": (504, "Sorry, that took too long. Let me try again", True),
-    "E_STT_LOW_CONFIDENCE": (422, "I didn't catch that. You can say add that, skip it, or checkout.", True),
+    "E_STT_LOW_CONFIDENCE": (422, "I didn't catch that. You can say add that, skip it, or checkout", True),
     "E_STT_UNAVAILABLE": (503, "Sorry, I couldn't hear that. Let me try again", True),
     # not retryable on purpose: the app speaks the reply with expo-speech instead (spec 3.9)
     "E_TTS_UNAVAILABLE": (503, "Sorry, my voice isn't working right now", False),
     "E_BAD_REQUEST": (422, "Sorry, I couldn't understand that request", False),
     "E_NOT_FOUND": (404, "Sorry, I couldn't find that", False),
     # presenter demo only (POST /v1/demo/decline-next): the simulated card is declined once
-    "E_CARD_DECLINED": (402, "Please use another card. Nothing was charged.", False),
+    "E_CARD_DECLINED": (402, "The payment didn't go through, and nothing was charged. "
+                             "Say checkout to try again with another card", False),
     "E_NESSIE_UNAVAILABLE": (503, "Sorry, I can't check your balance right now. Let me try again", True),
     "E_INTERNAL": (500, "Sorry, something went wrong. Let me try again", True),
 }

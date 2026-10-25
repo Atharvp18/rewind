@@ -18,7 +18,6 @@ from eligibility.classify import classify_eligibility
 from lookup.chain import resolve_product
 from lookup.moss_index import MossUnavailable, find_match
 from lookup.normalize import normalize_key
-from lookup import demo_items
 from lookup.web_price import find_price_online
 from models.schemas import EligibilityResult, ProductResolution, ScanResponse, ScanResult
 from payments import cart_store
@@ -58,13 +57,10 @@ async def identify(img: bytes, hint_price_cents: int | None, extract=None):
     if hint_price_cents is not None and extract.shelf_price_cents is None:
         extract = extract.model_copy(update={"shelf_price_cents": hint_price_cents})
     product = await asyncio.to_thread(resolve_product, extract)
-    retailer = demo_items.match(product)                         # the three demo products, exactly
-    checked = True
-    if retailer is None:
-        try:
-            retailer = await find_match(product)                 # closest store listing, or None
-        except MossUnavailable:
-            checked = False                                      # the index could not answer
+    try:
+        retailer, checked = await find_match(product), True     # closest store listing, or None
+    except MossUnavailable:
+        retailer, checked = None, False                          # the IRS rules decide alone
     if retailer and retailer.get("pinned") and retailer.get("price_cents"):
         # A demo item: the same price every time, not whatever the tag, cache or web shows today.
         product.amount_cents, product.price_source, product.state = retailer["price_cents"], "seeded", "resolved"
@@ -80,18 +76,8 @@ async def identify(img: bytes, hint_price_cents: int | None, extract=None):
         if online:
             product.amount_cents, product.price_source, product.state = online, "online", "resolved"
             product.warnings = [w for w in product.warnings if w != "E_NO_PRICE"]
-    if "E_MULTIPLE_PRODUCTS" in extract.warnings:
-        product.state = "unresolved"        # more than one item in view: ask for one, never guess which
     elig = classify_eligibility(product, extract.package_eligibility_marking, retailer, checked)
     return product, elig
-
-
-def _already_in_cart(product) -> bool:
-    """Is this same product already in the cart? (A cart that cannot be read counts as no.)"""
-    try:
-        return any(i.get("product_key") == product.product_key for i in cart_store.flat_items(db.get_cart()))
-    except Exception:  # noqa: BLE001 - never fail a scan over this
-        return False
 
 
 def save_and_route(product, elig) -> ScanResponse:
@@ -102,7 +88,7 @@ def save_and_route(product, elig) -> ScanResponse:
     db.save_scan(scan_id, product.model_dump(), elig.model_dump())
 
     if product.state == "unresolved":
-        return ScanResponse(scan=scan, recommendation=None, voice=compose.product_unresolved(warnings=product.warnings))
+        return ScanResponse(scan=scan, recommendation=None, voice=compose.product_unresolved())
 
     cards = db.get_cards()
     rec = None
@@ -113,8 +99,7 @@ def save_and_route(product, elig) -> ScanResponse:
     scope = compose.scope_for(rec)
     if rec is not None and scope != "none":
         prompt_id = db.create_prompt(scope, scan_id, cart_store.prompt_payload(product, elig.label, rec))
-    voice = compose.compose_speech(product, elig, rec, cards, prompt_id=prompt_id,
-                                   already_in_cart=_already_in_cart(product))
+    voice = compose.compose_speech(product, elig, rec, cards, prompt_id=prompt_id)
     return ScanResponse(scan=scan, recommendation=rec, voice=voice)
 
 
