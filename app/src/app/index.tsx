@@ -71,6 +71,13 @@ export default function Home() {
 
   // --- store check-in: once per launch, after onboarding (position used once, never stored) ----
   const checkedIn = useRef(false);
+  // Once per launch, after onboarding: welcome the shopper back and say where to put the item.
+  const welcomed = useRef(false);
+  useEffect(() => {
+    if (!loaded || onboarding || !focused || welcomed.current) return;
+    welcomed.current = true;
+    sayLocal(Phrases.launchWelcome);
+  }, [loaded, onboarding, focused, sayLocal]);
   useEffect(() => {
     if (!loaded || onboarding || !focused || checkedIn.current) return;
     checkedIn.current = true;

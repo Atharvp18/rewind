@@ -152,8 +152,6 @@ def compose_speech(
     if rec is not None:
         parts.append(_card_line(rec, by_id))
     scope = scope_for(rec)
-    if product.price_source == "online":
-        parts.insert(1, "I found that price online, so it is an estimate.")
     # Not HSA/FSA eligible is an alert: the shopper should not put it on a health card.
     priority = "alert" if elig.label == "not_eligible" else "normal"
     return _request(" ".join(parts), scope=scope, priority=priority,

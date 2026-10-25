@@ -9,6 +9,10 @@ import { Motion, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { useAgent } from '@/state/agent';
 
+/** The caption never grows past this many lines; longer text shrinks (down to MIN_FONT_SCALE). */
+const MAX_LINES = 3;
+const MIN_FONT_SCALE = 0.62;
+
 /**
  * Frame 2: the caption pill. When Rewind speaks, a gray pill grows leftward
  * out of the profile button and shows the words (captions, WCAG 1.2.2, on by
@@ -85,7 +89,10 @@ export function TranscriptPill() {
                     kind="caption"
                     color="onPill"
                     accessible={false}
-                    numberOfLines={1}
+                    // At most 3 lines; a long reply shrinks the font to fit instead of being cut off.
+                    numberOfLines={MAX_LINES}
+                    adjustsFontSizeToFit
+                    minimumFontScale={MIN_FONT_SCALE}
                     style={styles.lineText}>
                     {lastAgent.text}
                   </AppText>

@@ -10,6 +10,8 @@ export const Phrases = {
   looking: 'Looking.',
   /** Talk button tap (business spec 6.5 A). */
   greeting: 'How may I help you today?',
+  /** Every launch after onboarding: say it and caption it. */
+  launchWelcome: 'Welcome back. Please place your item on the frame.',
   /** Return from background (1.2). */
   welcomeBack: (n: number) =>
     `Welcome back, you have ${n} ${n === 1 ? 'item' : 'items'} in your cart. Say repeat that to hear the last message.`,

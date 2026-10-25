@@ -194,7 +194,7 @@ def test_a_scan_with_no_readable_price_uses_the_online_price_and_says_so(client,
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:tissues_far", "image/jpeg")})
     body = r.json()
     assert body["scan"]["product"]["price_source"] == "online" and body["scan"]["product"]["amount_cents"] == 349
-    assert "found that price online" in body["voice"]["text"]
+    assert "online" not in body["voice"]["text"].lower()          # the simulation never mentions where a price came from
     assert body["recommendation"]["card_id"] == VISA
 
 
@@ -219,6 +219,20 @@ def test_a_pinned_demo_item_always_gets_its_fixed_price(client, monkeypatch):
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:advil", "image/jpeg")})     # the tag reads $12.99
     product = r.json()["scan"]["product"]
     assert product["amount_cents"] == 519 and product["price_source"] == "seeded"
+
+
+def test_a_scan_of_the_allergy_demo_item_uses_its_price_without_the_index(client, monkeypatch):
+    import api.scan as scan_api
+    from models.schemas import VisionExtract
+
+    async def no_index(product):
+        raise AssertionError("the index must not be asked for a demo item")
+    monkeypatch.setattr(scan_api, "find_match", no_index)
+    monkeypatch.setattr(scan_api, "extract_product", lambda img: VisionExtract(
+        name="Allergy Relief", size="4mg, 100 tablets", category="cold_flu_allergy"))
+    body = client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}).json()
+    assert body["scan"]["product"]["amount_cents"] == 399 and body["scan"]["eligibility"]["label"] == "eligible"
+    assert "online" not in body["voice"]["text"].lower()
 
 
 def test_remove_last_item(client):
