@@ -184,10 +184,12 @@ export default function Home() {
   const camBottom = domeTop - Layout.stack;
   const camH = Math.max(0, camBottom - camTop);
   const guideFitH = Math.min(guideH, camH);
+  // A card frame shrinks evenly when space is tight, so the corners stay card-shaped.
+  const guideFitW = cardMode && guideH > camH ? guideFitH * CARD_RATIO : guideW;
   const guide: Rect = {
-    x: (width - guideW) / 2,
+    x: (width - guideFitW) / 2,
     y: camTop + Math.max(0, (camH - guideFitH) / 2),
-    w: guideW,
+    w: guideFitW,
     h: guideFitH,
   };
   const MIN_FRAME = 140;

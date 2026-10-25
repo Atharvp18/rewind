@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, TextInput, View } from 'react-native';
 
 import { BigButton } from '@/components/big-button';
-import { ButtonPair } from '@/components/button-pair';
+import { ButtonPair, ButtonRow } from '@/components/button-pair';
 import type { Capture } from '@/components/camera-stage';
 import { CardArt } from '@/components/card-art';
 import { Notice } from '@/components/icon';
@@ -372,12 +372,14 @@ export function OnboardingFlow({
 
     case 'insurance':
       return (
-        <InfoPanel title="Your insurance card">
-          {step1of(2)}
-          <PanelText>Hold your insurance card flat inside the corners, about a hand length away, and keep still. The photo is taken for you, or tap the screen.</PanelText>
+        // Compact on purpose: the card corners need the space below it (the agent speaks the full instructions).
+        <InfoPanel title="Insurance card · step 2 of 4">
+          <PanelText>Hold it flat in the corners and keep still.</PanelText>
           <PanelActions>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
-          <BigButton label="Skip for now" onPress={() => setStep('payment')} />
+            <ButtonRow>
+              <BigButton label={reading ? 'Reading…' : 'Take photo'} icon="camera" variant="primary" disabled={reading} onPress={() => void takeCard()} stretch />
+              <BigButton label="Skip" accessibilityLabel="Skip for now" variant="secondary" onPress={() => setStep('payment')} stretch />
+            </ButtonRow>
           </PanelActions>
         </InfoPanel>
       );
@@ -434,19 +436,21 @@ export function OnboardingFlow({
 
     case 'payment':
       return (
-        <InfoPanel title={cardsAdded === 0 && firstCard ? 'Your HSA or FSA Visa card' : 'Your everyday Visa card'}>
-          {startAt ? null : step1of(3)}
-          <PanelText>
-            {cardsAdded === 0 && firstCard
-              ? 'Hold your HSA or FSA Visa card flat inside the corners, about a hand length away, and keep still. The photo is taken for you, or tap the screen.'
-              : 'Hold your everyday Visa card, credit or debit, flat inside the corners and keep still. The photo is taken for you, or tap the screen.'}
-          </PanelText>
+        // Compact on purpose: the card corners need the space below it (the agent speaks the full instructions).
+        <InfoPanel
+          title={`${cardsAdded === 0 && firstCard ? 'HSA or FSA Visa card' : 'Everyday Visa card'}${startAt ? '' : ' · step 3 of 4'}`}>
+          <PanelText>Hold it flat in the corners and keep still.</PanelText>
           <PanelActions>
-          <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
-          <BigButton
-            label={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"}
-            onPress={() => setStep('done')}
-          />
+            <ButtonRow>
+              <BigButton label={reading ? 'Reading…' : 'Take photo'} icon="camera" variant="primary" disabled={reading} onPress={() => void takeCard()} stretch />
+              <BigButton
+                label={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip' : 'Done'}
+                accessibilityLabel={startAt ? 'Cancel' : cardsAdded === 0 ? 'Skip for now' : "I'm done adding cards"}
+                variant="secondary"
+                onPress={() => setStep('done')}
+                stretch
+              />
+            </ButtonRow>
           </PanelActions>
         </InfoPanel>
       );
