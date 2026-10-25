@@ -47,13 +47,13 @@ export const Onboarding = {
   phoneDemo: (phone: string) =>
     `Hi, I'm Rewind. I tell you what a product is, what it costs, and which card to pay with. This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
   askInsurance:
-    'Now your insurance card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
+    "Now your insurance card. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you.",
   confirmInsurance: (insurer: string, plan: string | null, hasRx: boolean) =>
     `Your insurance is ${insurer}${plan ? `, ${plan}` : ''}.${hasRx ? ' It shows prescription benefits.' : ''} Is that right?`,
   askPayment: (first: boolean) =>
     first
-      ? 'Now your HSA or FSA Visa card. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.'
-      : 'Now your everyday Visa card, credit or debit. Hold it flat, about a hand length from the phone, then tap anywhere on the screen.',
+      ? "Now your HSA or FSA Visa card. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you."
+      : "Now your everyday Visa card, credit or debit. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you.",
   askCardType: 'Is this Visa card an HSA card, an FSA card, a credit card, or a debit card?',
   confirmCard: (label: string, last4: string | null) =>
     `I see ${label}${last4 ? ` ending in ${last4.split('').join(' ')}` : ''}. Is that right?`,

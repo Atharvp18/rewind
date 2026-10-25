@@ -367,7 +367,7 @@ export function OnboardingFlow({
       return (
         <InfoPanel title="Your insurance card">
           {step1of(2)}
-          <PanelText>Hold your insurance card flat, about a hand length from the phone. Then tap anywhere on the screen.</PanelText>
+          <PanelText>Hold your insurance card flat inside the corners, about a hand length away, and keep still. The photo is taken for you, or tap the screen.</PanelText>
           <PanelActions>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />
           <BigButton label="Skip for now" onPress={() => setStep('payment')} />
@@ -431,8 +431,8 @@ export function OnboardingFlow({
           {startAt ? null : step1of(3)}
           <PanelText>
             {cardsAdded === 0 && firstCard
-              ? 'Hold your HSA or FSA Visa card flat, about a hand length from the phone. Then tap anywhere on the screen.'
-              : 'Hold your everyday Visa card, credit or debit, flat about a hand length from the phone. Then tap anywhere on the screen.'}
+              ? 'Hold your HSA or FSA Visa card flat inside the corners, about a hand length away, and keep still. The photo is taken for you, or tap the screen.'
+              : 'Hold your everyday Visa card, credit or debit, flat inside the corners and keep still. The photo is taken for you, or tap the screen.'}
           </PanelText>
           <PanelActions>
           <BigButton label={reading ? 'Reading card…' : 'Take photo'} icon="camera" variant="primary" size="primary" disabled={reading} onPress={() => void takeCard()} />

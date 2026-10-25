@@ -133,8 +133,20 @@ export default function Home() {
     !state.lastScan &&
     !state.declined &&
     !state.receipt;
-  const { steady, moveCount, available } = useSteadiness(autoReady);
+  // Card steps (onboarding and Add a card): the same steadiness check takes the card photo once the
+  // agent has finished the instruction and the phone is held still on the card. Tap still works.
+  const cardAutoReady = cardCapture && granted && focused && state.phase === 'idle';
+  const { steady, moveCount, available } = useSteadiness(autoReady || cardAutoReady);
   const armed = useRef(true);
+  const cardArmed = useRef(true);
+  useEffect(() => {
+    cardArmed.current = true; // a new card step, or the card was moved: ready for one more photo
+  }, [moveCount, cardCapture]);
+  useEffect(() => {
+    if (!cardAutoReady || !available || !steady || !cardArmed.current) return;
+    cardArmed.current = false;
+    onboardingCapture.current?.();
+  }, [cardAutoReady, available, steady]);
   const lastScannedCode = useRef<string | null>(null);
   useEffect(() => {
     armed.current = true;
@@ -190,12 +202,18 @@ export default function Home() {
     granted && (cardMode || (state.view === 'camera' && !state.declined && !state.receipt));
 
   const frameBox = fitFrame(itemBox ?? guide);
+  // The corners lock (solid) while the phone is held still on the card, just before the photo.
+  const cardLocked = cardAutoReady && available && steady;
 
   // The status pill always states the real next step.
   const answerPending = scanShowing && state.lastScan?.scan.state !== 'unresolved' && !!state.lastScan?.recommendation;
   const hint = answerPending
     ? 'Say yes or no, or tap a button'
-    : autoReady
+    : cardAutoReady
+      ? available
+        ? 'Hold the card steady in the corners'
+        : 'Tap the screen to take the photo'
+      : autoReady
       ? available
         ? 'Hold steady on an item'
         : 'Tap the screen to scan'
@@ -221,7 +239,7 @@ export default function Home() {
       {/* The dome sits behind everything that follows, so it never draws over a pop-up. */}
       <OrbGlow />
 
-      {showFrame && frameBox ? <FocusFrame box={frameBox} tone={itemBox ? tone : 'guide'} /> : null}
+      {showFrame && frameBox ? <FocusFrame box={frameBox} tone={itemBox ? tone : cardLocked ? 'locked' : 'guide'} /> : null}
 
       <StageContext.Provider
         value={{ itemBox: cardMode ? guide : scanShowing ? itemBox : null, area, reportCard: setCard }}>
