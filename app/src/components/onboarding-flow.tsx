@@ -1,3 +1,4 @@
+import { File as FsFile } from 'expo-file-system';
 import { requestRecordingPermissionsAsync, getRecordingPermissionsAsync } from 'expo-audio';
 import type { PermissionResponse } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
@@ -215,7 +216,13 @@ export function OnboardingFlow({
       if (!shot) throw new Error('no capture');
       const res = await api.scanCard(shot.uri, kind);
       if (res.state === 'unclear') {
-        console.warn('[card-scan] backend could not read the card (unclear)');
+        let size = '';
+        try {
+          size = `, photo ${shot.width}x${shot.height} ${Math.round((new FsFile(shot.uri).size ?? 0) / 1024)} KB`;
+        } catch {
+          // size is only for the log
+        }
+        console.warn(`[card-scan] backend could not read the card (${res.reason ?? 'unclear'}${size})`);
         sayLocal(res.framing_hint ?? Say.unclear);
         return;
       }

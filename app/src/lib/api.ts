@@ -328,6 +328,8 @@ export interface CardScanResult {
   /** `unclear` means try again; `framing_hint` says how ("move closer", "hold steady"). */
   state: 'read' | 'unclear';
   framing_hint: string | null;
+  /** Why a read was unclear (diagnosis only): model_refused, nothing_readable, not_a_card. */
+  reason?: string | null;
   insurance: InsuranceCard | null;
   payment: PaymentCardRead | null;
 }

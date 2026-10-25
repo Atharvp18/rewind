@@ -9,6 +9,7 @@ reply is state "unclear" with a framing hint, never an error, so the user just t
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, File, Form, UploadFile
@@ -18,19 +19,22 @@ from vision.card_reader import read_card
 from vision.payment_card_reader import read_payment_card
 
 router = APIRouter(prefix="/v1/onboarding")
+logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 READ_BUDGET_S = 15.0            # a Claude card read takes about 8 s; onboarding is not in the aisle
 FRAMING_HINT = "I couldn't read the card. Hold it flat in good light, about a hand length from the phone."
 
 
-def unclear() -> dict:
-    return {"state": "unclear", "framing_hint": FRAMING_HINT, "insurance": None, "payment": None}
+def unclear(reason: str) -> dict:
+    """`reason` is for diagnosis only (the app logs it): model_refused, nothing_readable, not_a_card."""
+    logger.info("card scan unclear: %s", reason)
+    return {"state": "unclear", "framing_hint": FRAMING_HINT, "insurance": None, "payment": None, "reason": reason}
 
 
 def insurance_reply(card) -> dict:
     if not (card.insurer or card.first_name or card.last_name):
-        return unclear()
+        return unclear("nothing_readable")
     rx = None
     if card.has_rx_section:
         # The reader keeps no BIN, PCN or group number (privacy), so only printed copays come back.
@@ -44,8 +48,10 @@ def insurance_reply(card) -> dict:
 
 
 def payment_reply(card) -> dict:
-    if not card.is_payment_card or (card.network is None and card.last4 is None):
-        return unclear()
+    if not card.is_payment_card:
+        return unclear("not_a_card")
+    if card.network is None and card.last4 is None:
+        return unclear("nothing_readable")
     # HSA / FSA printed on the card decides the type; otherwise a printed CREDIT or DEBIT means an
     # everyday card. With neither, card_type is null and the app asks the user.
     card_type = card.account_type or ("general" if card.funding else None)
@@ -64,7 +70,7 @@ async def card_scan(image: UploadFile = File(...), kind: Literal["insurance", "p
     except asyncio.TimeoutError:
         raise ApiError("E_UPSTREAM_TIMEOUT", "card read exceeded its budget") from None
     except ValueError:                       # the model refused or returned nothing usable
-        return unclear()
+        return unclear("model_refused")
     finally:
         del img                              # the photo is never kept
     return insurance_reply(card) if kind == "insurance" else payment_reply(card)
