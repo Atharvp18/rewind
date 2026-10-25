@@ -215,6 +215,7 @@ export function OnboardingFlow({
       if (!shot) throw new Error('no capture');
       const res = await api.scanCard(shot.uri, kind);
       if (res.state === 'unclear') {
+        console.warn('[card-scan] backend could not read the card (unclear)');
         sayLocal(res.framing_hint ?? Say.unclear);
         return;
       }
@@ -238,6 +239,8 @@ export function OnboardingFlow({
         sayLocal(Say.unclear);
       }
     } catch (e) {
+      // Logged so a failure on a real phone shows in the Metro terminal.
+      console.warn('[card-scan] failed:', e instanceof api.ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : e);
       haptic.error();
       sayLocal(e instanceof api.ApiError && e.speech ? e.speech : Say.unclear);
     } finally {

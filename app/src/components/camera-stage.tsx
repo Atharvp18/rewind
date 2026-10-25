@@ -45,7 +45,10 @@ export function CameraStage({
 
   useImperativeHandle(ref, () => ({
     capture: async () => {
-      if (!camera.current) return null;
+      if (!camera.current) {
+        console.warn('[capture] no camera view (permission off, or the camera is not ready yet)');
+        return null;
+      }
       const toDelete: string[] = [];
       const discard = () => {
         for (const uri of toDelete) {
@@ -76,7 +79,9 @@ export function CameraStage({
           barcode: b && Date.now() - b.at < BARCODE_FRESH_MS ? b.data : null,
           discard,
         };
-      } catch {
+      } catch (e) {
+        // Logged so a failure on a real phone shows in the Metro terminal.
+        console.warn('[capture] failed:', e instanceof Error ? e.message : e);
         discard();
         return null;
       }
