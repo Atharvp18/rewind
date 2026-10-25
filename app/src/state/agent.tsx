@@ -43,7 +43,7 @@ import {
   type VoiceRequest,
 } from '@/lib/api';
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
-import { configureAudio, speaker, useMic } from '@/lib/audio';
+import { configureAudio, onMicLevel, speaker, useMic } from '@/lib/audio';
 import { haptic } from '@/lib/haptics';
 import { Phrases, Working } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
@@ -137,6 +137,17 @@ export type Action =
 const SILENCE_MS = 8_000;
 const LOOKING_MS = 1_000;
 const LISTEN_WINDOW_MS = 6_000;
+/** Interrupt by speaking: mic level (0..1) that counts as a voice, how long it must last, and how much to keep. */
+const VOICE_LEVEL = 0.3;
+const VOICE_HOLD_MS = 250;
+const VOICE_KEEP_MS = 1_200;
+
+/** Quiet listening while Rewind talks (interrupt by speaking). One agent per app, so module state is fine. */
+const voiceMonitor: { on: boolean; loudSince: number | null; onStart: () => void } = {
+  on: false,
+  loudSince: null,
+  onStart: () => {},
+};
 
 /** Phases an interim line may finish in without ending them. */
 const BUSY: Phase[] = ['listening', 'capturing', 'awaiting_scan', 'submitting'];
@@ -771,6 +782,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   };
 
   const onSpeechDone = (voice: VoiceRequest) => {
+    if (voiceMonitor.on && speaker.quiet) {
+      // Stop the quiet listening, then carry on (the next step may open the mic again).
+      void stopMonitor().then(() => onSpeechDone(voice));
+      return;
+    }
     dispatch({ type: 'speak_done', voice });
     if (!isLocalVoice(voice)) haptic.done();
     if (pendingAlert.current && pendingAlert.current.request_id !== voice.request_id) {
@@ -827,9 +843,61 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    speaker.setListener({ onDone: (v) => onDoneRef.current(v) });
+    speaker.setListener({ onStart: () => voiceMonitor.onStart(), onDone: (v) => onDoneRef.current(v) });
     void configureAudio();
   }, []);
+
+  // --- interrupt by speaking (headphones) -------------------------------------------------
+  // While Rewind talks, the mic listens quietly. A voice held for VOICE_HOLD_MS cuts Rewind off and that
+  // same recording becomes the answer. Off by default and only with headphones (no echo cancellation).
+  const onSpeechStart = () => {
+    if (!settings.interruptBySpeaking || screenReaderOn || voiceMonitor.on) return;
+    if (stateRef.current.phase === 'listening') return;
+    void (async () => {
+      const perm = await getRecordingPermissionsAsync().catch(() => null);
+      if (!perm?.granted || !speaker.speaking || voiceMonitor.on) return;
+      voiceMonitor.on = true;
+      voiceMonitor.loudSince = null;
+      await mic.start().catch(() => {
+        voiceMonitor.on = false;
+      });
+    })();
+  };
+  useEffect(() => {
+    voiceMonitor.onStart = onSpeechStart;
+  });
+  const voiceCutIn = () => {
+    voiceMonitor.on = false;
+    voiceMonitor.loudSince = null;
+    const cut = speaker.interrupt();
+    if (cut?.priority === 'alert') pendingAlert.current = cut;
+    mic.keepRecent(VOICE_KEEP_MS); // keep the words that cut in
+    haptic.tap();
+    dispatch({ type: 'listen' });
+    if (listenTimer.current) clearTimeout(listenTimer.current);
+    listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
+  };
+  useEffect(
+    () =>
+      onMicLevel((level) => {
+        if (!voiceMonitor.on) return;
+        if (level < VOICE_LEVEL) {
+          voiceMonitor.loudSince = null;
+          return;
+        }
+        voiceMonitor.loudSince ??= Date.now();
+        if (Date.now() - voiceMonitor.loudSince >= VOICE_HOLD_MS) voiceCutIn();
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  /** Rewind finished without being cut off: stop the quiet listening (the answer mic opens as usual). */
+  const stopMonitor = async () => {
+    if (!voiceMonitor.on) return;
+    voiceMonitor.on = false;
+    const rec = await mic.stop();
+    rec?.discard();
+  };
 
   const bargeIn = () => {
     const cut = speaker.interrupt();
@@ -845,6 +913,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (speaker.speaking) {
+      if (voiceMonitor.on) {
+        voiceCutIn(); // the mic is already open: use it
+        return;
+      }
       bargeIn();
       void startListening(true);
       return;
@@ -1083,6 +1155,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const restart = useCallback(
     async (run: 1 | 2 = 1) => {
       speaker.interrupt();
+      void stopMonitor();
       clearSilence();
       if (promptTimer.current) clearTimeout(promptTimer.current);
       if (listenTimer.current) clearTimeout(listenTimer.current);

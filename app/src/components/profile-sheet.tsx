@@ -172,6 +172,11 @@ export function ProfileSheet() {
           <Toggle label="Captions" value={settings.captions} onChange={(captions) => update({ captions })} />
           <Toggle label="Reduce motion" value={settings.reduceMotion} onChange={(reduceMotion) => update({ reduceMotion })} />
           <Toggle label="Vibration" value={settings.haptics} onChange={(haptics) => update({ haptics })} />
+          <Toggle
+            label="Interrupt by speaking (use headphones)"
+            value={settings.interruptBySpeaking}
+            onChange={(interruptBySpeaking) => update({ interruptBySpeaking })}
+          />
         </Section>
 
         <Section title="Demo (presenter)">
