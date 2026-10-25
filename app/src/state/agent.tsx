@@ -98,6 +98,8 @@ export interface AgentState {
   preview: CheckoutPreview | null;
   receipt: CheckoutResult | null;
   micDenied: boolean;
+  /** The camera light: on after a scan that was too dark, until the app restarts or the shopper turns it off. */
+  torch: boolean;
 }
 
 export type Action =
@@ -161,6 +163,7 @@ export const initial: AgentState = {
   preview: null,
   receipt: null,
   micDenied: false,
+  torch: false,
 };
 
 export function reducer(s: AgentState, a: Action): AgentState {
@@ -172,7 +175,15 @@ export function reducer(s: AgentState, a: Action): AgentState {
     case 'scan_sent':
       return { ...s, phase: 'awaiting_scan' };
     case 'scan_received':
-      return { ...s, phase: 'speaking_result', lastScan: a.res, lastPhoto: a.photo, view: 'camera' };
+      return {
+        ...s,
+        phase: 'speaking_result',
+        lastScan: a.res,
+        lastPhoto: a.photo,
+        view: 'camera',
+        // Too dark to read: turn the light on for the next try (the spoken line says so).
+        torch: s.torch || a.res.scan.warnings.includes('E_TOO_DARK'),
+      };
     case 'error':
       return { ...s, phase: 'speaking_error' };
     case 'submit':
@@ -357,6 +368,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   };
 
   const sayRef = useRef<(v: VoiceRequest) => void>(() => {});
+  /** A scan answer that arrived while the app was in the background: spoken after "welcome back". */
+  const heldVoice = useRef<VoiceRequest | null>(null);
 
   const say = useCallback(
     (voice: VoiceRequest, remember = true, interim = false) => {
@@ -490,11 +503,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (next === 'background') {
         wasBackground = true;
         speaker.interrupt();
-      } else if (next === 'active' && wasBackground) {
+      } else if (next === 'active') {
+        const held = heldVoice.current;
+        heldVoice.current = null;
+        // After a demo restart the shopper is new: no "welcome back".
+        if (wasBackground && !fresh.current) {
+          const n = stateRef.current.cart.groups.reduce((k, g) => k + g.items.length, 0);
+          say(localVoice(Phrases.welcomeBack(n)), false);
+        }
         wasBackground = false;
-        if (fresh.current) return; // after a demo restart the shopper is new: no "welcome back"
-        const n = stateRef.current.cart.groups.reduce((k, g) => k + g.items.length, 0);
-        say(localVoice(Phrases.welcomeBack(n)), false);
+        // The scan finished while away (a call, the home screen): say its answer now, after the welcome.
+        if (held) say(held);
       }
     });
     return () => sub.remove();
@@ -838,7 +857,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         looking.clear();
         speaker.interrupt(); // cut "Looking." short if it is still playing
         dispatch({ type: 'scan_received', res, photo });
-        say(res.voice);
+        // A call or the home screen came up mid-scan: keep the answer for when the shopper is back.
+        if (AppState.currentState !== 'active') heldVoice.current = res.voice;
+        else say(res.voice);
       } catch (e) {
         looking.clear();
         handleError(e);
@@ -999,6 +1020,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (promptTimer.current) clearTimeout(promptTimer.current);
       if (listenTimer.current) clearTimeout(listenTimer.current);
       repeatOffer.current = false;
+      heldVoice.current = null;
       fresh.current = true; // a new shopper is never "back"
       let reset: { cards: Card[]; cart: Cart } = { cards: stateRef.current.cards, cart: { groups: [], total_cents: 0 } };
       try {
