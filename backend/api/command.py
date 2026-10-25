@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from api import memory
 from api.envelope import ApiError
 from data import db
-from payments import cart_store, checkout, nessie, store_checkin
+from payments import cart_store, checkout, insurers, nessie, store_checkin
 from speech import compose
 
 router = APIRouter(prefix="/v1")
@@ -142,7 +142,8 @@ def answer_scoped(info: dict, text: str) -> dict:
     yes = has(YES, text) and not has(NO, text)
     if scope == "confirm_strength":
         if yes:
-            return reply("strength_confirmed", compose.strength_confirmed(payload["name"], payload.get("strength")))
+            return reply("strength_confirmed", compose.strength_confirmed(payload["name"], payload.get("strength"),
+                                                          insurers.pharmacist_tip(payload.get("insurer"))))
         return reply("skip", compose.strength_retry())
     if scope == "confirm_checkin":
         store = store_checkin.by_id(payload.get("store_id"))

@@ -308,9 +308,13 @@ def strength_question(name: str, strength: str | None, prompt_id: str | None = N
     return _request(f"This label says {what}. Is that right?", scope="confirm_strength", prompt_id=prompt_id)
 
 
-def strength_confirmed(name: str, strength: str | None) -> VoiceRequest:
-    """No copay figure: the app has no plan data here, and the pharmacy's claim decides the amount."""
+def strength_confirmed(name: str, strength: str | None, insurer_tip: str | None = None) -> VoiceRequest:
+    """No copay figure for the member: the pharmacy's claim decides. `insurer_tip` is the mock plan
+    sentence from payments/insurers.py (typical generic copay, ask the pharmacist to confirm)."""
     what = f"{name}, {strength}" if strength else name
+    if insurer_tip:
+        return _request(f"Thank you. {what}. {insurer_tip} Copays are usually HSA eligible. "
+                        "Please also ask the pharmacist about dosage or safety.")
     return _request(f"Thank you. {what}. The pharmacist will tell you your share, and copays are usually "
                     "HSA eligible. Please ask the pharmacist about dosage or safety.")
 

@@ -198,6 +198,17 @@ def test_a_scan_with_no_readable_price_uses_the_online_price_and_says_so(client,
     assert body["recommendation"]["card_id"] == VISA
 
 
+def test_a_prescription_scan_with_an_insurer_gets_the_pharmacist_tip(client, monkeypatch):
+    monkeypatch.setenv("REWIND_STUB_IMAGE", "rx_label")
+    import vision.claude_vision as cv
+    monkeypatch.setattr(cv, "STUB_MODE", True)
+    r = client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}, data={"insurer": "Aetna Choice"})
+    voice = r.json()["voice"]
+    done = say(client, "yes", voice["prompt_id"]).json()
+    assert done["action"] == "strength_confirmed"
+    assert "Your Aetna plan may cover part of this" in done["voice"]["text"]
+
+
 def test_remove_last_item(client):
     add(client, advil(client))
     add(client, bandages(client))

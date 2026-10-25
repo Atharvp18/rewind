@@ -32,7 +32,7 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PRICE_MAX_CENTS = 50_000_000       # $500,000.00: anything above is a typo, not a shelf price
 
 
-def save_prescription(extract) -> ScanResponse:
+def save_prescription(extract, insurer: str | None = None) -> ScanResponse:
     """A pharmacy label (tech spec 2.3): read the drug name and strength back and wait for a yes.
 
     Nothing is priced, routed, or added from a label. The patient's name, Rx number, prescriber and
@@ -45,7 +45,7 @@ def save_prescription(extract) -> ScanResponse:
                                 is_prescription_only=True, state="partial", warnings=list(extract.warnings))
     elig = EligibilityResult(label="could_not_confirm", basis="no_match")
     db.save_scan(scan_id, product.model_dump(), elig.model_dump())
-    prompt_id = db.create_prompt("confirm_strength", scan_id, {"name": name, "strength": extract.size})
+    prompt_id = db.create_prompt("confirm_strength", scan_id, {"name": name, "strength": extract.size, "insurer": insurer})
     scan = ScanResult(scan_id=scan_id, timestamp=datetime.now(timezone.utc).isoformat(), state=product.state,
                       product=product, eligibility=elig, warnings=list(product.warnings))
     return ScanResponse(scan=scan, recommendation=None, voice=compose.strength_question(name, extract.size, prompt_id))
@@ -99,10 +99,10 @@ def save_and_route(product, elig) -> ScanResponse:
     return ScanResponse(scan=scan, recommendation=rec, voice=voice)
 
 
-async def run_scan(img: bytes, hint_price_cents: int | None) -> ScanResponse:
+async def run_scan(img: bytes, hint_price_cents: int | None, insurer: str | None = None) -> ScanResponse:
     extract = await asyncio.to_thread(extract_product, img)
     if extract.image_kind == "pharmacy_label":
-        return await asyncio.to_thread(save_prescription, extract)
+        return await asyncio.to_thread(save_prescription, extract, insurer)
     product, elig = await identify(img, hint_price_cents, extract)
     return await asyncio.to_thread(save_and_route, product, elig)
 
@@ -112,6 +112,7 @@ async def scan(
     image: UploadFile = File(...),
     barcode: str | None = Form(None),       # accepted for the app's contract (spec 0.6) but unused: no barcodes
     hint_price_cents: int | None = Form(None),
+    insurer: str | None = Form(None),       # the insurer on the shopper's card, for the prescription copay tip
 ) -> ScanResponse:
     img = await image.read(MAX_IMAGE_BYTES + 1)
     if not img or len(img) > MAX_IMAGE_BYTES:
@@ -119,7 +120,7 @@ async def scan(
     if hint_price_cents is not None and not 0 < hint_price_cents <= PRICE_MAX_CENTS:
         raise ApiError("E_BAD_REQUEST", "hint_price_cents out of range")
     try:
-        response = await asyncio.wait_for(run_scan(img, hint_price_cents), SCAN_BUDGET_S)
+        response = await asyncio.wait_for(run_scan(img, hint_price_cents, (insurer or "").strip()[:80] or None), SCAN_BUDGET_S)
     except asyncio.TimeoutError:
         raise ApiError("E_UPSTREAM_TIMEOUT", "scan exceeded its budget") from None
     memory.remember(response.voice)

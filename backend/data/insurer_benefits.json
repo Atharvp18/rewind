@@ -1,0 +1,30 @@
+{
+  "note": "Mock prescription-benefit summaries from public insurer pages, scraped with Apify (prefetch/insurer_benefits.py). Typical example copays for a 30-day retail supply, NOT a member's real plan: the pharmacy's claim decides the amount.",
+  "collected_at": "2026-10-24",
+  "insurers": [
+    {"id": "unitedhealthcare", "name": "UnitedHealthcare", "match": ["united", "uhc", "optum"],
+     "pharmacy_manager": "OptumRx", "mail_order_copay_cents": 0,
+     "tiers": [
+       {"tier": 1, "label": "preferred generic", "copay_cents": 500},
+       {"tier": 2, "label": "generic", "copay_cents": 1000},
+       {"tier": 3, "label": "preferred brand", "coinsurance_percent": 15},
+       {"tier": 4, "label": "non-preferred", "coinsurance_percent": 30}],
+     "source_url": "https://www.uhc.com/medicare/health-plans/details.html/92104/073/S5921413000/2026"},
+    {"id": "aetna", "name": "Aetna", "match": ["aetna", "cvs"],
+     "pharmacy_manager": "CVS Caremark", "mail_order_copay_cents": 2000,
+     "tiers": [
+       {"tier": 1, "label": "generic", "copay_cents": 1000},
+       {"tier": 2, "label": "preferred brand", "copay_cents": 3500},
+       {"tier": 3, "label": "non-preferred brand", "copay_cents": 5000},
+       {"tier": 4, "label": "specialty", "copay_cents": 7500}],
+     "source_url": "https://benefits.truist.com/benefits/pharmacy"},
+    {"id": "cigna", "name": "Cigna", "match": ["cigna", "express scripts", "evernorth"],
+     "pharmacy_manager": "Express Scripts", "mail_order_copay_cents": null,
+     "tiers": [
+       {"tier": 1, "label": "generic", "copay_cents": 1000},
+       {"tier": 2, "label": "preferred brand", "copay_cents": 4500},
+       {"tier": 3, "label": "non-preferred brand", "copay_cents": 7500},
+       {"tier": 4, "label": "specialty", "copay_cents": 10000}],
+     "source_url": "https://hr.miami.edu/benefits-and-wellness/health-care/prescription-drugs/index.html"}
+  ]
+}

@@ -461,12 +461,14 @@ export function scan(
   imageUri: string,
   barcode?: string | null,
   hintPriceCents?: number | null,
+  insurer?: string | null,
 ): Promise<ScanResponse> {
   if (isMock()) return mock.scan(barcode ?? null);
   const form = new FormData();
   form.append('image', filePart(imageUri));
   if (barcode) form.append('barcode', barcode);
   if (hintPriceCents != null) form.append('hint_price_cents', String(hintPriceCents));
+  if (insurer) form.append('insurer', insurer); // lets a prescription label get that plan's copay tip
   return request('/v1/scan', { method: 'POST', body: form }, false, SCAN_TIMEOUT_MS);
 }
 

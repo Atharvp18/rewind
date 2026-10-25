@@ -45,6 +45,7 @@ import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
 import { configureAudio, speaker, useMic } from '@/lib/audio';
 import { haptic } from '@/lib/haptics';
 import { Phrases } from '@/lib/phrases';
+import { useProfile } from '@/lib/profile';
 
 export type Phase =
   | 'idle'
@@ -304,6 +305,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   // Refs mirror state for use inside async callbacks and timers.
   const stateRef = useRef(state);
+  const insurerRef = useRef<string | null>(null);
+  const insurer = useProfile().profile.insurance?.insurer_name || null;
+  useEffect(() => {
+    insurerRef.current = insurer;
+  }, [insurer]);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -765,7 +771,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'scan_sent' });
       const looking = setTimeout(() => say(localVoice(Phrases.looking), false, true), LOOKING_MS);
       try {
-        const res = await api.scan(imageUri, barcode);
+        const res = await api.scan(imageUri, barcode, null, insurerRef.current);
         clearTimeout(looking);
         speaker.interrupt(); // cut "Looking." short if it is still playing
         dispatch({ type: 'scan_received', res, photo });
