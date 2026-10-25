@@ -30,6 +30,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agents import common  # noqa: F401  (loads backend/.env: APIFY_TOKEN, MOSS_*)
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent.parent / ".env")   # the repo-root .env, where the keys live
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -83,40 +86,60 @@ _S = "https://fsastore.com/"
 # which is why they are not used. Excedrin and Pepcid are left out on purpose: they are OTC
 # medicines the index does not list, for the "could not confirm, use your Visa" moment.
 CATALOG = {
-    _S + "tylenol-extra-strength-caplets-fever-reducer-and-pain-reliever-500-mg-100-ct/3556.html": "pain-relief",
+    "https://www.hsastore.com/tylenol-extra-strength-caplets/28870m.html?Count=24+ct": "pain-relief",   # demo item
     _S + "advil-pain-reliever-and-fever-reducer-coated-tablets-200-mg/30429m.html": "pain-relief",
     _S + "preparation-h-hemorrhoidal-cream-original-0-9-oz/42814.html": "pain-relief",
     _S + "allegra-24-hour-indoor-outdoor-allergy-relief-tablets-90-ct/31452.html": "cold-and-allergy",
     _S + "benadryl-ultra-allergy-relief-tablets-100-ct/28272.html": "cold-and-allergy",
     _S + "claritin-24-hour-allergy-medicine-non-drowsy-prescription-strength-allergy-relief-loratadine-antihistamine-tablets-100-ct/40334.html": "cold-and-allergy",
     _S + "caring-mill-24-hour-allergy-relief-cetirizine-hydrochloride-tablets-10mg/40161m.html": "cold-and-allergy",
-    _S + "tums-ultra-strength-assorted-fruit-antacid-chewable-tablets-for-heartburn-relief-72-ct/30441.html": "digestive-health",
+    _S + "tums-ultra-strength-assorted-fruit-antacid-chewable-tablets-for-heartburn-relief-72-ct/30441.html": "digestive-health",  # demo item
+    "https://wellbefore.com/products/foster-thrive-allergy-relief-4-mg-tablets-100-count": "cold-and-allergy",   # demo item
     _S + "band-aid-pro-heal-adhesive-bandages-5-day-protect-14-ct/42388.html": "first-aid",
     _S + "band-aid-flexible-fabric-adhesive-bandages-assorted-sizes/25601m.html": "first-aid",
     _S + "caring-mill-triple-antibiotic-ointment-plus-pain-relief-1-oz/41983.html": "first-aid",
+}
+# The three demo items (Tums 72 chewables, allergy relief 4 mg 100 tablets, Tylenol Extra Strength 24):
+# a typical shelf price from a web search (it wins over the scraped price, which was for another size;
+# 2026-10-24 lookups:
+# Walmart $5.48, Walmart/Wellbefore $3.99 to $4.28, Pasteur Pharmacy $5.19).
+PRICE_FALLBACK_CENTS = {
+    _S + "tums-ultra-strength-assorted-fruit-antacid-chewable-tablets-for-heartburn-relief-72-ct/30441.html": 548,
+    "https://wellbefore.com/products/foster-thrive-allergy-relief-4-mg-tablets-100-count": 399,
+    "https://www.hsastore.com/tylenol-extra-strength-caplets/28870m.html?Count=24+ct": 519,
 }
 STORE_BRAND = "FSA Store"   # fsastore.com's own label, not a product brand
 
 
 def run_apify_scrape() -> list[dict]:
     """One Apify run over the whole fixed catalog. Returns the products it could read."""
-    from apify_client import ApifyClient
-
     token = os.environ.get("APIFY_TOKEN")
     if not token:
         logger.error("APIFY_TOKEN is not set in backend/.env.")
         return []
+    items = scrape(token, {"detailsUrls": [{"url": u} for u in CATALOG], "maxProductResults": len(CATALOG),
+                           "scrapeMode": "AUTO"}, len(CATALOG))
+    logger.info("Scraped %d of %d products", len(items), len(CATALOG))
+    return items
+
+
+def scrape(token: str, run_input: dict, limit: int) -> list[dict]:
+    """One run of the e-commerce scraper (apify-client 3.x: Run object, timedelta, Decimal)."""
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from apify_client import ApifyClient
+
     client = ApifyClient(token)
     run = client.actor(os.environ.get("APIFY_ACTOR_ID") or ACTOR_ID).call(
-        run_input={"detailsUrls": [{"url": u} for u in CATALOG], "maxProductResults": len(CATALOG),
-                   "scrapeMode": "AUTO"},
-        max_total_charge_usd=1.0,    # the tool's minimum allowed cap; the run costs a few tenths of a cent
+        run_input=run_input,
+        max_total_charge_usd=Decimal("1.0"),    # the tool's minimum allowed cap; a run costs a few tenths of a cent
         memory_mbytes=1024,
-        timeout_secs=600,
+        run_timeout=timedelta(seconds=600),
         logger=None,
     )
-    items = list(client.dataset(run["defaultDatasetId"]).iterate_items(limit=len(CATALOG)))
-    logger.info("Run %s: %s, %d of %d products", run.get("id"), run.get("status"), len(items), len(CATALOG))
+    items = list(client.dataset(run.default_dataset_id).iterate_items(limit=limit))
+    logger.info("Run %s: %s, %d items", run.id, run.status, len(items))
     return items
 
 
@@ -207,6 +230,14 @@ def load_saved_rows(path: Path) -> list[dict]:
         return []
 
 
+def load_judged_rows(path: Path) -> list[dict]:
+    """Products scraped from a general store and judged by Claude (prefetch/extra_products.py)."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+
+
 def main() -> None:
     out_dir = Path(__file__).parent.parent / "data" / "eligibility_data"
     saved = out_dir / "eligibility_items.json"
@@ -229,7 +260,11 @@ def main() -> None:
         if row["price_cents"] is None and old and old.get("price_cents") is not None:
             row["price_cents"] = old["price_cents"]   # the tool sometimes omits the price; keep the last one seen
         merged[row["source_url"]] = row
+    for url, cents in PRICE_FALLBACK_CENTS.items():
+        if url in merged:
+            merged[url]["price_cents"] = cents
     rows = add_non_eligible_examples(list(merged.values()))
+    rows += load_judged_rows(out_dir / "claude_judged.json")      # prefetch/extra_products.py
     save_json(rows, out_dir / "eligibility_items.json")
 
     if not os.environ.get("MOSS_PROJECT_ID"):
