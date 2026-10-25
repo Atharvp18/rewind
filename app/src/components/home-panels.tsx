@@ -566,8 +566,8 @@ function ReceiptPanel() {
 function DeclinedPanel({ message }: { message: string }) {
   const { startCheckout, showView } = useAgent();
   return (
-    <InfoPanel title={Phrases.declinedTitle} tone="danger" onClose={() => showView('cart')}>
-      <AlertBlock level="danger" title="Declined">
+    <InfoPanel title={Phrases.declinedTitle} tone="warning" onClose={() => showView('cart')}>
+      <AlertBlock level="warning" title="Nothing was charged">
         {message}
       </AlertBlock>
       <PanelActions>

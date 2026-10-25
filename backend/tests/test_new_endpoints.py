@@ -306,14 +306,54 @@ def test_every_question_follows_the_time_to_answer_header(client, fake):
 
 # --- declined payment demo -----------------------------------------------------------------------
 
-def test_decline_demo_declines_once_and_charges_nothing(client, fake):
-    fill(client)
-    before = {k: v["balance_cents"] for k, v in fake.cards.items()}
+def test_a_card_that_does_not_go_through_is_replaced_by_the_next_card_and_completes_on_yes(client, fake):
+    fill(client)                      # Advil + Bandages on the FSA ($18.48), Kettle Corn on the Visa
+    fsa_before = fake.cards[FSA]["balance_cents"]
     client.post("/v1/demo/decline-next")
     pre = client.post("/v1/checkout/preview").json()
     r = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]})
-    assert r.status_code == 402 and r.json()["error"]["code"] == "E_CARD_DECLINED"
-    assert {k: v["balance_cents"] for k, v in fake.cards.items()} == before and fake.payments == {}
-    again = client.post("/v1/checkout/preview").json()
-    ok = client.post("/v1/checkout/confirm", json={"idempotency_key": "d2", "prompt_id": again["voice"]["prompt_id"]})
-    assert ok.status_code == 200                                 # only the next payment was declined
+    assert r.status_code == 200 and r.json()["payment_id"] is None and fake.payments == {}   # nothing charged
+    voice = r.json()["voice"]
+    # The tech spec's line, then the next card. Never "declined", "didn't go through", a reason or a balance.
+    assert voice["text"] == ("Please use another card. I can put those items on your HSA card instead. "
+                             "Your total is $23.47 before tax: $18.48 on your HSA card and $4.99 on your Visa credit. "
+                             "Ready to check out?")
+    for word in ("declin", "didn't go through", "balance", "enough", "failed"):
+        assert word not in voice["text"].lower()
+    assert voice["response_scope"] == "confirm_checkout" and voice["prompt_id"]
+    # Yes: the payment completes on the new cards; the FSA is not charged.
+    ok = client.post("/v1/checkout/confirm", json={"idempotency_key": "d2", "prompt_id": voice["prompt_id"]})
+    assert ok.status_code == 200 and ok.json()["payment_id"]
+    assert fake.cards[FSA]["balance_cents"] == fsa_before
+    (payment,) = fake.payments.values()
+    assert {s["card_id"]: s["amount_cents"] for s in payment["splits"]} == {HSA: 1848, VISA: 499}
+
+
+def test_saying_yes_to_another_card_completes_by_voice_too(client, fake):
+    fill(client)
+    client.post("/v1/demo/decline-next")
+    pre = client.post("/v1/checkout/preview").json()
+    offer = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]}).json()
+    done = say(client, "yes", offer["voice"]["prompt_id"])
+    assert done["action"] == "checkout_confirm" and len(fake.payments) == 1
+
+
+def test_a_voice_checkout_that_hits_a_failed_card_asks_again_instead_of_showing_a_receipt(client, fake):
+    fill(client)
+    client.post("/v1/demo/decline-next")
+    pre = say(client, "checkout", None)
+    offer = say(client, "yes", pre["voice"]["prompt_id"])
+    assert offer["action"] == "checkout_preview" and offer["voice"]["text"].startswith("Please use another card.")
+    assert fake.payments == {}
+    done = say(client, "ready", offer["voice"]["prompt_id"])
+    assert done["action"] == "checkout_confirm" and len(fake.payments) == 1
+
+
+def test_a_declined_card_with_nowhere_to_go_is_still_declined(client, fake):
+    add(client, scan(client, "Kettle Corn", 499, False, "grocery"))     # only the Visa is charged
+    client.post("/v1/demo/decline-next")
+    pre = client.post("/v1/checkout/preview").json()
+    r = client.post("/v1/checkout/confirm", json={"idempotency_key": "d", "prompt_id": pre["voice"]["prompt_id"]})
+    assert r.status_code == 402 and r.json()["error"]["code"] == "E_CARD_DECLINED" and fake.payments == {}
+
+

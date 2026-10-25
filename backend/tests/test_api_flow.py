@@ -108,7 +108,7 @@ def test_an_unidentifiable_product_is_unresolved(client):
     r = client.post("/v1/scan", files={"image": ("f.jpg", b"j", "image/jpeg")})
     body = r.json()
     assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
-    assert "tell me what it is" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
+    assert "hold the item steady" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
 
 
 def test_an_empty_image_is_rejected(client):
@@ -129,8 +129,16 @@ def test_a_product_not_in_our_data_is_treated_as_not_eligible_and_goes_to_the_vi
     rec = body["recommendation"]
     assert body["scan"]["eligibility"]["label"] == "not_eligible"
     assert rec["decision"] == "route_to_general" and rec["card_id"] == VISA
-    assert body["voice"]["priority"] == "alert" and "Visa" in body["voice"]["text"]
-    assert "not eligible" in body["voice"]["text"]
+    text = body["voice"]["text"]
+    # Just the name, the price and the card: nothing about eligibility or a list.
+    assert text == "Yoga Mat, $25.00. Use your Visa credit. Add it to your cart?"
+    assert body["voice"]["priority"] == "normal"
+
+
+def test_a_known_ineligible_item_is_still_flagged(client):
+    body = kettle(client)
+    text = body["voice"]["text"]
+    assert "Not HSA eligible" in text and "not an HSA or FSA card" in text and body["voice"]["priority"] == "alert"
 
 
 # --- adding to the cart ------------------------------------------------------------------------------
@@ -194,7 +202,7 @@ def test_a_scan_with_no_readable_price_uses_the_online_price_and_says_so(client,
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:tissues_far", "image/jpeg")})
     body = r.json()
     assert body["scan"]["product"]["price_source"] == "online" and body["scan"]["product"]["amount_cents"] == 349
-    assert "found that price online" in body["voice"]["text"]
+    assert "online" not in body["voice"]["text"].lower()          # the simulation never mentions where a price came from
     assert body["recommendation"]["card_id"] == VISA
 
 
@@ -219,6 +227,56 @@ def test_a_pinned_demo_item_always_gets_its_fixed_price(client, monkeypatch):
     r = client.post("/v1/scan", files={"image": ("a.jpg", b"stub:advil", "image/jpeg")})     # the tag reads $12.99
     product = r.json()["scan"]["product"]
     assert product["amount_cents"] == 519 and product["price_source"] == "seeded"
+
+
+def test_a_scan_of_the_allergy_demo_item_uses_its_price_without_the_index(client, monkeypatch):
+    import api.scan as scan_api
+    from models.schemas import VisionExtract
+
+    async def no_index(product):
+        raise AssertionError("the index must not be asked for a demo item")
+    monkeypatch.setattr(scan_api, "find_match", no_index)
+    monkeypatch.setattr(scan_api, "extract_product", lambda img: VisionExtract(
+        name="Allergy Relief", size="4mg, 100 tablets", category="cold_flu_allergy"))
+    body = client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}).json()
+    assert body["scan"]["product"]["amount_cents"] == 399 and body["scan"]["eligibility"]["label"] == "eligible"
+    assert "online" not in body["voice"]["text"].lower()
+
+
+def _scan_with(client, monkeypatch, **fields):
+    import api.scan as scan_api
+    from models.schemas import VisionExtract
+    monkeypatch.setattr(scan_api, "extract_product", lambda img: VisionExtract(**fields))
+    return client.post("/v1/scan", files={"image": ("a.jpg", b"x", "image/jpeg")}).json()
+
+
+def test_more_than_one_item_in_the_frame_asks_for_one(client, monkeypatch):
+    body = _scan_with(client, monkeypatch, name="Advil", category="pain_relief", shelf_price_cents=1299,
+                      warnings=["E_MULTIPLE_PRODUCTS"])
+    assert body["scan"]["state"] == "unresolved" and body["recommendation"] is None
+    assert "more than one item" in body["voice"]["text"] and body["voice"]["prompt_id"] is None
+
+
+def test_an_unclear_photo_says_what_to_change(client, monkeypatch):
+    for warning, phrase in (("E_TOO_DARK", "too dark"), ("E_GLARE", "glare"), ("E_BLURRY", "blurry")):
+        body = _scan_with(client, monkeypatch, name=None, category="other", warnings=["E_VISION_UNCLEAR", warning])
+        assert body["scan"]["state"] == "unresolved" and phrase in body["voice"]["text"]
+        assert warning in body["scan"]["warnings"]          # the app turns on the light for E_TOO_DARK
+
+
+def test_a_tag_that_may_belong_to_the_next_item_is_not_used_for_the_price(client, monkeypatch):
+    body = _scan_with(client, monkeypatch, name="Tylenol Extra Strength Caplets", category="pain_relief",
+                      shelf_price_cents=99, warnings=["E_VISION_UNCLEAR", "E_TAG_NEIGHBOUR"])
+    # the demo item's own price (519), never the neighbour's tag (99)
+    assert body["scan"]["product"]["amount_cents"] == 519
+    assert "may belong to another item" in body["voice"]["text"]
+
+
+def test_scanning_an_item_already_in_the_cart_offers_another(client):
+    add(client, advil(client))
+    again = advil(client)
+    text = again["voice"]["text"]
+    assert "You already have one in your cart" in text and text.endswith("Add another one?")
 
 
 def test_remove_last_item(client):
@@ -390,8 +448,18 @@ def test_demo_reset_restores_the_seed_state(client, fake):
     r = client.post("/v1/demo/reset", json={"run": 2})
     assert r.status_code == 200 and r.json()["cart"]["groups"] == []
     assert {c["id"]: c["balance_cents"] for c in r.json()["cards"]}[FSA] == 1500
-    assert client.post("/v1/demo/reset", json={"run": 3}).status_code == 422
+    assert client.post("/v1/demo/reset", json={"run": 4}).status_code == 422
     assert memory.last() is None
+
+
+def test_two_account_setup_has_no_fsa_and_moves_an_item_the_hsa_cannot_cover_to_the_visa(client, fake):
+    cards = client.post("/v1/demo/reset", json={"run": 3}).json()["cards"]
+    assert {c["type"] for c in cards} == {"hsa", "general"}
+    assert next(c for c in cards if c["type"] == "hsa")["balance_cents"] == 500
+    body = scan(client, "Tums Ultra Strength Chewable Tablets", None, upc=None, medication=True, category="digestive_health")
+    rec = body["recommendation"]                      # $5.48 > $5.00 on the HSA
+    assert rec["card_id"] == VISA and rec["reason_code"] == "routed_to_next_card"
+    assert "balance" not in body["voice"]["text"].lower()
 
 
 # --- /v1/command ---------------------------------------------------------------------------------------

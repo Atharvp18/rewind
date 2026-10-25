@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
@@ -14,7 +15,8 @@ import { ANSWER_SECONDS, TEXT_SCALES, useA11y, type SpeechRate, type ThemeChoice
 import type { Card } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 import { initials, useProfile } from '@/lib/profile';
-import { useStage } from '@/lib/stage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDomeHeight } from '@/components/voice-orb';
 import { useAgent } from '@/state/agent';
 
 const TYPE_LABEL: Record<Card['type'], string> = {
@@ -33,10 +35,18 @@ export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
   const { profile } = useProfile();
   const { state, restart, sayLocal, showView, startCheckin, leaveStore, demoDecline } = useAgent();
-  const { area } = useStage();
   const cue = useScrollCue();
-
-  const width = Math.min(area.w - Layout.margin * 2, MaxContentWidth);
+  const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const dome = useDomeHeight();
+  // A full page like the purchase history (status bar down to the dome), so nothing is cramped.
+  const [geo] = useState(() => {
+    const t = insets.top + Spacing.sm;
+    return { top: t, pageH: Math.max(0, screenH - dome - t - Spacing.sm) };
+  });
+  const width = Math.min(screenW - Layout.margin * 2, MaxContentWidth);
+  // Three short tabs instead of one long scroll.
+  const [tab, setTab] = useState<'you' | 'settings' | 'demo'>('you');
   const ins = profile.insurance;
   const health = state.cards.filter((c) => c.type !== 'general');
   const everyday = state.cards.filter((c) => c.type === 'general');
@@ -49,10 +59,10 @@ export function ProfileSheet() {
         styles.sheet,
         Elevation.floating,
         {
-          top: area.y,
-          left: area.x + (area.w - width) / 2,
+          top: geo.top,
+          left: (screenW - width) / 2,
           width,
-          height: area.h,
+          height: geo.pageH,
           backgroundColor: palette.bg,
           borderColor: palette.border,
           borderWidth: palette.controlBorderWidth,
@@ -70,7 +80,7 @@ export function ProfileSheet() {
           )}
         </View>
         <View style={styles.flex}>
-          <AppText kind="heading" accessibilityRole="header" numberOfLines={1}>
+          <AppText kind="heading" accessibilityRole="header">
             {`${profile.firstName} ${profile.lastName}`.trim() || 'Your profile'}
           </AppText>
           {profile.phoneVerified && profile.phone ? (
@@ -85,8 +95,23 @@ export function ProfileSheet() {
         <CloseButton label="Close profile" onPress={() => showView('camera')} />
       </View>
 
+      {/* The tabs stay put while the page scrolls, so switching is always one tap away. */}
+      <View style={[styles.tabs, { borderBottomColor: palette.surfaceAlt }]}>
+          <Choice<'you' | 'settings' | 'demo'>
+            label="Profile section"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'you', label: 'You' },
+              { value: 'settings', label: 'Settings' },
+              { value: 'demo', label: 'Demo' },
+            ]}
+          />
+      </View>
       <View style={styles.scrollWrap}>
       <ScrollView contentContainerStyle={styles.scroll} {...cue.scrollProps}>
+        {tab === 'you' ? (
+        <>
         <Section title="Insurance">
           {ins ? (
             <View style={styles.block} accessible>
@@ -116,6 +141,9 @@ export function ProfileSheet() {
           <BigButton label="Add a card" icon="add" onPress={() => showView('add_card')} />
         </Section>
 
+        </>
+        ) : null}
+        {tab === 'settings' ? (
         <Section title="Accessibility">
           <SettingRow label="Colors">
             <Stepper<ThemeChoice>
@@ -172,11 +200,20 @@ export function ProfileSheet() {
           <Toggle label="Captions" value={settings.captions} onChange={(captions) => update({ captions })} />
           <Toggle label="Reduce motion" value={settings.reduceMotion} onChange={(reduceMotion) => update({ reduceMotion })} />
           <Toggle label="Vibration" value={settings.haptics} onChange={(haptics) => update({ haptics })} />
+          <Toggle
+            label="Interrupt by speaking (use headphones)"
+            value={settings.interruptBySpeaking}
+            onChange={(interruptBySpeaking) => update({ interruptBySpeaking })}
+          />
         </Section>
 
-        <Section title="Demo (presenter)">
+        ) : null}
+        {tab === 'demo' ? (
+        <Section title="Demo scenarios">
+          <PanelNote>Store</PanelNote>
           <BigButton
-            label="Pretend I'm at Walmart Pharmacy"
+            label="Arrive at the pharmacy"
+            accessibilityHint="Checks in to Walmart Pharmacy, as if you just walked in"
             icon="pin"
             onPress={() => {
               showView('camera');
@@ -184,29 +221,45 @@ export function ProfileSheet() {
             }}
           />
           <BigButton
-            label="Pretend I left the store"
+            label="Leave the pharmacy"
+            accessibilityHint="Checks out of the store"
             icon="next"
             onPress={() => {
               leaveStore();
               showView('camera');
             }}
           />
+          <PanelNote>Accounts (clears the cart and history, keeps your setup)</PanelNote>
+          <ConfirmButton
+            label="3 accounts: FSA, HSA, and Visa"
+            note="Eligible items go to the FSA card first."
+            onConfirm={() => restart(1, true)}
+          />
+          <ConfirmButton
+            label="2 accounts: HSA and Visa"
+            note="The HSA has $5.00, so items it cannot cover move to the Visa."
+            onConfirm={() => restart(3, true)}
+          />
+          <PanelNote>Payment</PanelNote>
           <BigButton
-            label="Decline the next payment"
+            label="Decline a card at the next checkout"
+            accessibilityHint="At the next checkout the first card is declined and its items move to the next card."
             icon="danger"
             onPress={() => {
               demoDecline();
               showView('camera');
             }}
           />
-          <BigButton label="Reset · run 1 (HSA $340.00)" onPress={() => restart(1)} />
-          <BigButton label="Reset · run 2 (HSA $15.00)" onPress={() => restart(2)} />
-          <BigButton
-            label="Set up again"
+          <PanelNote>The first card charged is declined; its items move to the next card (FSA, then HSA, then Visa).</PanelNote>
+          <PanelNote>Reset</PanelNote>
+          <ConfirmButton
+            label="Reset everything"
+            note="Erases the cart, history, and setup, and starts onboarding again."
             variant="danger"
-            onPress={() => restart(1)}
+            onConfirm={() => restart(1)}
           />
         </Section>
+        ) : null}
       </ScrollView>
       {/* "More below": a soft fade and a bobbing chevron until the end is near. */}
       <ScrollCue visible={cue.more} bg={palette.bg} />
@@ -248,6 +301,61 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   flex: { flex: 1 },
   scrollWrap: { flex: 1 },
+  tabs: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1 },
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.md },
   block: { gap: Spacing.xs },
 });
+
+/**
+ * Erases everything, so it takes two taps (spec 20.9, Apple HIG for destructive actions): the first tap
+ * asks, the second within 5 seconds does it. The question is also said out loud.
+ */
+function ConfirmButton({
+  label,
+  note,
+  variant,
+  onConfirm,
+}: {
+  label: string;
+  /** What the button does, shown under it and said before the second tap. */
+  note?: string;
+  variant?: 'danger';
+  onConfirm: () => void;
+}) {
+  const { sayLocal } = useAgent();
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const what = note ?? 'This erases your cart, history, and setup.';
+  return (
+    <View style={styles.block}>
+      <BigButton
+        label={armed ? 'Tap again to confirm' : label}
+        accessibilityHint={armed ? undefined : `${what} Asks you to tap again first.`}
+        variant={armed ? 'danger' : variant}
+        onPress={() => {
+          if (armed) {
+            setArmed(false);
+            onConfirm();
+          } else {
+            setArmed(true);
+            sayLocal(`${what} Tap again to confirm.`);
+          }
+        }}
+      />
+      {note ? <PanelNote>{note}</PanelNote> : null}
+    </View>
+  );
+}
+
+/** A short muted line: a group heading or what a button does. */
+function PanelNote({ children }: { children: string }) {
+  return (
+    <AppText kind="small" color="textMuted">
+      {children}
+    </AppText>
+  );
+}

@@ -204,7 +204,8 @@ export interface CheckoutPreview {
 }
 
 export interface CheckoutResult {
-  payment_id: string;
+  /** null when nothing was charged: the body is then a new checkout question (CheckoutPreview's shape). */
+  payment_id: string | null;
   groups: CartGroup[];
   new_balances: { card_id: string; balance_cents: number }[];
   /** PROPOSED: the invoice for this payment (also listed by GET /v1/payments). */
@@ -638,7 +639,10 @@ export function linkCard(body: LinkCardRequest): Promise<Card> {
   return request('/v1/cards', json(body));
 }
 
-export function resetDemo(run: 1 | 2): Promise<{ cards: Card[]; cart: Cart }> {
+/** 1: three accounts (FSA used first). 2: low health balances (declined run). 3: two accounts, HSA and Visa. */
+export type DemoRun = 1 | 2 | 3;
+
+export function resetDemo(run: DemoRun): Promise<{ cards: Card[]; cart: Cart }> {
   if (isMock()) return mock.resetDemo(run);
   return request('/v1/demo/reset', json({ run }));
 }

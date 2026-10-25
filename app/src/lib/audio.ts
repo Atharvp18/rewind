@@ -316,5 +316,17 @@ export function useMic() {
     };
   }, [stream]);
 
-  return { start, stop };
+  /**
+   * Keep only the last `keepMs` of what was captured (voice interrupt: the words that cut the agent off
+   * are kept, everything before them is dropped).
+   */
+  const keepRecent = useCallback((keepMs: number) => {
+    const keepBytes = Math.round((rate.current * 2 * keepMs) / 1000);
+    let total = 0;
+    let from = chunks.current.length;
+    while (from > 0 && total < keepBytes) total += chunks.current[--from].byteLength;
+    chunks.current = chunks.current.slice(from);
+  }, []);
+
+  return { start, stop, keepRecent };
 }
