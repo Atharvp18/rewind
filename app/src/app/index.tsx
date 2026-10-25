@@ -17,6 +17,7 @@ import { TranscriptPill } from '@/components/transcript-pill';
 import { OrbGlow, useDomeHeight, VoiceOrb } from '@/components/voice-orb';
 import { Layout, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
+import * as api from '@/lib/api';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
 import { useResponsive } from '@/lib/responsive';
@@ -194,12 +195,33 @@ export default function Home() {
   const idleReady = !!scanId && autoReady && idleAskedFor !== scanId;
   useEffect(() => {
     if (!idleReady || !scanId) return;
-    const t = setTimeout(() => {
-      setIdleAskedFor(scanId);
-      if (moveCountRef.current > movesAtScan.current) askAnythingElse();
-      else offerRepeat();
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      // Look at the frame: an item still there means "repeat?", an empty frame means "anything else?".
+      // If the photo or the check fails, fall back to the motion sensor (moved = the item was taken away).
+      let present: boolean | null = null;
+      try {
+        const shot = await stage.current?.capture();
+        if (shot) {
+          try {
+            present = await api.frameCheck(shot.uri);
+          } finally {
+            shot.discard();
+          }
+        }
+      } catch (e) {
+        console.warn('[idle] frame check failed, using motion:', e instanceof Error ? e.message : e);
+      }
+      if (cancelled) return; // a new scan or an answer arrived while the frame was being checked
+      setIdleAskedFor(scanId); // asked: once per scan
+      if (present === null) present = moveCountRef.current <= movesAtScan.current;
+      if (present) offerRepeat();
+      else askAnythingElse();
     }, IDLE_AFTER_SCAN_MS);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [idleReady, scanId, askAnythingElse, offerRepeat, state.phase]);
 
   // --- focus corners ----------------------------------------------------------

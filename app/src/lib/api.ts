@@ -456,6 +456,18 @@ export function getHealth(): Promise<Health> {
   return request('/v1/health');
 }
 
+/**
+ * Is an item in the camera frame right now? One photo, read in memory and not saved. Used when the
+ * shopper pauses after a scan. Offline (mock) it throws, and the caller falls back to the motion sensor.
+ */
+export async function frameCheck(imageUri: string): Promise<boolean> {
+  if (isMock()) throw new Error('frame check needs the real backend');
+  const form = new FormData();
+  form.append('image', filePart(imageUri));
+  const res = await request<{ item_in_frame: boolean }>('/v1/frame-check', { method: 'POST', body: form }, false, 8000);
+  return res.item_in_frame;
+}
+
 /** `imageUri` is a local file:// JPEG, deleted by the caller right after this resolves. */
 export function scan(
   imageUri: string,
