@@ -86,3 +86,4 @@ make test
 - Set `HISTORY_AGENT_SEED` in `backend/.env`, run `python agents/history_agent.py`, Connect -> Mailbox, and paste its
   address in the table above (same as the other agents).
 - Rehearse before the table exists: `python scripts/local_chat.py history` (sample purchases, no database).
+
