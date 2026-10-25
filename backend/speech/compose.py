@@ -328,7 +328,8 @@ def low_balance_alert(card_id: str, cards: Iterable[Card | dict[str, Any]]) -> V
 def strength_question(name: str, strength: str | None, prompt_id: str | None = None) -> VoiceRequest:
     """Read the drug name and strength back. Nothing proceeds until the user confirms."""
     what = f"{name}, {strength}" if strength else name
-    return _request(f"This label says {what}. Is that right?", scope="confirm_strength", prompt_id=prompt_id)
+    return _request(f"This label says {what}. Is this the right medicine and strength?", scope="confirm_strength",
+                    prompt_id=prompt_id)
 
 
 def strength_confirmed(name: str, strength: str | None, insurer_tip: str | None = None) -> VoiceRequest:
