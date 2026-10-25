@@ -103,6 +103,7 @@ export interface AgentState {
 
 export type Action =
   | { type: 'listen' }
+  | { type: 'listen_done' }
   | { type: 'capture' }
   | { type: 'scan_sent' }
   | { type: 'scan_received'; res: ScanResponse; photo: { width: number; height: number } }
@@ -168,6 +169,9 @@ export function reducer(s: AgentState, a: Action): AgentState {
   switch (a.type) {
     case 'listen':
       return { ...s, phase: 'listening' };
+    case 'listen_done':
+      // Heard nothing usable: back to waiting for the open question, or idle.
+      return { ...s, phase: s.livePrompt ? 'awaiting_confirm' : 'idle' };
     case 'capture':
       return { ...s, phase: 'capturing' };
     case 'scan_sent':
@@ -332,6 +336,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const checkoutKey = useRef<string | null>(null);
   const onDoneRef = useRef<(v: VoiceRequest) => void>(() => {});
   const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void } | null>(null);
+  /** The mic opened by itself after a question (not a tap): silence there stays quiet. */
+  const autoListening = useRef(false);
+  /** Unanswered automatic listens in a row; after two the agent waits for a tap (no endless loop). */
+  const autoMisses = useRef(0);
 
   // --- speech -------------------------------------------------------------
 
@@ -630,6 +638,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       return;
     }
     dispatch({ type: 'listen' });
+    if (autoListening.current) haptic.tap(); // the mic opened by itself: a tap-like buzz says "go ahead"
     if (autoStop) {
       if (listenTimer.current) clearTimeout(listenTimer.current);
       // Nothing said at all: stop quietly after the window. Once the shopper speaks, a pause of
@@ -657,15 +666,29 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     if (listenTimer.current) clearTimeout(listenTimer.current);
     listenTimer.current = null;
     if (stateRef.current.phase !== 'listening') return;
+    const auto = autoListening.current;
+    autoListening.current = false;
+    // The mic opened by itself and heard nothing: stay quiet and wait for the question's silence prompt.
+    const heardNothing = () => {
+      autoMisses.current += 1;
+      dispatch({ type: 'listen_done' });
+      if (stateRef.current.livePrompt) armSilence();
+    };
     const rec = await mic.stop();
     if (!rec) {
-      dispatch({ type: 'idle' });
+      if (auto) heardNothing();
+      else dispatch({ type: 'idle' });
       return;
     }
     dispatch({ type: 'submit' });
     try {
       const handler = listenHandler.current;
       const { transcript, confidence } = await api.stt(rec.uri, handler?.hint);
+      if (auto && !transcript.trim()) {
+        heardNothing();
+        return;
+      }
+      autoMisses.current = 0;
       dispatch({ type: 'user_said', text: transcript });
       if (handler) {
         dispatch({ type: 'idle' });
@@ -674,7 +697,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         await sendTranscript(transcript, confidence);
       }
     } catch (e) {
-      handleError(e);
+      if (auto && e instanceof ApiError && e.code === 'E_STT_LOW_CONFIDENCE') heardNothing();
+      else handleError(e);
     } finally {
       rec.discard();
     }
@@ -683,8 +707,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const onSpeechDone = (voice: VoiceRequest) => {
     dispatch({ type: 'speak_done', voice });
     const after = afterSpeech.current;
+    let ranAfter = false;
     if (after && after.id === voice.request_id) {
       afterSpeech.current = null;
+      ranAfter = true;
       after.fn();
     }
     if (!isLocalVoice(voice)) haptic.done();
@@ -697,6 +723,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
     if (listenAfterSpeech.current) {
       listenAfterSpeech.current = false;
+      void startListening(true);
+      return;
+    }
+    // A question was just asked (or an onboarding step is waiting for a spoken answer): open the mic
+    // by itself so the shopper never has to tap. After two unanswered tries, wait for a tap.
+    if ((voice.expects_response || (listenHandler.current && !ranAfter)) && autoMisses.current < 2 && !holding.current) {
+      autoListening.current = true;
       void startListening(true);
       return;
     }
@@ -737,6 +770,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const talkTap = useCallback(() => {
     haptic.tap();
+    autoMisses.current = 0;
     const s = stateRef.current;
     if (s.phase === 'listening') {
       void stopListening();
