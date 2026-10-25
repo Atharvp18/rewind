@@ -31,8 +31,8 @@ const TYPE_LABEL: Record<Card['type'], string> = {
  */
 export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
-  const { profile, reset } = useProfile();
-  const { state, resetDemo, sayLocal, showView, startCheckin, leaveStore, demoDecline, markFresh } = useAgent();
+  const { profile } = useProfile();
+  const { state, restart, sayLocal, showView, startCheckin, leaveStore, demoDecline } = useAgent();
   const { area } = useStage();
   const cue = useScrollCue();
 
@@ -199,16 +199,12 @@ export function ProfileSheet() {
               showView('camera');
             }}
           />
-          <BigButton label="Reset · run 1 (HSA $340.00)" onPress={() => resetDemo(1)} />
-          <BigButton label="Reset · run 2 (HSA $15.00)" onPress={() => resetDemo(2)} />
+          <BigButton label="Reset · run 1 (HSA $340.00)" onPress={() => restart(1)} />
+          <BigButton label="Reset · run 2 (HSA $15.00)" onPress={() => restart(2)} />
           <BigButton
             label="Set up again"
             variant="danger"
-            onPress={() => {
-              markFresh();
-              reset();
-              showView('camera');
-            }}
+            onPress={() => restart(1)}
           />
         </Section>
       </ScrollView>

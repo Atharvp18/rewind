@@ -8,7 +8,6 @@ import { BigButton } from '@/components/big-button';
 import { ButtonPair, ButtonRow } from '@/components/button-pair';
 import type { Capture } from '@/components/camera-stage';
 import { CardArt } from '@/components/card-art';
-import { Notice } from '@/components/icon';
 import { InfoPanel, PanelActions, PanelText } from '@/components/info-panel';
 import { InsuranceSummary } from '@/components/insurance-summary';
 import { Radius, Spacing, Target, Type } from '@/constants/theme';
@@ -23,7 +22,7 @@ import { useAgent } from '@/state/agent';
 type Step =
   | 'perm_camera'
   | 'perm_mic'
-  | 'phone'
+  | 'welcome'
   | 'insurance'
   | 'name_confirm'
   | 'name_type'
@@ -104,7 +103,7 @@ export function OnboardingFlow({
   const [chosen, setStep] = useState<Step | null>(null);
   // The first step depends on whether camera permission is already granted.
   const step: Step | null =
-    chosen ?? startAt ?? (camera ? (camera.granted ? 'perm_mic' : 'perm_camera') : null);
+    chosen ?? startAt ?? 'welcome';
   // During onboarding the first card asked for is the HSA/FSA card; when adding later it can be any card.
   const firstCard = !startAt;
   const [name, setName] = useState<{ first: string; last: string } | null>(null);
@@ -119,7 +118,7 @@ export function OnboardingFlow({
   // Skip the mic step when already granted.
   useEffect(() => {
     if (step !== 'perm_mic') return;
-    getRecordingPermissionsAsync().then((p) => p.granted && setStep('phone'));
+    getRecordingPermissionsAsync().then((p) => p.granted && setStep('insurance'));
   }, [step]);
 
   // Speak each step as it appears.
@@ -133,7 +132,7 @@ export function OnboardingFlow({
     const line: Partial<Record<Step, string>> = {
       perm_camera: Say.cameraWhy,
       perm_mic: Say.micWhy,
-      phone: DEMO_MODE ? Say.phoneDemo(DEMO_PHONE) : undefined,
+      welcome: Say.welcome,
       name_confirm: name ? Say.confirmCardName(`${name.first} ${name.last}`.trim()) : undefined,
       name_type: Say.typeName,
       insurance: Say.askInsurance,
@@ -158,7 +157,6 @@ export function OnboardingFlow({
       YES.test(t) ? onYes() : NO.test(t) ? onNo() : sayLocal("Please say yes or no.");
     const handlers: Partial<Record<Step, [api.SttHint | undefined, (t: string) => void]>> = {
       name_confirm: ['yes_no', yesNo(() => saveName(name), () => setStep('name_type'))],
-      phone: ['yes_no', () => setStep('insurance')],
       insurance_confirm: ['yes_no', yesNo(confirmInsurance, () => setStep('insurance'))],
       payment_type: [
         'card_type',
@@ -200,9 +198,14 @@ export function OnboardingFlow({
     if (n) saveName(n);
   }
 
-  function verifyPhone() {
-    if (DEMO_MODE) update({ phone: DEMO_PHONE, phoneVerified: true });
-    setStep('insurance');
+  // The demo phone is verified silently: nothing is said or shown about it.
+  useEffect(() => {
+    if (DEMO_MODE && !startAt && !profile.phoneVerified) update({ phone: DEMO_PHONE, phoneVerified: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function afterWelcome() {
+    setStep(camera?.granted ? 'perm_mic' : 'perm_camera');
   }
 
   async function takeCard() {
@@ -302,7 +305,7 @@ export function OnboardingFlow({
     </PanelActions>
   );
 
-  const step1of = (n: number) => <PanelText kind="small" muted>{`Step ${n} of 4`}</PanelText>;
+  const step1of = (n: number) => <PanelText kind="small" muted>{`Step ${n} of 3`}</PanelText>;
 
   switch (step) {
     case 'perm_camera':
@@ -346,26 +349,24 @@ export function OnboardingFlow({
             size="primary"
             onPress={async () => {
               await requestRecordingPermissionsAsync();
-              setStep('phone');
+              setStep('insurance');
             }}
           />
-          <BigButton label="Use buttons only" onPress={() => setStep('phone')} />
+          <BigButton label="Use buttons only" onPress={() => setStep('insurance')} />
           </PanelActions>
         </InfoPanel>
       );
 
-    case 'phone':
+    case 'welcome':
       return (
         <InfoPanel title="Welcome to Rewind">
-          {step1of(1)}
-          <Notice icon="verified" color="eligible" kind="label">
-            This phone is verified.
-          </Notice>
-          <PanelText kind="small" muted>
-            {`Prototype: verified with the demo number ${DEMO_PHONE}. No text message is sent.`}
-          </PanelText>
+          <PanelText>Here is how it works:</PanelText>
+          <PanelText>1. Hold a product steady in the frame. I read it for you.</PanelText>
+          <PanelText>2. I tell you the price and which card to use.</PanelText>
+          <PanelText>3. Say yes to add it to your cart. Say checkout to pay.</PanelText>
+          <PanelText>4. Tap the round button any time to talk to me.</PanelText>
           <PanelActions>
-          <BigButton label="Continue" icon="next" variant="primary" size="primary" onPress={verifyPhone} />
+            <BigButton label="Get started" icon="next" variant="primary" size="primary" onPress={afterWelcome} />
           </PanelActions>
         </InfoPanel>
       );
@@ -428,7 +429,7 @@ export function OnboardingFlow({
     case 'insurance_confirm':
       return (
         <InfoPanel title="Is this your insurance?">
-          {step1of(2)}
+          {step1of(1)}
           {insurance ? <InsuranceSummary card={insurance} /> : null}
           {yesNoButtons(confirmInsurance, () => setStep('insurance'))}
         </InfoPanel>
@@ -458,7 +459,7 @@ export function OnboardingFlow({
     case 'payment_type':
       return (
         <InfoPanel title="What kind of card is this?">
-          {step1of(3)}
+          {step1of(2)}
           <PanelActions>
           <View style={styles.buttons}>
             <BigButton label="HSA card" variant="primary" onPress={() => chooseType('hsa')} />
@@ -473,7 +474,7 @@ export function OnboardingFlow({
     case 'payment_confirm':
       return (
         <InfoPanel title="Is this your card?">
-          {step1of(3)}
+          {step1of(2)}
           {payment?.card_type ? (
             <View
               accessible
@@ -497,7 +498,7 @@ export function OnboardingFlow({
     case 'payment_more':
       return (
         <InfoPanel title="Card added">
-          {step1of(3)}
+          {step1of(2)}
           <PanelText>Do you want to add another card?</PanelText>
           <PanelActions>
           <View style={styles.buttons}>
@@ -511,7 +512,7 @@ export function OnboardingFlow({
     case 'done':
       return (
         <InfoPanel title={`You're all set, ${profile.firstName || name?.first || ''}`}>
-          {step1of(4)}
+          {step1of(3)}
           <PanelText>Point your phone at a product and tap anywhere to scan. Your cards and settings are under the round button at the top right.</PanelText>
           <PanelActions>
           <BigButton label="Start shopping" icon="next" variant="primary" size="primary" onPress={finish} />

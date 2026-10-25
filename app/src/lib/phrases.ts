@@ -79,8 +79,9 @@ export const Onboarding = {
   confirmCardName: (full: string) => `Your name is ${full}. Is that right?`,
   typeName: "I couldn't confirm your name from the card. Please type it, or scan the card again.",
   greet: (first: string) => `Thank you, ${first}.`,
-  phoneDemo: (phone: string) =>
-    `Hi, I'm Rewind. I tell you what a product is, what it costs, and which card to pay with. This is a prototype, so I'm verifying this phone with the demo number ${phone}. Your phone is verified.`,
+  /** The first thing a new shopper hears: who Rewind is and how to use it. */
+  welcome:
+    "Welcome to Rewind. I help you shop with your HSA, FSA, and everyday cards. Hold a product steady in front of the camera, and I'll tell you what it is, what it costs, and which card to use. Say yes to add it to your cart, and say checkout when you're ready to pay. Tap the round button any time to talk to me. Let's get you set up.",
   askInsurance:
     "Now your insurance card. Hold it flat inside the corners, about a hand length from the phone, and keep still. I'll take the photo for you.",
   confirmInsurance: (insurer: string, plan: string | null, hasRx: boolean) =>

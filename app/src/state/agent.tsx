@@ -125,6 +125,7 @@ export type Action =
   | { type: 'declined'; message: string | null }
   | { type: 'review'; id: string | null }
   | { type: 'status'; id: string; text: string }
+  | { type: 'reset_all'; cards: Card[]; cart: Cart }
   | { type: 'caption_clear' }
   | { type: 'checkin'; checkin: AgentState['checkin'] }
   | { type: 'view'; view: PanelView };
@@ -210,6 +211,9 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: a.prompt };
     case 'checkin':
       return { ...s, checkin: a.checkin };
+    case 'reset_all':
+      // Back to the very start: nothing said, scanned, asked or carried over. Only the fresh cards and cart remain.
+      return { ...initial, cards: a.cards, cart: a.cart };
     case 'status':
       // What the agent is doing right now: shown as the caption, not an answer to remember or repeat.
       return {
@@ -285,6 +289,8 @@ export interface AgentApi {
   /** `useProposedSplit: false` charges the original cards, which can be declined. */
   confirmCheckout: (useProposedSplit?: boolean) => Promise<void>;
   resetDemo: (run: 1 | 2) => Promise<void>;
+  /** Start over as a new shopper: server data, everything on screen, the transcript and the profile. */
+  restart: (run?: 1 | 2) => Promise<void>;
   showView: (view: PanelView) => void;
   /** Tap equivalent of saying something (e.g. "yes" to a strength read-back); goes through /v1/command. */
   answer: (text: string) => Promise<void>;
@@ -985,6 +991,28 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [handleError],
   );
 
+  const profileApi = useProfile();
+  const restart = useCallback(
+    async (run: 1 | 2 = 1) => {
+      speaker.interrupt();
+      clearSilence();
+      if (promptTimer.current) clearTimeout(promptTimer.current);
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      repeatOffer.current = false;
+      fresh.current = true; // a new shopper is never "back"
+      let reset: { cards: Card[]; cart: Cart } = { cards: stateRef.current.cards, cart: { groups: [], total_cents: 0 } };
+      try {
+        reset = await api.resetDemo(run);
+      } catch (e) {
+        handleError(e); // the screen still resets; the server data stays as it was
+      }
+      dispatch({ type: 'reset_all', cards: reset.cards, cart: reset.cart });
+      profileApi.reset();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [handleError, profileApi.reset],
+  );
+
   const showView = useCallback((view: PanelView) => {
     if (view === 'cart') void refreshCart();
     dispatch({ type: 'view', view });
@@ -1029,6 +1057,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       startCheckout,
       confirmCheckout,
       resetDemo,
+      restart,
       sayLocal,
       offerRepeat,
       askAnythingElse,
@@ -1037,7 +1066,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, sayLocal, offerRepeat, askAnythingElse, markFresh, showView, answer, dismiss,
+      confirmCheckout, resetDemo, restart, sayLocal, offerRepeat, askAnythingElse, markFresh, showView, answer, dismiss,
     ],
   );
 
