@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from api import cart, checkin, checkout, command, demo, health, onboarding, prompts, scan, voice
+from api import app_contract, cart, checkin, checkout, command, demo, health, onboarding, prompts, scan, voice
 from lookup import moss_index
 from api.envelope import register_error_handlers
 
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="Rewind backend", lifespan=lifespan)
     register_error_handlers(app)
+    app.middleware("http")(app_contract.middleware)       # Nak's app contract, only for X-Rewind-Client: app
     app.include_router(health.router)
     app.include_router(voice.router)
     for module in (scan, cart, checkout, command, demo, prompts, onboarding, checkin):

@@ -8,13 +8,17 @@ import { ApiError, type ErrorEnvelope } from '@/lib/api-error';
 import * as mock from '@/lib/mock-backend';
 
 // ---------------------------------------------------------------------------
-// Configuration: one line to switch laptop IP, tunnel, or hotspot.
+// Configuration: the backend address comes from EXPO_PUBLIC_API_URL (for example the Render
+// URL, or http://<laptop IP>:8000). It is an address, not a secret. Unset means the built-in mock.
 // ---------------------------------------------------------------------------
 
-export const BASE_URL = 'http://192.168.1.10:8000';
+export const BASE_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 
-/** Serve the demo script from lib/mock-backend.ts instead of the network. */
-export const USE_MOCK = true;
+/** Serve the demo script from lib/mock-backend.ts instead of the network (when no backend is set). */
+export const USE_MOCK = !BASE_URL;
+
+/** Asks the backend for the app's reply shapes (backend/api/app_contract.py). */
+const CLIENT_HEADER = { 'X-Rewind-Client': 'app' };
 
 /**
  * Test seam: lets tests (and the live-contract suite) exercise the real HTTP
@@ -375,7 +379,11 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let res: Response;
   try {
-    const headers = { ...(init.headers as Record<string, string> | undefined), [PROMPT_TTL_HEADER]: String(promptTtlSeconds) };
+    const headers = {
+      ...(init.headers as Record<string, string> | undefined),
+      ...CLIENT_HEADER,
+      [PROMPT_TTL_HEADER]: String(promptTtlSeconds),
+    };
     res = await fetch(`${baseUrl()}${path}`, { ...init, headers, signal: controller.signal });
   } catch {
     throw new ApiError({

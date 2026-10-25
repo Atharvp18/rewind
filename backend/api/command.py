@@ -97,7 +97,10 @@ def command(body: Command, background: BackgroundTasks) -> dict:
         return reply("open_accessibility", compose.open_accessibility())
     if has(CHECKOUT, text):
         result = checkout.preview()
-        return reply("checkout_preview", result.voice, total_cents=result.plan.total_cents if result.plan else 0)
+        plan = result.plan
+        return reply("checkout_preview", result.voice, total_cents=plan.total_cents if plan else 0,
+                     groups=[g.model_dump() for g in plan.groups] if plan else [],
+                     issues=[i.model_dump() for i in plan.issues] if plan else [])
     if has(CART, text):
         cart = db.get_cart()
         return reply("cart", compose.cart_contents(cart_store.flat_items(cart), db.get_cards()), cart=cart)
