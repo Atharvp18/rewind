@@ -339,9 +339,7 @@ export default function Home() {
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
             />
-          ) : state.view === 'profile' ? (
-            <ProfileSheet />
-          ) : (
+          ) : state.view === 'profile' ? null : (
             <HomePanels />
           )}
         </View>
@@ -364,6 +362,8 @@ export default function Home() {
 
       {/* Purchase history is a full page: it sits above the cart chip and profile button. */}
       {state.view === 'history' && !onboarding && !addingCard ? <HistorySheet /> : null}
+      {/* The profile is a full page too, with short tabs instead of one long scroll. */}
+      {state.view === 'profile' && !onboarding ? <ProfileSheet /> : null}
 
       <View style={styles.bottom} pointerEvents="box-none">
         <VoiceOrb hint={hint} historyEnabled={!onboarding && !addingCard} />

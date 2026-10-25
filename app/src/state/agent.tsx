@@ -10,7 +10,6 @@
  *   any → interrupted (user speaks while the agent is speaking)
  */
 
-import { formatCents } from '@/lib/money';
 import { randomUUID } from 'expo-crypto';
 import {
   createContext,
@@ -931,9 +930,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         .getPaymentHistory()
         .catch(() => [])
         .then((list) => {
-          const cents = list.reduce((sum, i) => sum + i.reimbursable_cents, 0);
           listenAfterSpeech.current = true;
-          say(localVoice(Phrases.onHistory(list.length, cents ? formatCents(cents) : null)), false);
+          say(localVoice(Screens.history(list)), false);
         });
       return;
     }
@@ -1195,10 +1193,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         void api
           .getPaymentHistory()
           .catch(() => [])
-          .then((list) => {
-            const cents = list.reduce((sum, i) => sum + i.reimbursable_cents, 0);
-            say(localVoice(Screens.history(list.length, cents ? formatCents(cents) : null)), false);
-          });
+          .then((list) => say(localVoice(Screens.history(list)), false));
       } else if (view === 'profile') {
         say(localVoice(Screens.profile(insurerRef.current, stateRef.current.cards.map((c) => c.nickname))), false);
       }

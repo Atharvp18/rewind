@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { ScrollCue, useScrollCue } from '@/components/scroll-cue';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
@@ -15,7 +15,8 @@ import { ANSWER_SECONDS, TEXT_SCALES, useA11y, type SpeechRate, type ThemeChoice
 import type { Card } from '@/lib/api';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 import { initials, useProfile } from '@/lib/profile';
-import { useStage } from '@/lib/stage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDomeHeight } from '@/components/voice-orb';
 import { useAgent } from '@/state/agent';
 
 const TYPE_LABEL: Record<Card['type'], string> = {
@@ -34,10 +35,18 @@ export function ProfileSheet() {
   const { palette, settings, update, reduceMotion } = useA11y();
   const { profile } = useProfile();
   const { state, restart, sayLocal, showView, startCheckin, leaveStore, demoDecline } = useAgent();
-  const { area } = useStage();
   const cue = useScrollCue();
-
-  const width = Math.min(area.w - Layout.margin * 2, MaxContentWidth);
+  const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const dome = useDomeHeight();
+  // A full page like the purchase history (status bar down to the dome), so nothing is cramped.
+  const [geo] = useState(() => {
+    const t = insets.top + Spacing.sm;
+    return { top: t, pageH: Math.max(0, screenH - dome - t - Spacing.sm) };
+  });
+  const width = Math.min(screenW - Layout.margin * 2, MaxContentWidth);
+  // Three short tabs instead of one long scroll.
+  const [tab, setTab] = useState<'you' | 'settings' | 'demo'>('you');
   const ins = profile.insurance;
   const health = state.cards.filter((c) => c.type !== 'general');
   const everyday = state.cards.filter((c) => c.type === 'general');
@@ -50,10 +59,10 @@ export function ProfileSheet() {
         styles.sheet,
         Elevation.floating,
         {
-          top: area.y,
-          left: area.x + (area.w - width) / 2,
+          top: geo.top,
+          left: (screenW - width) / 2,
           width,
-          height: area.h,
+          height: geo.pageH,
           backgroundColor: palette.bg,
           borderColor: palette.border,
           borderWidth: palette.controlBorderWidth,
@@ -88,6 +97,18 @@ export function ProfileSheet() {
 
       <View style={styles.scrollWrap}>
       <ScrollView contentContainerStyle={styles.scroll} {...cue.scrollProps}>
+        <Choice<'you' | 'settings' | 'demo'>
+          label="Profile section"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'you', label: 'You' },
+            { value: 'settings', label: 'Settings' },
+            { value: 'demo', label: 'Demo' },
+          ]}
+        />
+        {tab === 'you' ? (
+        <>
         <Section title="Insurance">
           {ins ? (
             <View style={styles.block} accessible>
@@ -117,6 +138,9 @@ export function ProfileSheet() {
           <BigButton label="Add a card" icon="add" onPress={() => showView('add_card')} />
         </Section>
 
+        </>
+        ) : null}
+        {tab === 'settings' ? (
         <Section title="Accessibility">
           <SettingRow label="Colors">
             <Stepper<ThemeChoice>
@@ -180,6 +204,8 @@ export function ProfileSheet() {
           />
         </Section>
 
+        ) : null}
+        {tab === 'demo' ? (
         <Section title="Demo (presenter)">
           <BigButton
             label="Pretend I'm at Walmart Pharmacy"
@@ -209,6 +235,7 @@ export function ProfileSheet() {
           <ConfirmButton label="Reset · run 2 (HSA $15.00)" onConfirm={() => restart(2)} />
           <ConfirmButton label="Set up again" variant="danger" onConfirm={() => restart(1)} />
         </Section>
+        ) : null}
       </ScrollView>
       {/* "More below": a soft fade and a bobbing chevron until the end is near. */}
       <ScrollCue visible={cue.more} bg={palette.bg} />
