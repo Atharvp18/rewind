@@ -77,7 +77,7 @@ def test_demo_arithmetic_matches_the_script():
 def test_cards_for_run_does_not_mutate_the_seed_and_rejects_bad_runs():
     seed.cards_for_run(2)
     assert [c["balance_cents"] for c in seed.CARDS] == [34000, 2500, 500000]
-    for bad in (0, 3, None):
+    for bad in (0, 4, None):
         with pytest.raises(ValueError):
             seed.cards_for_run(bad)
 

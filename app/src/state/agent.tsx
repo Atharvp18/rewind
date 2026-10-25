@@ -318,9 +318,10 @@ export interface AgentApi {
   startCheckout: () => Promise<void>;
   /** `useProposedSplit: false` charges the original cards, which can be declined. */
   confirmCheckout: (useProposedSplit?: boolean) => Promise<void>;
-  resetDemo: (run: 1 | 2) => Promise<void>;
+  resetDemo: (run: api.DemoRun) => Promise<void>;
   /** Start over as a new shopper: server data, everything on screen, the transcript and the profile. */
-  restart: (run?: 1 | 2) => Promise<void>;
+  /** `keepSetup`: switch demo scenario without sending the shopper back through onboarding. */
+  restart: (run?: api.DemoRun, keepSetup?: boolean) => Promise<void>;
   showView: (view: PanelView) => void;
   /** Tap equivalent of saying something (e.g. "yes" to a strength read-back); goes through /v1/command. */
   answer: (text: string) => Promise<void>;
@@ -1130,7 +1131,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, [say, handleError, refreshCards]);
 
   const resetDemo = useCallback(
-    async (run: 1 | 2) => {
+    async (run: api.DemoRun) => {
       try {
         const res = await api.resetDemo(run);
         fresh.current = true;
@@ -1151,7 +1152,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const profileApi = useProfile();
   const restart = useCallback(
-    async (run: 1 | 2 = 1) => {
+    async (run: api.DemoRun = 1, keepSetup = false) => {
       speaker.interrupt();
       void stopMonitor();
       clearSilence();
@@ -1170,7 +1171,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(e); // the screen still resets; the server data stays as it was
       }
       dispatch({ type: 'reset_all', cards: reset.cards, cart: reset.cart });
-      profileApi.reset();
+      if (!keepSetup) profileApi.reset();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [handleError, profileApi.reset],

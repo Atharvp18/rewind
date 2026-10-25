@@ -448,8 +448,18 @@ def test_demo_reset_restores_the_seed_state(client, fake):
     r = client.post("/v1/demo/reset", json={"run": 2})
     assert r.status_code == 200 and r.json()["cart"]["groups"] == []
     assert {c["id"]: c["balance_cents"] for c in r.json()["cards"]}[FSA] == 1500
-    assert client.post("/v1/demo/reset", json={"run": 3}).status_code == 422
+    assert client.post("/v1/demo/reset", json={"run": 4}).status_code == 422
     assert memory.last() is None
+
+
+def test_two_account_setup_has_no_fsa_and_moves_an_item_the_hsa_cannot_cover_to_the_visa(client, fake):
+    cards = client.post("/v1/demo/reset", json={"run": 3}).json()["cards"]
+    assert {c["type"] for c in cards} == {"hsa", "general"}
+    assert next(c for c in cards if c["type"] == "hsa")["balance_cents"] == 500
+    body = scan(client, "Tums Ultra Strength Chewable Tablets", None, upc=None, medication=True, category="digestive_health")
+    rec = body["recommendation"]                      # $5.48 > $5.00 on the HSA
+    assert rec["card_id"] == VISA and rec["reason_code"] == "routed_to_next_card"
+    assert "balance" not in body["voice"]["text"].lower()
 
 
 # --- /v1/command ---------------------------------------------------------------------------------------

@@ -206,9 +206,11 @@ export function ProfileSheet() {
 
         ) : null}
         {tab === 'demo' ? (
-        <Section title="Demo (presenter)">
+        <Section title="Demo scenarios">
+          <PanelNote>Store</PanelNote>
           <BigButton
-            label="Pretend I'm at Walmart Pharmacy"
+            label="Arrive at the pharmacy"
+            accessibilityHint="Checks in to Walmart Pharmacy, as if you just walked in"
             icon="pin"
             onPress={() => {
               showView('camera');
@@ -216,24 +218,42 @@ export function ProfileSheet() {
             }}
           />
           <BigButton
-            label="Pretend I left the store"
+            label="Leave the pharmacy"
+            accessibilityHint="Checks out of the store"
             icon="next"
             onPress={() => {
               leaveStore();
               showView('camera');
             }}
           />
+          <PanelNote>Accounts (clears the cart and history, keeps your setup)</PanelNote>
+          <ConfirmButton
+            label="3 accounts: FSA, HSA, and Visa"
+            note="Eligible items go to the FSA card first."
+            onConfirm={() => restart(1, true)}
+          />
+          <ConfirmButton
+            label="2 accounts: HSA and Visa"
+            note="The HSA has $5.00, so items it cannot cover move to the Visa."
+            onConfirm={() => restart(3, true)}
+          />
+          <PanelNote>Payment</PanelNote>
           <BigButton
             label="Decline the next payment"
+            accessibilityHint="The next checkout is declined, to show the declined screen. Nothing is charged."
             icon="danger"
             onPress={() => {
               demoDecline();
               showView('camera');
             }}
           />
-          <ConfirmButton label="Reset · run 1 (HSA $340.00)" onConfirm={() => restart(1)} />
-          <ConfirmButton label="Reset · run 2 (HSA $15.00)" onConfirm={() => restart(2)} />
-          <ConfirmButton label="Set up again" variant="danger" onConfirm={() => restart(1)} />
+          <PanelNote>Reset</PanelNote>
+          <ConfirmButton
+            label="Reset everything"
+            note="Erases the cart, history, and setup, and starts onboarding again."
+            variant="danger"
+            onConfirm={() => restart(1)}
+          />
         </Section>
         ) : null}
       </ScrollView>
@@ -285,7 +305,18 @@ const styles = StyleSheet.create({
  * Erases everything, so it takes two taps (spec 20.9, Apple HIG for destructive actions): the first tap
  * asks, the second within 5 seconds does it. The question is also said out loud.
  */
-function ConfirmButton({ label, variant, onConfirm }: { label: string; variant?: 'danger'; onConfirm: () => void }) {
+function ConfirmButton({
+  label,
+  note,
+  variant,
+  onConfirm,
+}: {
+  label: string;
+  /** What the button does, shown under it and said before the second tap. */
+  note?: string;
+  variant?: 'danger';
+  onConfirm: () => void;
+}) {
   const { sayLocal } = useAgent();
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -293,20 +324,33 @@ function ConfirmButton({ label, variant, onConfirm }: { label: string; variant?:
     const t = setTimeout(() => setArmed(false), 5000);
     return () => clearTimeout(t);
   }, [armed]);
+  const what = note ?? 'This erases your cart, history, and setup.';
   return (
-    <BigButton
-      label={armed ? 'Tap again to erase everything' : label}
-      accessibilityHint={armed ? undefined : 'Erases your cart, history and setup. Asks you to tap again first.'}
-      variant={armed ? 'danger' : variant}
-      onPress={() => {
-        if (armed) {
-          setArmed(false);
-          onConfirm();
-        } else {
-          setArmed(true);
-          sayLocal('This erases your cart, history and setup. Tap again to confirm.');
-        }
-      }}
-    />
+    <View style={styles.block}>
+      <BigButton
+        label={armed ? 'Tap again to confirm' : label}
+        accessibilityHint={armed ? undefined : `${what} Asks you to tap again first.`}
+        variant={armed ? 'danger' : variant}
+        onPress={() => {
+          if (armed) {
+            setArmed(false);
+            onConfirm();
+          } else {
+            setArmed(true);
+            sayLocal(`${what} Tap again to confirm.`);
+          }
+        }}
+      />
+      {note ? <PanelNote>{note}</PanelNote> : null}
+    </View>
+  );
+}
+
+/** A short muted line: a group heading or what a button does. */
+function PanelNote({ children }: { children: string }) {
+  return (
+    <AppText kind="small" color="textMuted">
+      {children}
+    </AppText>
   );
 }
