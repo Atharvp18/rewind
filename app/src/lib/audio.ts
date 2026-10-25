@@ -27,7 +27,7 @@ import type { VoiceRequest } from '@/lib/api';
 
 export async function configureAudio(): Promise<void> {
   // Default is already true; set it anyway (1.4).
-  await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+  await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false });
 }
 
 /** How long Cartesia audio gets to start before the phone's own voice takes over. */
@@ -276,7 +276,7 @@ export function useMic() {
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) return 'denied';
     chunks.current = [];
-    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, shouldRouteThroughEarpiece: false });
     await stream.start();
     return 'granted';
   }, [stream]);
@@ -284,7 +284,7 @@ export function useMic() {
   const stop = useCallback(async (): Promise<{ uri: string; discard: () => void } | null> => {
     stream.stop();
     levelListeners.forEach((fn) => fn(0));
-    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldRouteThroughEarpiece: false });
     const captured = chunks.current;
     chunks.current = [];
     if (!captured.length) return null;
