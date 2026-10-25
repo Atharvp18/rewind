@@ -1,10 +1,9 @@
 """Eligibility classifier: determines whether a product is HSA/FSA eligible.
 
-Classification chain (no barcodes: Claude Vision reads the product):
-1. IRS category rules (shelf medicines must be in an IRS-backed category)
-2. "could_not_confirm" fallback
-3. Cross-check against package marking
-4. Cross-check against the closest scraped store listing (Apify rows, searched with Moss)
+Source order (Nak, 2026-10-24: the scraped Apify data is primary):
+1. The closest scraped store listing (Apify rows, searched with Moss). Its flag is the answer.
+2. Moss answered but found nothing: not in our data, so NOT eligible (goes to the Visa).
+3. Moss unavailable: the IRS category rules decide alone (fallback only).
 """
 from __future__ import annotations
 
@@ -15,55 +14,37 @@ from eligibility.irs_rules import lookup_category
 
 logger = logging.getLogger(__name__)
 
-def _cross_check_retailer(result: EligibilityResult, retailer: dict | None,
-                          index_checked: bool) -> EligibilityResult:
-    """Second source: the closest scraped store listing, found by Moss (lookup/moss_index.py).
-
-    "Eligible" needs two sources: the IRS rules say yes AND the store index lists the product.
-    - index answered, product not listed: could_not_confirm (never guess eligible)
-    - a listing that disagrees with the rule: could_not_confirm
-    Strength and pack size are not compared: they do not change whether an OTC medicine is eligible.
-    - index could not answer (index_checked False): the rules decide alone
-    Only the IRS rules can say eligible; a listing never upgrades could_not_confirm.
-    A "not eligible" rule answer already sends the item to the Visa, so it needs no second source.
-    """
-    if result.label == "could_not_confirm":
-        return result
-    if retailer is None:
-        if index_checked and result.label == "eligible":
-            return EligibilityResult(label="could_not_confirm", basis="no_match")
-        return result
-    retailer_label = "eligible" if retailer["eligible"] else "not_eligible"
-    if retailer_label != result.label:
-        return EligibilityResult(label="could_not_confirm", basis="package_disagreement",
-                                 source="retailer_index", collected_at=retailer["collected_at"],
-                                 matched_name=retailer["name"])
-    return EligibilityResult(label=result.label, confidence=retailer["score"], basis="semantic_match",
-                             source="retailer_index", collected_at=retailer["collected_at"],
-                             matched_name=retailer["name"])
-
-
 def classify_eligibility(
     product: ProductResolution,
     package_marking: str | None,
     retailer: dict | None = None,
     index_checked: bool = False,
 ) -> EligibilityResult:
-    """Classify a product's HSA/FSA eligibility, then cross-check the retailer listing.
+    """Classify a product's HSA/FSA eligibility. The scraped listing is the primary source.
+
+    The Apify data (the Moss index of fsastore.com listings, plus Claude-judged products) decides first:
+    - a listing was found: its eligible flag is the answer, whatever the category rules say
+    - Moss answered but nothing matched: not in our data, so assume NOT eligible (Visa)
+    - Moss could not answer (index_checked False): the IRS category rules decide alone
+    The IRS rules are the fallback, never an override of a scraped listing.
 
     Args:
         product: The resolved product (name and category read by Claude Vision).
         package_marking: "eligible" or "none_seen" from vision, or None.
         retailer: the closest store listing from moss_index.find_match, or None.
-        index_checked: True when Moss answered (so "no listing" is meaningful); False when it
-            was not consulted or was unavailable.
+        index_checked: True when Moss answered (so "no listing" is meaningful).
     """
-    result = _cross_check_retailer(_classify_by_rules(product, package_marking), retailer, index_checked)
-    # Not in our data: assume it is NOT eligible, so it goes to the general Visa (team decision
-    # 2026-10-24). A listing that disagrees with the rules (package_disagreement) still asks.
-    if result.label == "could_not_confirm" and result.basis == "no_match":
+    if retailer is not None:
+        return EligibilityResult(label="eligible" if retailer["eligible"] else "not_eligible",
+                                 confidence=retailer["score"], basis="semantic_match", source="retailer_index",
+                                 collected_at=retailer["collected_at"], matched_name=retailer["name"])
+    ruled = _classify_by_rules(product, package_marking)
+    if index_checked:
+        return EligibilityResult(label="not_eligible", basis="no_match")       # not in our data
+    # Moss was not consulted: the rules decide, and "could not confirm" is treated as not eligible.
+    if ruled.label == "could_not_confirm" and ruled.basis == "no_match":
         return EligibilityResult(label="not_eligible", basis="no_match")
-    return result
+    return ruled
 
 
 def _classify_by_rules(

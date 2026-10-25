@@ -147,13 +147,13 @@ def test_matching_listing_confirms_and_names_the_source():
     assert r.confidence == 0.9 and r.matched_name == "Advil Ibuprofen 200mg"
 
 
-def test_disagreeing_listing_downgrades_to_could_not_confirm():
-    r = classify("pain_relief", listing(False))
-    assert r.label == "could_not_confirm" and r.basis == "package_disagreement"
+def test_the_listing_wins_over_the_category_rule():
+    r = classify("pain_relief", listing(False))               # the rules say eligible; the scraped listing says no
+    assert r.label == "not_eligible" and r.basis == "semantic_match" and r.source == "retailer_index"
 
 
-def test_listing_never_upgrades_a_could_not_confirm():
-    assert classify("vitamins_supplements", listing(True)).label == "not_eligible"
+def test_an_eligible_listing_makes_an_item_eligible_even_outside_the_rule_categories():
+    assert classify("vitamins_supplements", listing(True)).label == "eligible"
 
 
 def test_no_listing_but_index_not_consulted_leaves_the_rule_answer():
