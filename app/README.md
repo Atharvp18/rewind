@@ -1,4 +1,4 @@
-# Rewind app (Expo SDK 57)
+# Rewind (formerly Cartwise): app (Expo SDK 57)
 
 Voice-first, camera-first shopping assistant for older and low-vision shoppers. Point the phone at a product and hear what it is, what it costs, and which card to pay with. Product rules live in `../specs/`.
 
