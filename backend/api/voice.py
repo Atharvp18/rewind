@@ -43,7 +43,7 @@ DEFAULT_TTS_MODEL = "sonic-3"
 # Small mp3 at 24 kHz: speech quality is fine and each file downloads fast.
 OUTPUT_FORMAT = {"container": "mp3", "sample_rate": 24000, "bit_rate": 64000}
 
-FIRST_SENTENCE_TIMEOUT_S = 1.5       # spec 0.7: Sonic first sentence budget, then expo-speech
+FIRST_SENTENCE_TIMEOUT_S = 4.0       # spec 0.7 said 1.5 s; too tight on a phone connection, so the app fell back to expo-speech
 LATER_SENTENCE_TIMEOUT_S = 10.0
 STT_TIMEOUT_S = 6.0
 KEEPALIVE_S = 60                     # spec 0.7

@@ -30,6 +30,9 @@ export async function configureAudio(): Promise<void> {
   await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
 }
 
+/** How long Cartesia audio gets to start before the phone's own voice takes over. */
+const START_TIMEOUT_MS = 6000;
+
 export interface SpeakOptions {
   rate: number;
   volume: number;
@@ -103,17 +106,22 @@ class Speaker {
   private async play(v: VoiceRequest, token: number) {
     const sentences = v.sentences.length ? v.sentences : [v.text];
     let urls: string[] | null = null;
-    try {
-      const res = await api.tts(v.text, v.priority);
-      urls = res.sentences.sort((a, b) => a.index - b.index).map((s) => api.audioUrl(s.audio_url));
-    } catch {
-      urls = null; // fall back to on-device speech
+    // One retry: a slow first Cartesia sentence should not drop the whole line to the phone's voice.
+    for (let attempt = 0; attempt < 2 && !urls; attempt++) {
+      try {
+        const res = await api.tts(v.text, v.priority);
+        urls = res.sentences.sort((a, b) => a.index - b.index).map((s) => api.audioUrl(s.audio_url));
+      } catch (e) {
+        console.warn(`[voice] /v1/tts failed (attempt ${attempt + 1}): ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
+    if (!urls) console.warn('[voice] using the on-device voice for this line');
     for (let i = 0; i < sentences.length; i++) {
       if (token !== this.token) return;
       if (urls?.[i]) {
         const ok = await this.playUrl(urls[i], token);
         if (ok) continue;
+        console.warn(`[voice] Cartesia audio would not play (sentence ${i + 1}); using the on-device voice`);
       }
       await this.speakDevice(sentences[i], token);
     }
@@ -121,23 +129,33 @@ class Speaker {
 
   private playUrl(url: string, token: number): Promise<boolean> {
     return new Promise((resolve) => {
+      let sub: { remove: () => void } | null = null;
+      let started = false;
+      // If the audio never starts (bad download, decoder), give up so the line is still spoken.
+      const giveUp = setTimeout(() => {
+        if (started) return;
+        sub?.remove();
+        console.warn(`[voice] no audio started within ${START_TIMEOUT_MS / 1000}s for ${url}`);
+        resolve(false);
+      }, START_TIMEOUT_MS);
       try {
         if (!this.player) this.player = createAudioPlayer(null);
         const player = this.player;
         player.volume = this.opts.volume;
         player.playbackRate = this.opts.rate;
-        const sub = player.addListener('playbackStatusUpdate', (s) => {
-          if (token !== this.token) {
-            sub.remove();
-            resolve(true);
-          } else if (s.didJustFinish) {
-            sub.remove();
+        sub = player.addListener('playbackStatusUpdate', (s) => {
+          if (s.playing) started = true;
+          if (token !== this.token || s.didJustFinish) {
+            clearTimeout(giveUp);
+            sub?.remove();
             resolve(true);
           }
         });
         player.replace({ uri: url });
         player.play();
-      } catch {
+      } catch (e) {
+        clearTimeout(giveUp);
+        console.warn(`[voice] player error: ${e instanceof Error ? e.message : String(e)}`);
         resolve(false);
       }
     });
