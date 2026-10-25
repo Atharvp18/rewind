@@ -44,6 +44,9 @@ REMOVE = r"\b(remove|delete|undo)\b|\btake (that|it|the last \w+) off\b"
 ACCESSIBILITY = r"\baccessibility\b"
 CHECKOUT = r"\bcheck ?out\b|\bpay\b|\bi'?m done\b"
 CART = r"\bcart\b"
+# Anything with "checkout" or "ready" answers "Ready to check out?" (no strict yes/no), unless it says no.
+READY = r"\bcheck ?out\b|\bready\b|\bi'?m done\b"
+NOT_READY = r"\bnot (yet|ready)\b|\bnot done\b|\bwait\b|\bhold on\b"
 NO = r"^(no|nope|nah|skip|cancel|stop)\b|\bskip (it|that|this)\b|\bnever ?mind\b|\bdon'?t\b|\bnot now\b"
 YES = (r"^(yes|yeah|yep|yup|sure|ok|okay|please|correct|right|confirm)\b|\badd (that|it|this)\b"
        r"|\bgo ahead\b|\bdo it\b|\bthat'?s right\b")
@@ -84,6 +87,19 @@ def command(body: Command, background: BackgroundTasks) -> dict:
             info = None
         if info:
             return answer_scoped(info, text)
+
+    # While "Ready to check out?" is open, any ready / checkout phrase confirms it.
+    if body.prompt_id and has(READY, text) and not has(NO, text) and not has(NOT_READY, text):
+        try:
+            info = cart_store.consume(body.prompt_id, ("confirm_checkout",))
+        except db.PromptExpired:
+            info = None
+        if info:
+            done = checkout.charge(f"command-{body.prompt_id}", info)
+            if done.ledger:
+                background.add_task(nessie.log_withdrawals, done.ledger)
+            return reply("checkout_confirm", done.voice,
+                         payment_id=done.payment["payment_id"] if done.payment else None, invoice=done.invoice)
 
     if has(BALANCE, text):
         return reply("balance_refused", compose.balance_refusal())

@@ -436,6 +436,22 @@ def test_cart_checkout_and_yes_by_voice(client, fake):
     assert fake.cards[FSA]["balance_cents"] == 652 and len(fake.payments) == 1
 
 
+@pytest.mark.parametrize("phrase", ["I'm ready to checkout", "ready", "checkout", "yeah I'm ready"])
+def test_ready_or_checkout_phrase_confirms_the_checkout_question(client, fake, phrase):
+    fill_run1(client)
+    pre = say(client, "checkout").json()
+    done = say(client, phrase, pre["voice"]["prompt_id"]).json()
+    assert done["action"] == "checkout_confirm"
+    assert len(fake.payments) == 1
+
+
+def test_not_ready_does_not_confirm_the_checkout_question(client, fake):
+    fill_run1(client)
+    pre = say(client, "checkout").json()
+    say(client, "not ready yet", pre["voice"]["prompt_id"])
+    assert len(fake.payments) == 0
+
+
 def test_remove_last_by_voice_reads_back_what_was_removed(client):
     add(client, advil(client))
     add(client, bandages(client))
