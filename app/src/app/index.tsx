@@ -121,22 +121,23 @@ export default function Home() {
     await scanFrame(shot.uri, shot.barcode, shot.discard, { width: shot.width, height: shot.height });
   }, [onboarding, addingCard, busy, granted, beginCapture, scanFrame, sayLocal]);
 
-  // Auto-capture when steady on a new item. Moving the phone or a new barcode re-arms it.
-  const autoReady =
+  // Auto-capture when steady on a new item. Moving the phone or a new barcode re-arms it. The
+  // motion sensor keeps running while a result is showing, so moving on to the next item counts
+  // even if the last question was never answered by voice; a finished or expired question (no live
+  // prompt) no longer blocks the next scan.
+  const watching =
     !onboarding &&
     !addingCard &&
     granted &&
     focused &&
     state.view === 'camera' &&
-    state.phase === 'idle' &&
-    !state.livePrompt &&
-    !state.lastScan &&
     !state.declined &&
     !state.receipt;
+  const autoReady = watching && state.phase === 'idle' && !state.livePrompt;
   // Card steps (onboarding and Add a card): the same steadiness check takes the card photo once the
   // agent has finished the instruction and the phone is held still on the card. Tap still works.
   const cardAutoReady = cardCapture && granted && focused && state.phase === 'idle';
-  const { steady, moveCount, available } = useSteadiness(autoReady || cardAutoReady);
+  const { steady, moveCount, available } = useSteadiness(watching || cardAutoReady);
   const armed = useRef(true);
   const cardArmed = useRef(true);
   useEffect(() => {
