@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Icon } from '@/components/icon';
-import { Elevation, Press, Radius, Spacing, Type } from '@/constants/theme';
+import { Elevation, Radius, Spacing, Type } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 
 const SLIDE_MS = 220;
@@ -71,14 +71,9 @@ export function Choice<T extends string | number>({
 
   const segW = horizontal ? (width - PAD * 2) / options.length : 0;
   const x = useSharedValue(index * segW);
-  // Slide only when the choice changes. Placing the highlight after the control is measured (or
-  // re-measured) is instant, so opening Settings never shows it sliding over from the left.
-  const lastIndex = useRef(index);
   useEffect(() => {
     const to = index * segW;
-    const changed = lastIndex.current !== index;
-    lastIndex.current = index;
-    x.value = reduceMotion || !changed ? to : withTiming(to, { duration: SLIDE_MS });
+    x.value = reduceMotion ? to : withTiming(to, { duration: SLIDE_MS });
   }, [index, segW, reduceMotion, x]);
   const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
@@ -109,7 +104,7 @@ export function Choice<T extends string | number>({
             style={({ pressed }) => [
               horizontal ? styles.segment : styles.listItem,
               !horizontal && selected ? { backgroundColor: palette.primary } : null,
-              { opacity: pressed ? Press.pressed : 1 },
+              { opacity: pressed ? 0.8 : 1 },
             ]}>
             <AppText
               kind={selected ? 'label' : 'body'}
@@ -137,7 +132,7 @@ function StepButton({ icon, disabled, onPress }: { icon: 'minus' | 'add'; disabl
       hitSlop={6}
       style={({ pressed }) => [
         styles.stepBtn,
-        { backgroundColor: palette.primary, opacity: disabled ? Press.disabled : pressed ? Press.pressed : 1 },
+        { backgroundColor: palette.primary, opacity: disabled ? 0.35 : pressed ? 0.8 : 1 },
       ]}>
       <Icon name={icon} size={24} color="onPrimary" strokeWidth={2.75} />
     </Pressable>
@@ -202,7 +197,7 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
       accessibilityLabel={label}
       accessibilityState={{ checked: value }}
       onPress={() => onChange(!value)}
-      style={({ pressed }) => [styles.toggleRow, { opacity: pressed ? Press.pressed : 1 }]}>
+      style={({ pressed }) => [styles.toggleRow, { opacity: pressed ? 0.8 : 1 }]}>
       <AppText kind="label" accessible={false} style={styles.flex}>
         {label}
       </AppText>
@@ -234,7 +229,7 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   // Stepper
   stepper: { flexDirection: 'row', alignItems: 'center', borderRadius: Radius.pill, padding: PAD, gap: Spacing.sm },
-  stepBtn: { width: 52, height: 52, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  stepBtn: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   stepValue: { flex: 1, textAlign: 'center' },
   // Switch
   toggleRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },

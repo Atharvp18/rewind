@@ -210,7 +210,7 @@ class FakeDB:
                 "splits": splits, "new_balances": self._balances(), "replayed": False}
 
     def reset_demo(self, run=1):
-        if run not in (1, 2, 3):
+        if run not in (1, 2):
             raise db.CheckoutFailed("E_BAD_RUN")
         self._load(run)
         return {"cards": self.get_cards(), "cart": self.get_cart()}

@@ -10,6 +10,7 @@
  *   any → interrupted (user speaks while the agent is speaking)
  */
 
+import { formatCents } from '@/lib/money';
 import { randomUUID } from 'expo-crypto';
 import {
   createContext,
@@ -22,7 +23,6 @@ import {
   type ReactNode,
 } from 'react';
 import * as Location from 'expo-location';
-import { getRecordingPermissionsAsync } from 'expo-audio';
 import { AppState } from 'react-native';
 
 import * as api from '@/lib/api';
@@ -42,9 +42,10 @@ import {
   type VoiceRequest,
 } from '@/lib/api';
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
-import { configureAudio, onMicLevel, speaker, useMic } from '@/lib/audio';
+import { armBargeIn, configureAudio, onBargeIn, onMicLevel, setConversationMode, speaker, useMic } from '@/lib/audio';
+import { CONVO_PAUSE_MS, createPauseDetector } from '@/lib/pause-detector';
 import { haptic } from '@/lib/haptics';
-import { Phrases, Screens, Working } from '@/lib/phrases';
+import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
 
 export type Phase =
@@ -98,8 +99,8 @@ export interface AgentState {
   preview: CheckoutPreview | null;
   receipt: CheckoutResult | null;
   micDenied: boolean;
-  /** The camera light: on after a scan that was too dark, until the app restarts or the shopper turns it off. */
-  torch: boolean;
+  /** Hands-free conversation mode: the agent listens after every line and uses tight endpointing. */
+  conversing: boolean;
 }
 
 export type Action =
@@ -127,26 +128,16 @@ export type Action =
   | { type: 'user_said'; text: string }
   | { type: 'declined'; message: string | null }
   | { type: 'review'; id: string | null }
-  | { type: 'status'; id: string; text: string }
-  | { type: 'reset_all'; cards: Card[]; cart: Cart }
   | { type: 'caption_clear' }
   | { type: 'checkin'; checkin: AgentState['checkin'] }
-  | { type: 'view'; view: PanelView };
+  | { type: 'view'; view: PanelView }
+  | { type: 'converse'; on: boolean };
 
 const SILENCE_MS = 8_000;
 const LOOKING_MS = 1_000;
 const LISTEN_WINDOW_MS = 6_000;
-/** Interrupt by speaking: mic level (0..1) that counts as a voice, how long it must last, and how much to keep. */
-const VOICE_LEVEL = 0.3;
-const VOICE_HOLD_MS = 250;
-const VOICE_KEEP_MS = 1_200;
-
-/** Quiet listening while Rewind talks (interrupt by speaking). One agent per app, so module state is fine. */
-const voiceMonitor: { on: boolean; loudSince: number | null; onStart: () => void } = {
-  on: false,
-  loudSince: null,
-  onStart: () => {},
-};
+/** Once the shopper has started talking, the answer may run this long before it is cut off. */
+const MAX_ANSWER_MS = 15_000;
 
 /** Phases an interim line may finish in without ending them. */
 const BUSY: Phase[] = ['listening', 'capturing', 'awaiting_scan', 'submitting'];
@@ -175,7 +166,7 @@ export const initial: AgentState = {
   preview: null,
   receipt: null,
   micDenied: false,
-  torch: false,
+  conversing: false,
 };
 
 export function reducer(s: AgentState, a: Action): AgentState {
@@ -190,15 +181,7 @@ export function reducer(s: AgentState, a: Action): AgentState {
     case 'scan_sent':
       return { ...s, phase: 'awaiting_scan' };
     case 'scan_received':
-      return {
-        ...s,
-        phase: 'speaking_result',
-        lastScan: a.res,
-        lastPhoto: a.photo,
-        view: 'camera',
-        // Too dark to read: turn the light on for the next try (the spoken line says so).
-        torch: s.torch || a.res.scan.warnings.includes('E_TOO_DARK'),
-      };
+      return { ...s, phase: 'speaking_result', lastScan: a.res, lastPhoto: a.photo, view: 'camera' };
     case 'error':
       return { ...s, phase: 'speaking_error' };
     case 'submit':
@@ -237,17 +220,6 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, livePrompt: a.prompt };
     case 'checkin':
       return { ...s, checkin: a.checkin };
-    case 'reset_all':
-      // Back to the very start: nothing said, scanned, asked or carried over. Only the fresh cards and cart remain.
-      return { ...initial, cards: a.cards, cart: a.cart };
-    case 'status':
-      // What the agent is doing right now: shown as the caption, not an answer to remember or repeat.
-      return {
-        ...s,
-        caption: a.text,
-        captionIsAlert: false,
-        transcript: pushLine(s.transcript, { id: a.id, who: 'agent', text: a.text }),
-      };
     case 'caption_clear':
       return { ...s, caption: null, captionIsAlert: false };
     case 'review':
@@ -272,6 +244,8 @@ export function reducer(s: AgentState, a: Action): AgentState {
       return { ...s, declined: a.message };
     case 'view':
       return { ...s, view: a.view };
+    case 'converse':
+      return { ...s, conversing: a.on, phase: a.on ? s.phase : (s.phase === 'listening' ? 'idle' : s.phase) };
   }
 }
 
@@ -288,11 +262,7 @@ export interface AgentApi {
    * Onboarding: route the next thing the user says to `fn` instead of
    * /v1/command. Pass null to restore normal commands.
    */
-  /**
-   * Route the next thing the user says to `fn` (onboarding). `auto` (default true) opens the mic by
-   * itself after the step's line is spoken; card-photo steps pass false so listening never delays the photo.
-   */
-  setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null, auto?: boolean) => void;
+  setListenHandler: (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => void;
   beginCapture: () => void;
   scanFrame: (
     imageUri: string,
@@ -318,22 +288,19 @@ export interface AgentApi {
   startCheckout: () => Promise<void>;
   /** `useProposedSplit: false` charges the original cards, which can be declined. */
   confirmCheckout: (useProposedSplit?: boolean) => Promise<void>;
-  resetDemo: (run: api.DemoRun) => Promise<void>;
-  /** Start over as a new shopper: server data, everything on screen, the transcript and the profile. */
-  /** `keepSetup`: switch demo scenario without sending the shopper back through onboarding. */
-  restart: (run?: api.DemoRun, keepSetup?: boolean) => Promise<void>;
+  resetDemo: (run: 1 | 2) => Promise<void>;
   showView: (view: PanelView) => void;
   /** Tap equivalent of saying something (e.g. "yes" to a strength read-back); goes through /v1/command. */
   answer: (text: string) => Promise<void>;
   /** Close the current panel and return to the plain camera. */
   dismiss: () => void;
   sayLocal: (text: string, priority?: 'alert' | 'normal') => void;
-  /** After an item was scanned and the shopper paused: ask whether to repeat it (a yes repeats it). */
-  offerRepeat: () => void;
-  /** After an item was scanned and moved out of the frame: ask if there is anything else to scan. */
-  askAnythingElse: () => void;
-  /** A demo restart: the shopper counts as new, so no "welcome back" until the app is relaunched. */
-  markFresh: () => void;
+  /** Say a line, then run `then` when it has been spoken to the end. An interrupted line never runs it. */
+  sayThen: (text: string, then: () => void) => void;
+  /** Enter hands-free conversation mode: the agent listens after every line and uses tight endpointing. */
+  startConversation: () => void;
+  /** Leave conversation mode: the agent goes back to push-to-talk. */
+  endConversation: () => void;
 }
 
 const AgentContext = createContext<AgentApi | null>(null);
@@ -371,16 +338,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAlert = useRef<VoiceRequest | null>(null);
   const listenAfterSpeech = useRef(false);
+  /** Stops the pause listener of the current answer (null when none is running). */
+  const pauseWatch = useRef<(() => void) | null>(null);
+  /** What to do when one particular spoken line has finished. */
+  const afterSpeech = useRef<{ id: string; fn: () => void } | null>(null);
   const holding = useRef(false);
   const checkoutKey = useRef<string | null>(null);
   const onDoneRef = useRef<(v: VoiceRequest) => void>(() => {});
-  const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void; auto: boolean } | null>(null);
+  const listenHandler = useRef<{ hint?: SttHint; fn: (t: string) => void } | null>(null);
   /** The mic opened by itself after a question (not a tap): silence there stays quiet. */
   const autoListening = useRef(false);
   /** Unanswered automatic listens in a row; after two the agent waits for a tap (no endless loop). */
   const autoMisses = useRef(0);
-  /** A local question was just asked (repeat? anything else?): listen for the answer. */
-  const answerNext = useRef(false);
+  /** Hands-free conversation mode: the loop keeps running after every speech. */
+  const conversing = useRef(false);
 
   // --- speech -------------------------------------------------------------
 
@@ -394,8 +365,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   };
 
   const sayRef = useRef<(v: VoiceRequest) => void>(() => {});
-  /** A scan answer that arrived while the app was in the background: spoken after "welcome back". */
-  const heldVoice = useRef<VoiceRequest | null>(null);
 
   const say = useCallback(
     (voice: VoiceRequest, remember = true, interim = false) => {
@@ -442,32 +411,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [say],
   );
 
-  /** Say what the agent is doing in the caption (and to a screen reader), without speaking or remembering it. */
-  const showStatus = useCallback(
-    (text: string) => {
-      dispatch({ type: 'status', id: `status-${Date.now()}`, text });
-      if (screenReaderOn) announce(text);
+  const sayThen = useCallback(
+    (text: string, then: () => void) => {
+      const voice = localVoice(text);
+      afterSpeech.current = { id: voice.request_id, fn: then };
+      say(voice);
     },
-    [screenReaderOn],
+    [say],
   );
-
-  // Idle questions are not remembered, so "repeat" still repeats the item, not the question.
-  const repeatOffer = useRef(false);
-  const fresh = useRef(false);
-  const moreOffer = useRef(false);
-  const offerRepeat = useCallback(() => {
-    repeatOffer.current = true;
-    answerNext.current = true;
-    say(localVoice(Phrases.askRepeat), false);
-  }, [say]);
-  const askAnythingElse = useCallback(() => {
-    moreOffer.current = true;
-    answerNext.current = true;
-    say(localVoice(Phrases.askMore), false);
-  }, [say]);
-  const markFresh = useCallback(() => {
-    fresh.current = true;
-  }, []);
 
   // --- errors ---------------------------------------------------------------
 
@@ -534,18 +485,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'background') {
         wasBackground = true;
-        speaker.interrupt();
-      } else if (next === 'active') {
-        const held = heldVoice.current;
-        heldVoice.current = null;
-        // After a demo restart the shopper is new: no "welcome back".
-        if (wasBackground && !fresh.current) {
-          const n = stateRef.current.cart.groups.reduce((k, g) => k + g.items.length, 0);
-          say(localVoice(Phrases.welcomeBack(n)), false);
+        if (conversing.current) {
+          conversing.current = false;
+          setConversationMode(false);
+          armBargeIn(false);
+          mic.stopSentinel();
+          dispatch({ type: 'converse', on: false });
         }
+        speaker.interrupt();
+      } else if (next === 'active' && wasBackground) {
         wasBackground = false;
-        // The scan finished while away (a call, the home screen): say its answer now, after the welcome.
-        if (held) say(held);
+        const n = stateRef.current.cart.groups.reduce((k, g) => k + g.items.length, 0);
+        say(localVoice(Phrases.welcomeBack(n)), false);
       }
     });
     return () => sub.remove();
@@ -598,6 +549,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         case 'cart_cleared':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
           if (res.action === 'add_item') dispatch({ type: 'clear_scan' });
+          dispatch({ type: 'clear_prompt' }); // the question was answered; unblock auto-capture
           break;
         case 'review_item':
           if (res.result) dispatch({ type: 'cart', cart: res.result as Cart });
@@ -683,33 +635,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const sendTranscript = useCallback(
     async (transcript: string, confidence: number) => {
-      if (moreOffer.current) {
-        // "Is there anything else you'd like me to scan?"
-        moreOffer.current = false;
-        if (/^\W*(yes|yeah|yep|yup|sure|ok|okay)\b/i.test(transcript)) {
-          say(localVoice(Phrases.nextItem), false);
-          return;
-        }
-        if (/^\W*(no|nope|nah|that'?s (it|all)|i'?m (done|good))\b/i.test(transcript)) {
-          say(localVoice(Phrases.whenReady), false);
-          return;
-        }
-      }
-      if (repeatOffer.current) {
-        // "Would you like me to repeat?" is answered here; anything else is a normal command.
-        repeatOffer.current = false;
-        if (/^\W*(yes|yeah|yep|yup|sure|please|ok|okay|repeat)\b/i.test(transcript)) {
-          haptic.done();
-          say(stateRef.current.lastVoice ?? localVoice(Phrases.nothingToRepeat), false);
-          return;
-        }
-        if (/^\W*(no|nope|nah|not now)\b/i.test(transcript)) {
-          say(localVoice(Phrases.okay), false);
-          return;
-        }
-      }
       dispatch({ type: 'submit' });
-      showStatus(Working.forRequest(transcript));
       try {
         const promptId = stateRef.current.lastScan ? await ensurePrompt() : stateRef.current.livePrompt?.id;
         const res = await api.command(transcript, confidence, promptId);
@@ -718,7 +644,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(e);
       }
     },
-    [applyCommand, handleError, ensurePrompt, say, showStatus],
+    [applyCommand, handleError, ensurePrompt],
   );
 
   // --- listening ------------------------------------------------------------
@@ -735,17 +661,34 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     if (autoListening.current) haptic.tap(); // the mic opened by itself: a tap-like buzz says "go ahead"
     if (autoStop) {
       if (listenTimer.current) clearTimeout(listenTimer.current);
+      // Nothing said at all: stop quietly after the window. Once the shopper speaks, a pause of
+      // about two seconds ends the answer and everything said so far is sent as one.
       listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
+      pauseWatch.current?.();
+      const detector = createPauseDetector(conversing.current ? { pauseMs: CONVO_PAUSE_MS } : undefined);
+      let spokeSeen = false;
+      const off = onMicLevel((level) => {
+        const { spoke, paused } = detector.feed(level, Date.now());
+        if (spoke && !spokeSeen) {
+          spokeSeen = true;
+          if (listenTimer.current) clearTimeout(listenTimer.current);
+          listenTimer.current = setTimeout(() => void stopListening(), MAX_ANSWER_MS);
+        }
+        if (paused) void stopListening();
+      });
+      pauseWatch.current = off;
     }
   };
 
   const stopListening = async () => {
+    pauseWatch.current?.();
+    pauseWatch.current = null;
     if (listenTimer.current) clearTimeout(listenTimer.current);
     listenTimer.current = null;
     if (stateRef.current.phase !== 'listening') return;
     const auto = autoListening.current;
     autoListening.current = false;
-    // The mic opened by itself and heard nothing: stay quiet, wait for the question's silence prompt.
+    // The mic opened by itself and heard nothing: stay quiet and wait for the question's silence prompt.
     const heardNothing = () => {
       autoMisses.current += 1;
       dispatch({ type: 'listen_done' });
@@ -782,12 +725,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   };
 
   const onSpeechDone = (voice: VoiceRequest) => {
-    if (voiceMonitor.on && speaker.quiet) {
-      // Stop the quiet listening, then carry on (the next step may open the mic again).
-      void stopMonitor().then(() => onSpeechDone(voice));
-      return;
-    }
     dispatch({ type: 'speak_done', voice });
+    const after = afterSpeech.current;
+    let ranAfter = false;
+    if (after && after.id === voice.request_id) {
+      afterSpeech.current = null;
+      ranAfter = true;
+      after.fn();
+    }
     if (!isLocalVoice(voice)) haptic.done();
     if (pendingAlert.current && pendingAlert.current.request_id !== voice.request_id) {
       // Never drop an alert: replay it in full after the interruption (1.2).
@@ -801,21 +746,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void startListening(true);
       return;
     }
-    // A question was asked: open the mic by itself so the shopper can just answer (no tap needed).
-    const handler = listenHandler.current;
-    const asks = voice.expects_response || answerNext.current || (handler !== null && handler.auto);
-    answerNext.current = false;
-    if (asks && !screenReaderOn && autoMisses.current < 2 && speaker.quiet) {
-      void (async () => {
-        const perm = await getRecordingPermissionsAsync().catch(() => null);
-        // Never pop the permission prompt from here, and never listen over the next line.
-        if (!perm?.granted || !speaker.quiet || stateRef.current.phase === 'listening') {
-          if (voice.expects_response) armSilence();
-          return;
-        }
-        autoListening.current = true;
-        await startListening(true);
-      })();
+    // Conversation mode: listen after every line (the loop keeps going until the user ends it).
+    // Outside conversation mode: listen only when a question was asked or onboarding expects a spoken answer.
+    const shouldAutoListen = conversing.current
+      || voice.expects_response
+      || (listenHandler.current && !ranAfter);
+    if (shouldAutoListen && autoMisses.current < 2 && !holding.current) {
+      autoListening.current = true;
+      void startListening(true);
       return;
     }
     if (voice.expects_response) armSilence();
@@ -843,61 +781,47 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    speaker.setListener({ onStart: () => voiceMonitor.onStart(), onDone: (v) => onDoneRef.current(v) });
+    speaker.setListener({
+      onStart: (v) => {
+        // In conversation mode, open the mic sentinel during TTS for barge-in detection.
+        if (conversing.current && !isLocalVoice(v)) {
+          void mic.startSentinel().then((p) => {
+            if (p === 'granted') armBargeIn(true);
+          });
+        }
+      },
+      onDone: (v) => {
+        // Stop the sentinel if it's still running (TTS finished without barge-in).
+        mic.stopSentinel();
+        armBargeIn(false);
+        onDoneRef.current(v);
+      },
+    });
+    // Wire up the barge-in callback: when the sentinel detects the user speaking over TTS,
+    // interrupt TTS, promote the sentinel to full capture, and start listening.
+    onBargeIn(() => {
+      armBargeIn(false);
+      const cut = speaker.interrupt();
+      if (cut?.priority === 'alert') pendingAlert.current = cut;
+      dispatch({ type: 'interrupted' });
+      mic.promoteToCapture();
+      autoListening.current = true; // treat barge-in like auto-listen: empty results stay quiet
+      dispatch({ type: 'listen' });
+      // Set up the pause detector so the captured speech is endpointed normally.
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = setTimeout(() => void stopListening(), MAX_ANSWER_MS);
+      pauseWatch.current?.();
+      const detector = createPauseDetector(conversing.current ? { pauseMs: CONVO_PAUSE_MS } : undefined);
+      // Prime the detector: the user already started speaking (that's what triggered barge-in).
+      detector.feed(1, Date.now());
+      const off = onMicLevel((level) => {
+        const { paused } = detector.feed(level, Date.now());
+        if (paused) void stopListening();
+      });
+      pauseWatch.current = off;
+    });
     void configureAudio();
   }, []);
-
-  // --- interrupt by speaking (headphones) -------------------------------------------------
-  // While Rewind talks, the mic listens quietly. A voice held for VOICE_HOLD_MS cuts Rewind off and that
-  // same recording becomes the answer. Off by default and only with headphones (no echo cancellation).
-  const onSpeechStart = () => {
-    if (!settings.interruptBySpeaking || screenReaderOn || voiceMonitor.on) return;
-    if (stateRef.current.phase === 'listening') return;
-    void (async () => {
-      const perm = await getRecordingPermissionsAsync().catch(() => null);
-      if (!perm?.granted || !speaker.speaking || voiceMonitor.on) return;
-      voiceMonitor.on = true;
-      voiceMonitor.loudSince = null;
-      await mic.start().catch(() => {
-        voiceMonitor.on = false;
-      });
-    })();
-  };
-  useEffect(() => {
-    voiceMonitor.onStart = onSpeechStart;
-  });
-  const voiceCutIn = () => {
-    voiceMonitor.on = false;
-    voiceMonitor.loudSince = null;
-    const cut = speaker.interrupt();
-    if (cut?.priority === 'alert') pendingAlert.current = cut;
-    mic.keepRecent(VOICE_KEEP_MS); // keep the words that cut in
-    haptic.tap();
-    dispatch({ type: 'listen' });
-    if (listenTimer.current) clearTimeout(listenTimer.current);
-    listenTimer.current = setTimeout(() => void stopListening(), LISTEN_WINDOW_MS);
-  };
-  useEffect(
-    () =>
-      onMicLevel((level) => {
-        if (!voiceMonitor.on) return;
-        if (level < VOICE_LEVEL) {
-          voiceMonitor.loudSince = null;
-          return;
-        }
-        voiceMonitor.loudSince ??= Date.now();
-        if (Date.now() - voiceMonitor.loudSince >= VOICE_HOLD_MS) voiceCutIn();
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-  /** Rewind finished without being cut off: stop the quiet listening (the answer mic opens as usual). */
-  const stopMonitor = async () => {
-    if (!voiceMonitor.on) return;
-    voiceMonitor.on = false;
-    const rec = await mic.stop();
-    rec?.discard();
-  };
 
   const bargeIn = () => {
     const cut = speaker.interrupt();
@@ -905,18 +829,54 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'interrupted' });
   };
 
-  const talkTap = useCallback(() => {
+  const startConversation = useCallback(() => {
+    conversing.current = true;
+    autoMisses.current = 0;
+    setConversationMode(true);
+    dispatch({ type: 'converse', on: true });
     haptic.tap();
+    // Greet and the loop begins. Don't use listenAfterSpeech here: onSpeechDone sees
+    // conversing.current = true and auto-listens through the shouldAutoListen path,
+    // which handles silence gracefully (heardNothing / autoMisses).
+    const s = stateRef.current;
+    if (!speaker.speaking && s.phase === 'idle') {
+      say(localVoice(Phrases.greeting), false);
+    }
+  }, [say]);
+
+  const endConversation = useCallback(() => {
+    conversing.current = false;
+    setConversationMode(false);
+    armBargeIn(false);
+    mic.stopSentinel();
+    if (speaker.speaking) speaker.interrupt();
+    // If currently listening, stop the mic and go idle.
+    if (stateRef.current.phase === 'listening') {
+      pauseWatch.current?.();
+      pauseWatch.current = null;
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = null;
+      void mic.stop(); // discard the recording
+    }
+    dispatch({ type: 'converse', on: false });
+    haptic.tap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const talkTap = useCallback(() => {
+    // In conversation mode, tapping the orb ends the conversation.
+    if (conversing.current) {
+      endConversation();
+      return;
+    }
+    haptic.tap();
+    autoMisses.current = 0;
     const s = stateRef.current;
     if (s.phase === 'listening') {
       void stopListening();
       return;
     }
     if (speaker.speaking) {
-      if (voiceMonitor.on) {
-        voiceCutIn(); // the mic is already open: use it
-        return;
-      }
       bargeIn();
       void startListening(true);
       return;
@@ -931,16 +891,16 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         .getPaymentHistory()
         .catch(() => [])
         .then((list) => {
+          const cents = list.reduce((sum, i) => sum + i.reimbursable_cents, 0);
           listenAfterSpeech.current = true;
-          say(localVoice(Screens.history(list)), false);
+          say(localVoice(Phrases.onHistory(list.length, cents ? formatCents(cents) : null)), false);
         });
       return;
     }
-    // Greeting first, then the mic opens when it finishes.
-    listenAfterSpeech.current = true;
-    say(localVoice(Phrases.greeting), false);
+    // Start conversation mode: greet and begin the hands-free loop.
+    startConversation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [say]);
+  }, [say, startConversation, endConversation]);
 
   const talkHoldStart = useCallback(() => {
     holding.current = true;
@@ -958,9 +918,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setListenHandler = useCallback(
-    (hint: SttHint | undefined, fn: ((transcript: string) => void) | null, auto = true) => {
-      listenHandler.current = fn ? { hint, fn, auto } : null;
-      autoMisses.current = 0; // a new step or question gets fresh tries
+    (hint: SttHint | undefined, fn: ((transcript: string) => void) | null) => {
+      listenHandler.current = fn ? { hint, fn } : null;
     },
     [],
   );
@@ -976,6 +935,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const beginCapture = useCallback(() => {
     if (speaker.speaking) bargeIn();
+    // In conversation mode the mic may be open; stop it so the capture can use the camera cleanly.
+    if (stateRef.current.phase === 'listening') {
+      pauseWatch.current?.();
+      pauseWatch.current = null;
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      listenTimer.current = null;
+      void mic.stop(); // discard whatever was recorded
+    }
     haptic.capture();
     dispatch({ type: 'capture' });
   }, []);
@@ -983,29 +950,21 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const scanFrame = useCallback(
     async (imageUri: string, barcode: string | null, discard: () => void, photo: { width: number; height: number }) => {
       dispatch({ type: 'scan_sent' });
-      // Say what is happening: the first line is spoken, the next two only change the caption.
-      const progress = [
-        setTimeout(() => say(localVoice(Working.scan[0]), false, true), LOOKING_MS),
-        setTimeout(() => showStatus(Working.scan[1]), LOOKING_MS * 4),
-        setTimeout(() => showStatus(Working.scan[2]), LOOKING_MS * 9),
-      ];
-      const looking = { clear: () => progress.forEach(clearTimeout) };
+      const looking = setTimeout(() => say(localVoice(Phrases.looking), false, true), LOOKING_MS);
       try {
         const res = await api.scan(imageUri, barcode, null, insurerRef.current);
-        looking.clear();
+        clearTimeout(looking);
         speaker.interrupt(); // cut "Looking." short if it is still playing
         dispatch({ type: 'scan_received', res, photo });
-        // A call or the home screen came up mid-scan: keep the answer for when the shopper is back.
-        if (AppState.currentState !== 'active') heldVoice.current = res.voice;
-        else say(res.voice);
+        say(res.voice);
       } catch (e) {
-        looking.clear();
+        clearTimeout(looking);
         handleError(e);
       } finally {
         discard(); // frames are never retained (decision 14)
       }
     },
-    [say, handleError, showStatus],
+    [say, handleError],
   );
 
   const addToCart = useCallback(
@@ -1131,10 +1090,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, [say, handleError, refreshCards]);
 
   const resetDemo = useCallback(
-    async (run: api.DemoRun) => {
+    async (run: 1 | 2) => {
       try {
         const res = await api.resetDemo(run);
-        fresh.current = true;
         dispatch({ type: 'cards', cards: res.cards });
         dispatch({ type: 'cart', cart: res.cart });
         dispatch({ type: 'preview', preview: null });
@@ -1150,57 +1108,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [handleError],
   );
 
-  const profileApi = useProfile();
-  const restart = useCallback(
-    async (run: api.DemoRun = 1, keepSetup = false) => {
-      speaker.interrupt();
-      void stopMonitor();
-      clearSilence();
-      if (promptTimer.current) clearTimeout(promptTimer.current);
-      if (listenTimer.current) clearTimeout(listenTimer.current);
-      repeatOffer.current = false;
-      moreOffer.current = false;
-      answerNext.current = false;
-      autoMisses.current = 0;
-      heldVoice.current = null;
-      fresh.current = true; // a new shopper is never "back"
-      let reset: { cards: Card[]; cart: Cart } = { cards: stateRef.current.cards, cart: { groups: [], total_cents: 0 } };
-      try {
-        reset = await api.resetDemo(run);
-      } catch (e) {
-        handleError(e); // the screen still resets; the server data stays as it was
-      }
-      dispatch({ type: 'reset_all', cards: reset.cards, cart: reset.cart });
-      if (!keepSetup) profileApi.reset();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [handleError, profileApi.reset],
-  );
-
-  // A screen opened by a tap is read out, so the voice and the caption always say what the screen shows.
-  // (Screens opened by voice are already described by the backend's answer.)
-  const showView = useCallback(
-    (view: PanelView) => {
-      dispatch({ type: 'view', view });
-      if (view === 'cart') {
-        void api
-          .getCart()
-          .then((cart) => {
-            dispatch({ type: 'cart', cart });
-            say(localVoice(Screens.cart(cart)), false);
-          })
-          .catch(() => say(localVoice(Screens.cart(stateRef.current.cart)), false));
-      } else if (view === 'history') {
-        void api
-          .getPaymentHistory()
-          .catch(() => [])
-          .then((list) => say(localVoice(Screens.history(list)), false));
-      } else if (view === 'profile') {
-        say(localVoice(Screens.profile(insurerRef.current, stateRef.current.cards.map((c) => c.nickname))), false);
-      }
-    },
-    [say],
-  );
+  const showView = useCallback((view: PanelView) => {
+    if (view === 'cart') void refreshCart();
+    dispatch({ type: 'view', view });
+  }, [refreshCart]);
 
   const answer = useCallback((text: string) => sendTranscript(text, 1), [sendTranscript]);
 
@@ -1241,16 +1152,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       startCheckout,
       confirmCheckout,
       resetDemo,
-      restart,
       sayLocal,
-      offerRepeat,
-      askAnythingElse,
-      markFresh,
+      sayThen,
+      startConversation,
+      endConversation,
     }),
     [
       state, talkTap, talkHoldStart, talkHoldEnd, repeat, setListenHandler, beginCapture, scanFrame, addToCart, skip,
       refreshCart, refreshCards, startCheckin, leaveStore, reviewItem, removeLast, askClearCart, confirmClearCart, startCheckout,
-      confirmCheckout, resetDemo, restart, sayLocal, offerRepeat, askAnythingElse, markFresh, showView, answer, dismiss,
+      confirmCheckout, resetDemo, sayLocal, sayThen, showView, answer, dismiss, startConversation, endConversation,
     ],
   );
 

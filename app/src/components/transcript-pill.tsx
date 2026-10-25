@@ -5,10 +5,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { AppText } from '@/components/app-text';
 import { Icon } from '@/components/icon';
 import { PROFILE_SIZE } from '@/components/profile-button';
-import { LineHeight, Motion, Spacing, Type } from '@/constants/theme';
+import { Motion, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
-import { fitCaption, MAX_LINES } from '@/lib/caption-fit';
-import { useResponsive } from '@/lib/responsive';
 import { useAgent } from '@/state/agent';
 
 /**
@@ -20,7 +18,6 @@ import { useAgent } from '@/state/agent';
  */
 export function TranscriptPill() {
   const { palette, settings, reduceMotion, screenReaderOn } = useA11y();
-  const responsiveType = useResponsive().type;
   const { state, repeat } = useAgent();
   const [rowWidth, setRowWidth] = useState(0);
   const width = useSharedValue(0);
@@ -30,10 +27,6 @@ export function TranscriptPill() {
   // Alert lines use the two levels: red for a decline, orange for warnings.
   const level = state.declined ? 'danger' : 'warning';
   const open = settings.captions && !!lastAgent && rowWidth > 0;
-  // The user's text size sets the starting font; the caption shrinks from there only as far as MIN_FONT_PT.
-  const baseFont = Math.round(Type.caption.fontSize * settings.textScale * responsiveType);
-  const iconRoom = state.captionIsAlert ? 24 + Spacing.sm : 0;
-  const fit = fitCaption(lastAgent?.text ?? '', baseFont, rowWidth - Spacing.xl * 2 - iconRoom);
 
   useEffect(() => {
     const target = open ? rowWidth : 0;
@@ -92,9 +85,9 @@ export function TranscriptPill() {
                     kind="caption"
                     color="onPill"
                     accessible={false}
-                    numberOfLines={MAX_LINES}
-                    style={[styles.lineText, { fontSize: fit.font, lineHeight: Math.round(fit.font * LineHeight) }]}>
-                    {fit.shown}
+                    numberOfLines={1}
+                    style={styles.lineText}>
+                    {lastAgent.text}
                   </AppText>
                 </View>
               ) : null}

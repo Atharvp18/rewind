@@ -3,7 +3,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Icon } from '@/components/icon';
 import { PROFILE_SIZE } from '@/components/profile-button';
-import { Elevation, Press, Radius, Spacing } from '@/constants/theme';
+import { Elevation, Radius, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
 import { centsForScreenReader, formatCents } from '@/lib/money';
 import { useResponsive } from '@/lib/responsive';
@@ -38,7 +38,7 @@ export function CartChip() {
         { minHeight: PROFILE_SIZE * ui, minWidth: PROFILE_SIZE * ui },
         Elevation.floating,
         { backgroundColor: palette.profileBg, borderColor: palette.controlBorderWidth ? palette.profileRing : 'rgba(255,255,255,0.35)',
-          borderWidth: palette.controlBorderWidth ? 3 : 1.5, opacity: pressed ? Press.pressed : 1 },
+          borderWidth: palette.controlBorderWidth ? 3 : 1.5, opacity: pressed ? 0.85 : 1 },
       ]}>
       <Icon name="cart" size={26} color="onProfile" />
       <AppText color="onProfile" accessible={false} style={[styles.text, { fontSize: Math.round(20 * scale) }]}>

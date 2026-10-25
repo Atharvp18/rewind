@@ -17,7 +17,6 @@ import { TranscriptPill } from '@/components/transcript-pill';
 import { OrbGlow, useDomeHeight, VoiceOrb } from '@/components/voice-orb';
 import { Layout, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useA11y } from '@/lib/a11y';
-import * as api from '@/lib/api';
 import { Phrases } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
 import { useResponsive } from '@/lib/responsive';
@@ -29,12 +28,6 @@ import { useAgent } from '@/state/agent';
 const BARCODE_LIVE_MS = 800;
 /** Barcode events arrive many times a second; update the corners at most this often. */
 const BARCODE_THROTTLE_MS = 150;
-/** After the phone goes still, wait this long for focus before the photo (a move in between cancels it). */
-const SETTLE_MS = 400;
-
-/** Quiet this long after a scanned item and the agent asks what to do next. */
-const IDLE_AFTER_SCAN_MS = 9000;
-
 /** Payment-card aspect ratio (ISO/IEC 7810 ID-1), for the onboarding card guide. */
 const CARD_RATIO = 1.586;
 
@@ -51,9 +44,9 @@ const CARD_RATIO = 1.586;
  * still scans; voice works as before.
  */
 export default function Home() {
-  const { palette, screenReaderOn } = useA11y();
+  const { palette } = useA11y();
   const { profile, loaded } = useProfile();
-  const { state, beginCapture, scanFrame, sayLocal, startCheckin, offerRepeat, askAnythingElse } = useAgent();
+  const { state, beginCapture, scanFrame, sayLocal, startCheckin } = useAgent();
   const [camera, requestCamera] = useCameraPermissions();
   const focused = useIsFocused();
   const { width, height } = useWindowDimensions();
@@ -78,18 +71,6 @@ export default function Home() {
 
   // --- store check-in: once per launch, after onboarding (position used once, never stored) ----
   const checkedIn = useRef(false);
-  // Once per launch, for a returning shopper only: welcome them back and say where to put the item.
-  // Nobody who is (or just was) in onboarding is "back": first run and a demo restart skip it.
-  const welcomed = useRef(false);
-  const sawOnboarding = useRef(false);
-  useEffect(() => {
-    if (onboarding) sawOnboarding.current = true;
-  }, [onboarding]);
-  useEffect(() => {
-    if (!loaded || onboarding || !focused || welcomed.current) return;
-    welcomed.current = true;
-    if (!sawOnboarding.current) sayLocal(Phrases.launchWelcome);
-  }, [loaded, onboarding, focused, sayLocal]);
   useEffect(() => {
     if (!loaded || onboarding || !focused || checkedIn.current) return;
     checkedIn.current = true;
@@ -152,14 +133,12 @@ export default function Home() {
     state.view === 'camera' &&
     !state.declined &&
     !state.receipt;
-  const autoReady = watching && state.phase === 'idle' && !state.livePrompt;
+  // In conversation mode the phase is usually 'listening' (the mic stays open), so allow
+  // auto-capture there too — the scan interrupts the listen, which is fine.
+  const autoReady = watching && (state.phase === 'idle' || (state.conversing && state.phase === 'listening')) && !state.livePrompt;
   // Card steps (onboarding and Add a card): the same steadiness check takes the card photo once the
   // agent has finished the instruction and the phone is held still on the card. Tap still works.
-  const cardAutoReady = cardCapture && granted && focused && state.phase === 'idle';
-  // With VoiceOver on, holding the phone still while exploring the screen must not take a photo:
-  // the shopper double-taps the camera to scan instead.
-  const autoCapture = autoReady && !screenReaderOn;
-  const cardAutoCapture = cardAutoReady && !screenReaderOn;
+  const cardAutoReady = cardCapture && granted && focused && (state.phase === 'idle' || (state.conversing && state.phase === 'listening'));
   const { steady, moveCount, available } = useSteadiness(watching || cardAutoReady);
   const armed = useRef(true);
   const cardArmed = useRef(true);
@@ -167,14 +146,10 @@ export default function Home() {
     cardArmed.current = true; // a new card step, or the card was moved: ready for one more photo
   }, [moveCount, cardCapture]);
   useEffect(() => {
-    if (!cardAutoCapture || !available || !steady || !cardArmed.current) return;
-    // A short settle after the phone goes still, so the camera has focused and the photo is sharp.
-    const t = setTimeout(() => {
-      cardArmed.current = false;
-      onboardingCapture.current?.();
-    }, SETTLE_MS);
-    return () => clearTimeout(t);
-  }, [cardAutoCapture, available, steady]);
+    if (!cardAutoReady || !available || !steady || !cardArmed.current) return;
+    cardArmed.current = false;
+    onboardingCapture.current?.();
+  }, [cardAutoReady, available, steady]);
   const lastScannedCode = useRef<string | null>(null);
   useEffect(() => {
     armed.current = true;
@@ -183,61 +158,11 @@ export default function Home() {
     if (barcode && barcode.code !== lastScannedCode.current) armed.current = true;
   }, [barcode]);
   useEffect(() => {
-    if (!autoCapture || !available || !steady || !armed.current) return;
-    // Wait for the camera to settle; moving again in this window cancels the photo (no blurry shots).
-    const t = setTimeout(() => {
-      armed.current = false;
-      lastScannedCode.current = barcode?.code ?? null;
-      void scan();
-    }, SETTLE_MS);
-    return () => clearTimeout(t);
-  }, [autoCapture, available, steady, barcode, scan]);
-
-  // --- a pause after a scanned item -------------------------------------------------
-  // The shopper has gone quiet with a result on screen and nothing being asked. If the phone has not
-  // moved since the scan, the item is still in the frame: offer to repeat. If it moved (the item was
-  // taken out of the frame), ask whether there is anything else to scan. Once per scan.
-  const scanId = state.lastScan?.scan.state !== 'unresolved' ? state.lastScan?.scan.scan_id : undefined;
-  const movesAtScan = useRef(0);
-  const [idleAskedFor, setIdleAskedFor] = useState<string | null>(null);
-  const moveCountRef = useRef(0);
-  useEffect(() => {
-    moveCountRef.current = moveCount;
-  }, [moveCount]);
-  useEffect(() => {
-    movesAtScan.current = moveCountRef.current;
-  }, [scanId]);
-  const idleReady = !!scanId && autoReady && idleAskedFor !== scanId;
-  useEffect(() => {
-    if (!idleReady || !scanId) return;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      // Look at the frame: an item still there means "repeat?", an empty frame means "anything else?".
-      // If the photo or the check fails, fall back to the motion sensor (moved = the item was taken away).
-      let present: boolean | null = null;
-      try {
-        const shot = await stage.current?.capture();
-        if (shot) {
-          try {
-            present = await api.frameCheck(shot.uri);
-          } finally {
-            shot.discard();
-          }
-        }
-      } catch (e) {
-        console.warn('[idle] frame check failed, using motion:', e instanceof Error ? e.message : e);
-      }
-      if (cancelled) return; // a new scan or an answer arrived while the frame was being checked
-      setIdleAskedFor(scanId); // asked: once per scan
-      if (present === null) present = moveCountRef.current <= movesAtScan.current;
-      if (present) offerRepeat();
-      else askAnythingElse();
-    }, IDLE_AFTER_SCAN_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [idleReady, scanId, askAnythingElse, offerRepeat, state.phase]);
+    if (!autoReady || !available || !steady || !armed.current) return;
+    armed.current = false;
+    lastScannedCode.current = barcode?.code ?? null;
+    void scan();
+  }, [autoReady, available, steady, barcode, scan]);
 
   // --- focus corners ----------------------------------------------------------
   const scanShowing = !!state.lastScan && state.view === 'camera' && !state.declined && !state.receipt;
@@ -283,25 +208,25 @@ export default function Home() {
 
   const frameBox = fitFrame(itemBox ?? guide);
   // The corners lock (solid) while the phone is held still on the card, just before the photo.
-  const cardLocked = cardAutoCapture && available && steady;
+  const cardLocked = cardAutoReady && available && steady;
 
   // The status pill always states the real next step.
   const answerPending = scanShowing && state.lastScan?.scan.state !== 'unresolved' && !!state.lastScan?.recommendation;
   const hint = answerPending
     ? 'Say yes or no, or tap a button'
     : cardAutoReady
-      ? cardAutoCapture && available
+      ? available
         ? 'Hold the card steady in the corners'
         : 'Tap the screen to take the photo'
       : autoReady
-      ? autoCapture && available
+      ? available
         ? 'Hold steady on an item'
         : 'Tap the screen to scan'
       : null;
 
   return (
     <View style={[styles.root, { backgroundColor: palette.bg }]}>
-      <CameraStage ref={stage} granted={granted} active={focused} torch={state.torch} onBarcode={onBarcode} />
+      <CameraStage ref={stage} granted={granted} active={focused} onBarcode={onBarcode} />
 
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -339,7 +264,9 @@ export default function Home() {
               registerCapture={registerCapture}
               capture={async () => (await stage.current?.capture()) ?? null}
             />
-          ) : state.view === 'profile' ? null : (
+          ) : state.view === 'profile' ? (
+            <ProfileSheet />
+          ) : (
             <HomePanels />
           )}
         </View>
@@ -362,8 +289,6 @@ export default function Home() {
 
       {/* Purchase history is a full page: it sits above the cart chip and profile button. */}
       {state.view === 'history' && !onboarding && !addingCard ? <HistorySheet /> : null}
-      {/* The profile is a full page too, with short tabs instead of one long scroll. */}
-      {state.view === 'profile' && !onboarding ? <ProfileSheet /> : null}
 
       <View style={styles.bottom} pointerEvents="box-none">
         <VoiceOrb hint={hint} historyEnabled={!onboarding && !addingCard} />
