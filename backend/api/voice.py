@@ -43,8 +43,8 @@ DEFAULT_TTS_MODEL = "sonic-3"
 # Small mp3 at 24 kHz: speech quality is fine and each file downloads fast.
 OUTPUT_FORMAT = {"container": "mp3", "sample_rate": 24000, "bit_rate": 64000}
 
-# Sonic-3 volume, 0.5 to 2.0 (1.0 is the default and played quietly on a phone speaker).
-TTS_VOLUME = float(os.environ.get("CARTESIA_VOLUME", "1.8"))
+# Sonic-3 volume, 0.5 to 2.0 (the maximum): 1.0 played quietly on a phone speaker.
+TTS_VOLUME = float(os.environ.get("CARTESIA_VOLUME", "2.0"))
 FIRST_SENTENCE_TIMEOUT_S = 4.0       # spec 0.7 said 1.5 s; too tight on a phone connection, so the app fell back to expo-speech
 LATER_SENTENCE_TIMEOUT_S = 10.0
 STT_TIMEOUT_S = 6.0
