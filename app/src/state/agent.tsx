@@ -45,7 +45,7 @@ import {
 import { announce, SPEECH_RATE, useA11y } from '@/lib/a11y';
 import { configureAudio, onMicLevel, speaker, useMic } from '@/lib/audio';
 import { haptic } from '@/lib/haptics';
-import { Phrases, Working } from '@/lib/phrases';
+import { Phrases, Screens, Working } from '@/lib/phrases';
 import { useProfile } from '@/lib/profile';
 
 export type Phase =
@@ -1178,10 +1178,33 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [handleError, profileApi.reset],
   );
 
-  const showView = useCallback((view: PanelView) => {
-    if (view === 'cart') void refreshCart();
-    dispatch({ type: 'view', view });
-  }, [refreshCart]);
+  // A screen opened by a tap is read out, so the voice and the caption always say what the screen shows.
+  // (Screens opened by voice are already described by the backend's answer.)
+  const showView = useCallback(
+    (view: PanelView) => {
+      dispatch({ type: 'view', view });
+      if (view === 'cart') {
+        void api
+          .getCart()
+          .then((cart) => {
+            dispatch({ type: 'cart', cart });
+            say(localVoice(Screens.cart(cart)), false);
+          })
+          .catch(() => say(localVoice(Screens.cart(stateRef.current.cart)), false));
+      } else if (view === 'history') {
+        void api
+          .getPaymentHistory()
+          .catch(() => [])
+          .then((list) => {
+            const cents = list.reduce((sum, i) => sum + i.reimbursable_cents, 0);
+            say(localVoice(Screens.history(list.length, cents ? formatCents(cents) : null)), false);
+          });
+      } else if (view === 'profile') {
+        say(localVoice(Screens.profile(insurerRef.current, stateRef.current.cards.map((c) => c.nickname))), false);
+      }
+    },
+    [say],
+  );
 
   const answer = useCallback((text: string) => sendTranscript(text, 1), [sendTranscript]);
 

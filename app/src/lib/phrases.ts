@@ -1,3 +1,5 @@
+import { formatCents } from '@/lib/money';
+
 /**
  * The only spoken lines the app writes itself. Everything else comes from the
  * backend (speech/compose.py, or error.speech in the envelope). Each line here
@@ -31,6 +33,27 @@ export const Working = {
       return 'Adding that for you.';
     return 'Working on that.';
   },
+} as const;
+
+/** What each screen shows, said when it is opened by a tap. Same order as the screen, top to bottom. */
+export const Screens = {
+  cart(cart: { groups: { nickname: string; items: { display_name: string; amount_cents: number }[] }[]; total_cents: number }): string {
+    const n = cart.groups.reduce((k, g) => k + g.items.length, 0);
+    if (!n) return 'Your cart is empty. Hold a product steady in the frame to add one.';
+    const groups = cart.groups
+      .filter((g) => g.items.length)
+      .map((g) => `On your ${g.nickname}: ${g.items.map((i) => `${i.display_name}, ${formatCents(i.amount_cents)}`).join('; ')}.`);
+    return [`Your cart has ${n} ${n === 1 ? 'item' : 'items'}, ${formatCents(cart.total_cents)} before tax.`, ...groups,
+      "Tap an item to remove it, or say checkout when you're ready."].join(' ');
+  },
+  history: (invoices: number, reimbursable: string | null) =>
+    invoices
+      ? `Your purchase history: ${invoices} ${invoices === 1 ? 'invoice' : 'invoices'}, newest first.${
+          reimbursable ? ` Possible reimbursement: ${reimbursable}.` : ''
+        } Scroll down to see each invoice.`
+      : 'Your purchase history is empty. Your invoices will appear here after you check out.',
+  profile: (insurer: string | null, cards: string[]) =>
+    `Your profile. ${insurer ? `Insurance: ${insurer}. ` : ''}${cards.length ? `Your cards: ${cards.join(', ')}.` : 'No cards yet.'} Below are settings for text size, colors, speech, and volume.`,
 } as const;
 
 export const Phrases = {
