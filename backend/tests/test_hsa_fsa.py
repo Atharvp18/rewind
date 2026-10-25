@@ -78,31 +78,12 @@ def test_no_claim_tip_for_non_eligible_items_or_health_card_purchases():
     assert "file a claim" not in f.template
 
 
-# --- eligibility without barcodes: Claude Vision reads the product -------------------------
+# --- eligibility: the scraped listing is the only source (no IRS table) ------------------------
 
 def product(category, medication=True):
     from models.schemas import ProductResolution
     return ProductResolution(product_key="k", name="x", category=category, is_medication=medication,
                              state="resolved", amount_cents=999)
-
-
-def test_shelf_medicine_in_irs_category_is_eligible_without_a_barcode():
-    from eligibility.classify import classify_eligibility
-    for category in ("pain_relief", "cold_flu_allergy", "digestive_health", "otc_medicine"):
-        r = classify_eligibility(product(category), None)
-        assert r.label == "eligible" and r.basis == "irs_category_rule"
-
-
-def test_medicine_outside_irs_categories_is_never_guessed_eligible():
-    from eligibility.classify import classify_eligibility
-    for category in ("vitamins_supplements", "other", "personal_care"):
-        assert classify_eligibility(product(category), None).label == "not_eligible"      # not in our data
-
-
-def test_non_medicine_follows_category_rules():
-    from eligibility.classify import classify_eligibility
-    assert classify_eligibility(product("grocery", medication=False), None).label == "not_eligible"
-    assert classify_eligibility(product("first_aid", medication=False), None).label == "eligible"
 
 
 def test_seed_has_fsa_card_and_run_two_declines_both_health_cards():
@@ -111,25 +92,7 @@ def test_seed_has_fsa_card_and_run_two_declines_both_health_cards():
     assert run2["card_fsa_1"] < 1848 and run2["card_hsa_1"] < 1848
 
 
-def test_every_irs_category_has_a_source_and_unverified_rows_never_say_eligible():
-    from eligibility.irs_rules import CATEGORY_SOURCES, IRS_CATEGORY_RULES
-    assert CATEGORY_SOURCES.keys() == IRS_CATEGORY_RULES.keys()
-    for cat, src in CATEGORY_SOURCES.items():
-        assert src["url"].startswith("https://www.irs.gov/") and src["quote"]
-        if src["status"] == "unverified":
-            assert IRS_CATEGORY_RULES[cat] == "needs_review"
-
-
-def test_rule_rows_fit_the_eligibility_table_and_skip_unknowns():
-    from eligibility.irs_rules import IRS_CATEGORY_RULES, rule_rows
-    rows = rule_rows("2026-10-24T00:00:00+00:00")
-    assert {r["category_path"] for r in rows} == {c for c, v in IRS_CATEGORY_RULES.items() if v != "needs_review"}
-    for r in rows:
-        assert r["basis"] == "irs_category_rule" and isinstance(r["eligible"], bool)
-        assert r["source_url"].startswith("https://www.irs.gov/") and r["product_key"].startswith("rule:")
-
-
-# --- retailer cross-check (Apify catalog, searched with Moss) -----------------------------
+# --- the listing decides (Apify catalog, searched with Moss) -----------------------------
 
 def listing(eligible, price_cents=None):
     return {"eligible": eligible, "name": "Advil Ibuprofen 200mg", "collected_at": "2026-10-24",
@@ -147,18 +110,19 @@ def test_matching_listing_confirms_and_names_the_source():
     assert r.confidence == 0.9 and r.matched_name == "Advil Ibuprofen 200mg"
 
 
-def test_the_listing_wins_over_the_category_rule():
-    r = classify("pain_relief", listing(False))               # the rules say eligible; the scraped listing says no
+def test_a_not_eligible_listing_says_not_eligible():
+    r = classify("pain_relief", listing(False))
     assert r.label == "not_eligible" and r.basis == "semantic_match" and r.source == "retailer_index"
 
 
-def test_an_eligible_listing_makes_an_item_eligible_even_outside_the_rule_categories():
+def test_the_category_the_camera_guessed_never_matters():
     assert classify("vitamins_supplements", listing(True)).label == "eligible"
+    assert classify("pain_relief", listing(False)).label == "not_eligible"
 
 
-def test_no_listing_but_index_not_consulted_leaves_the_rule_answer():
+def test_index_unavailable_is_never_eligible():
     r = classify("pain_relief", None)
-    assert r.label == "eligible" and r.basis == "irs_category_rule"
+    assert r.label == "not_eligible" and r.basis == "index_unavailable"
 
 
 def test_index_answered_but_product_not_listed_is_treated_as_not_eligible():

@@ -85,7 +85,7 @@ def eligibility_line(product: ProductResolution, elig: EligibilityResult) -> str
     # confidence_phrase() stays for anything that wants to show it.
     if elig.label == "eligible":
         return "HSA eligible."
-    if elig.basis == "no_match":
+    if elig.basis in ("no_match", "index_unavailable"):
         return "I could not find this on the HSA eligible list, so I am treating it as not eligible."
     return "Not HSA eligible."
 

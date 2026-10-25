@@ -6,9 +6,8 @@ find_match() looks up the product Claude Vision read and returns the closest lis
 differ between Claude and a store ("Advil 200mg 50ct" vs "Advil Ibuprofen Tablets"), which is
 what semantic search is for. Moss is used only here and for the future History agent.
 
-An item is eligible only when the IRS rules say yes AND this index lists the product. If Moss
-answers and the product is not listed, eligibility/classify.py returns could_not_confirm. If Moss
-cannot answer at all (MossUnavailable), the IRS rules decide alone, so an outage never breaks a scan.
+This index is the only eligibility source (eligibility/classify.py): a matching listing's flag is the
+answer, and a product that is not listed, or an index that cannot answer, means not eligible.
 """
 from __future__ import annotations
 
